@@ -1,0 +1,15 @@
+# LiveKit config for the Swarm stack. API keys are read from a Docker SECRET via
+# key_file (a file containing "APIkey: secret"); the advertised media IP is set with
+# --node-ip (LIVEKIT_NODE_IP). Redis keeps signal state consistent across API replicas.
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+key_file: /run/secrets/livekit_keys
+redis:
+  address: redis:6379
+rtc:
+  tcp_port: 7881
+  # One muxed UDP port for all participants — a port range caps concurrent voice users
+  # at the range size (see deploy/compose/livekit.yaml for the full story).
+  udp_port: 7882
+  use_external_ip: false

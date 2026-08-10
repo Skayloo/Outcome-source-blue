@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: outcome
+
+resources:
+  - 00-namespace.yaml
+  - 01-secrets.yaml
+  - 02-postgres.yaml
+  - 03-redis.yaml
+  - 04-minio.yaml
+  - 05-livekit.yaml
+  - 06-server.yaml
+  - 07-frontend.yaml
+
+# Point these at your registry after `docker build` + push:
+#   docker build -t ghcr.io/YOU/outcome-server:v1 ServerDotnet
+#   docker build -t ghcr.io/YOU/outcome-frontend:v1 frontend
+images:
+  - name: outcome-server
+    newName: ghcr.io/CHANGE_ME/outcome-server
+    newTag: latest
+  - name: outcome-frontend
+    newName: ghcr.io/CHANGE_ME/outcome-frontend
+    newTag: latest

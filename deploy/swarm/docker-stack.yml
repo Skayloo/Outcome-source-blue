@@ -1,0 +1,220 @@
+# ── Outcome — Docker Swarm stack ──────────────────────────────────────────────
+# Deploy:  docker stack deploy -c docker-stack.yml outcome
+# (see README.md for creating the secrets + labelling the LiveKit node first).
+#
+# Secrets are real Swarm secrets (files under /run/secrets). Postgres/MinIO read them
+# natively via *_FILE; LiveKit via key_file; the .NET API via a tiny sh shim that exports
+# them before exec. Rolling updates are start-first with automatic rollback.
+version: "3.9"
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+x-restart: &restart
+  restart_policy: { condition: any, delay: 5s }
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    <<: *logging
+    ports:
+      - target: 80
+        published: 80
+        mode: ingress
+      - target: 443
+        published: 443
+        mode: ingress
+      - target: 443
+        published: 443
+        protocol: udp
+        mode: ingress
+    environment:
+      OUTCOME_DOMAIN: ${OUTCOME_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [outcome]
+    deploy:
+      replicas: 1
+      <<: *restart
+      update_config: { order: start-first }
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    <<: *logging
+    environment:
+      TLS_SAN: ""   # behind Caddy — plain HTTP, edge terminates TLS
+    networks: [outcome]
+    deploy:
+      replicas: 2
+      <<: *restart
+      update_config: { parallelism: 1, order: start-first }
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
+
+  server:
+    image: ${SERVER_IMAGE}
+    <<: *logging
+    # Turn the mounted secret files into the env vars the app reads, then exec it.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        export OUTCOME_JwtAuth__JwtKey="$$(cat /run/secrets/jwt_key)"
+        export OUTCOME_Minio__AccessKey="$$(cat /run/secrets/minio_access_key)"
+        export OUTCOME_Minio__SecretKey="$$(cat /run/secrets/minio_secret_key)"
+        export OUTCOME_Voice__LiveKitApiKey="$$(cat /run/secrets/livekit_api_key)"
+        export OUTCOME_Voice__LiveKitApiSecret="$$(cat /run/secrets/livekit_api_secret)"
+        export ConnectionStrings__Postgres="Host=postgres;Port=5432;Database=outcome;Username=outcome;Password=$$(cat /run/secrets/postgres_password)"
+        exec dotnet Outcome.Api.dll
+    environment:
+      ASPNETCORE_URLS: "http://0.0.0.0:5000"
+      OUTCOME_Redis__Url: "redis:6379"
+      OUTCOME_Server__Name: "${SERVER_NAME:-Outcome}"
+      OUTCOME_Minio__Endpoint: "minio:9000"
+      OUTCOME_Minio__Bucket: "${MINIO_BUCKET:-outcome-uploads}"
+      OUTCOME_Minio__UseSsl: "false"
+      OUTCOME_Voice__LiveKitUrl: "wss://${OUTCOME_DOMAIN}/livekit"
+      OUTCOME_Voice__LiveKitInternalUrl: "ws://livekit:7880"
+      OUTCOME_Email__Host: "${EMAIL_HOST:-}"
+      OUTCOME_Email__Port: "${EMAIL_PORT:-587}"
+      OUTCOME_Email__From: "${EMAIL_FROM:-no-reply@example.com}"
+      OUTCOME_Email__UseSsl: "${EMAIL_USE_SSL:-true}"
+    secrets:
+      - jwt_key
+      - minio_access_key
+      - minio_secret_key
+      - livekit_api_key
+      - livekit_api_secret
+      - postgres_password
+    healthcheck:
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:5000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    networks: [outcome]
+    deploy:
+      replicas: ${SERVER_REPLICAS:-3}
+      <<: *restart
+      update_config: { parallelism: 1, order: start-first, failure_action: rollback }
+      rollback_config: { parallelism: 1 }
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  postgres:
+    image: postgres:16
+    <<: *logging
+    environment:
+      POSTGRES_DB: outcome
+      POSTGRES_USER: outcome
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outcome -d outcome"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [outcome]
+    deploy:
+      replicas: 1
+      <<: *restart
+      # Pin to a node with durable storage (label it: docker node update --label-add pgdata=true <node>).
+      placement: { constraints: ["node.labels.pgdata == true"] }
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    <<: *logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [outcome]
+    deploy:
+      replicas: 1
+      <<: *restart
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    <<: *logging
+    environment:
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_access_key
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_secret_key
+    secrets: [minio_access_key, minio_secret_key]
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [outcome]
+    deploy:
+      replicas: 1
+      <<: *restart
+      # Pin to a node with durable storage (label it: docker node update --label-add miniodata=true <node>).
+      placement: { constraints: ["node.labels.miniodata == true"] }
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  livekit:
+    image: livekit/livekit-server:latest
+    command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP}"]
+    <<: *logging
+    configs:
+      - source: livekit_config
+        target: /etc/livekit.yaml
+    secrets: [livekit_keys]
+    ports:
+      # Media MUST reach the node whose public IP is LIVEKIT_NODE_IP. Pin livekit there
+      # (label: docker node update --label-add livekit=true <node>). TCP/ICE on host mode
+      # (no SNAT); the muxed UDP port published normally (fine with a single, pinned replica).
+      # For heavy multi-node voice, run LiveKit standalone on the media host — see README.
+      - { target: 7881, published: 7881, protocol: tcp, mode: host }
+      - "7882:7882/udp"
+    networks: [outcome]
+    deploy:
+      replicas: 1
+      <<: *restart
+      placement: { constraints: ["node.labels.livekit == true"] }
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+configs:
+  caddyfile:
+    file: ../compose/Caddyfile
+  livekit_config:
+    file: ./livekit.yaml
+
+secrets:
+  jwt_key:            { external: true }
+  postgres_password:  { external: true }
+  minio_access_key:   { external: true }
+  minio_secret_key:   { external: true }
+  livekit_api_key:    { external: true }
+  livekit_api_secret: { external: true }
+  livekit_keys:       { external: true }
+
+volumes:
+  pgdata:
+  minio_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  outcome:
+    driver: overlay
+    attachable: true

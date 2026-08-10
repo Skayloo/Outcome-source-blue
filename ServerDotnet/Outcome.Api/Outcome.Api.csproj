@@ -1,0 +1,37 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Shared\Outcome.Abstractions\Outcome.Abstractions.csproj" />
+    <ProjectReference Include="..\Shared\Outcome.Core\Outcome.Core.csproj" />
+    <ProjectReference Include="..\Shared\Outcome.Db.Abstractions\Outcome.Db.Abstractions.csproj" />
+    <ProjectReference Include="..\Shared\Outcome.Domain.Abstractions\Outcome.Domain.Abstractions.csproj" />
+    <ProjectReference Include="..\Shared\Outcome.Domain.InternalRequests\Outcome.Domain.InternalRequests.csproj" />
+    <ProjectReference Include="..\Identity\Outcome.Identity.Domain\Outcome.Identity.Domain.csproj" />
+    <ProjectReference Include="..\Identity\Outcome.Identity.Dto\Outcome.Identity.Dto.csproj" />
+    <ProjectReference Include="..\Identity\Outcome.Identity.Db\Outcome.Identity.Db.csproj" />
+    <ProjectReference Include="..\Identity\Outcome.Identity.Core\Outcome.Identity.Core.csproj" />
+    <ProjectReference Include="..\Chat\Outcome.Chat.Domain\Outcome.Chat.Domain.csproj" />
+    <ProjectReference Include="..\Chat\Outcome.Chat.Dto\Outcome.Chat.Dto.csproj" />
+    <ProjectReference Include="..\Chat\Outcome.Chat.Db\Outcome.Chat.Db.csproj" />
+    <ProjectReference Include="..\Chat\Outcome.Chat.Core\Outcome.Chat.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.16.11" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <!-- Design-time only: required by `dotnet ef` (this is the migrations startup project). Not shipped. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

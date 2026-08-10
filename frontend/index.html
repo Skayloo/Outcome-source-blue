@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <meta name="theme-color" content="#00c8ff" />
+    <!-- Just the name. This is the browser tab and the app's own header — a product surface,
+         not a place to sell anything. What search results show lives in the description below. -->
+    <title>Outcome</title>
+    <!-- What a search result shows under the title. Concrete about what the thing IS, because
+         "Outcome" alone tells a stranger nothing. -->
+    <meta
+      name="description"
+      content="Каналы, личные переписки со сквозным шифрованием, голосовые комнаты и звонки. Свой сервер или наш — данные лежат там, где решили вы."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Outcome" />
+    <meta property="og:title" content="Outcome" />
+    <meta
+      property="og:description"
+      content="Каналы, личные переписки со сквозным шифрованием, голосовые комнаты и звонки. Свой сервер или наш."
+    />
+    <meta property="og:image" content="/logo.png" />
+    <meta property="og:url" content="https://outcome.ru/" />
+    <meta name="twitter:card" content="summary" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Runtime endpoint config (nginx writes this from env at container start; absent in dev
+         → the app falls back to same-origin). Must load BEFORE the app bundle. -->
+    <script src="/config.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

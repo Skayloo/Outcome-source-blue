@@ -1,0 +1,87 @@
+/* Daylight / Paper — light-first, breaks the dark-chat monoculture.
+   Warm paper surfaces, espresso ink, a single burnt-orange signature.
+   Applied as body.theme-light over the tokens.css (dark) defaults. */
+
+body.theme-light {
+  /* Backgrounds — warm paper (content = lightest) */
+  --bg-tertiary:   #e9e3d7;  /* rail / deepest paper */
+  --bg-secondary:  #f1ece1;  /* sidebars, panels */
+  --bg-primary:    #faf6ee;  /* message/content area */
+  --bg-input:      #ffffff;
+  --bg-hover:      rgba(70, 50, 25, 0.055);
+  --bg-active:     rgba(70, 50, 25, 0.10);
+  --bg-floating:   #fbf8f1;
+  --bg-overlay:    rgba(40, 30, 20, 0.34);
+
+  --bg-modifier-hover:    rgba(70, 50, 25, 0.05);
+  --bg-modifier-active:   rgba(70, 50, 25, 0.08);
+  --bg-modifier-selected: rgba(194, 65, 12, 0.12);
+
+  /* Accent — burnt orange, warm and confident */
+  --accent:        #c2410c;
+  --accent-hover:  #d4501a;
+  --accent-active: #9a340a;
+  --accent-primary:   var(--accent);
+  --accent-secondary: #ea580c;
+  --accent-gradient:  linear-gradient(135deg, #c2410c, #ea580c);
+
+  /* Text — espresso ink on paper */
+  --text-normal:   #2b2620;
+  --text-muted:    #6b6154;
+  --text-faint:    #8a7f6e;
+  --text-micro:    #a89d8a;
+  --text-link:     #b45309;
+
+  --header-primary:   #1c1813;
+  --header-secondary: #4a4234;
+
+  --interactive-normal: #6b6154;
+  --interactive-hover:  #2b2620;
+  --interactive-active: #1c1813;
+  --interactive-muted:  #c9beaa;
+  --channel-icon: #8a7f6e;
+
+  --text-positive: #15803d;
+  --text-warning:  #b45309;
+  --text-danger:   #dc2626;
+  --green:  #15803d;
+  --yellow: #b45309;
+  --red:    #dc2626;
+
+  --border:        #e2dac9;
+  --border-strong: #d0c6b1;
+  --border-glow:   transparent;
+
+  --role-owner:  #e11d48;
+  --role-admin:  #b45309;
+  --role-mod:    #15803d;
+  --role-member: #6b6154;
+
+  --scrollbar-thin-thumb:  #d0c6b1;
+  --scrollbar-auto-thumb:  #d0c6b1;
+  --scrollbar-auto-track:  #e9e3d7;
+
+  /* Soft, warm shadows; no glow on a light surface (crisp ring only for focus). */
+  --elevation-low:  0 1px 2px rgba(70, 50, 25, 0.09);
+  --elevation-med:  0 8px 24px -8px rgba(70, 50, 25, 0.16), 0 2px 6px rgba(70, 50, 25, 0.08);
+  --elevation-high: 0 18px 44px -12px rgba(70, 50, 25, 0.22), 0 6px 16px rgba(70, 50, 25, 0.1);
+  --glow-accent:    0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
+  --glow-accent-sm: 0 0 0 2px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+
+/* Text that sits ON the accent fill (or other solid colour) must stay light even
+   on the paper theme — the global title colour is dark ink, which would vanish. */
+body.theme-light .btn-primary,
+body.theme-light .rail-server.active,
+body.theme-light .rail-home.active,
+body.theme-light .rail-btn:hover,
+body.theme-light .server-dropdown-item:hover,
+body.theme-light .server-dropdown-item.accent:hover,
+body.theme-light .oc-avatar,
+body.theme-light .avatar,
+body.theme-light .member-avatar,
+body.theme-light .rail-badge,
+body.theme-light .bug-filter-tab.active,
+body.theme-light .explore-join {
+  color: #fff;
+}

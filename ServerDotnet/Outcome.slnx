@@ -1,0 +1,22 @@
+<Solution>
+  <Folder Name="/Shared/">
+    <Project Path="Shared/Outcome.Abstractions/Outcome.Abstractions.csproj" />
+    <Project Path="Shared/Outcome.Core/Outcome.Core.csproj" />
+    <Project Path="Shared/Outcome.Db.Abstractions/Outcome.Db.Abstractions.csproj" />
+    <Project Path="Shared/Outcome.Domain.Abstractions/Outcome.Domain.Abstractions.csproj" />
+    <Project Path="Shared/Outcome.Domain.InternalRequests/Outcome.Domain.InternalRequests.csproj" />
+  </Folder>
+  <Folder Name="/Identity/">
+    <Project Path="Identity/Outcome.Identity.Domain/Outcome.Identity.Domain.csproj" />
+    <Project Path="Identity/Outcome.Identity.Dto/Outcome.Identity.Dto.csproj" />
+    <Project Path="Identity/Outcome.Identity.Db/Outcome.Identity.Db.csproj" />
+    <Project Path="Identity/Outcome.Identity.Core/Outcome.Identity.Core.csproj" />
+  </Folder>
+  <Folder Name="/Chat/">
+    <Project Path="Chat/Outcome.Chat.Domain/Outcome.Chat.Domain.csproj" />
+    <Project Path="Chat/Outcome.Chat.Dto/Outcome.Chat.Dto.csproj" />
+    <Project Path="Chat/Outcome.Chat.Db/Outcome.Chat.Db.csproj" />
+    <Project Path="Chat/Outcome.Chat.Core/Outcome.Chat.Core.csproj" />
+  </Folder>
+  <Project Path="Outcome.Api/Outcome.Api.csproj" />
+</Solution>

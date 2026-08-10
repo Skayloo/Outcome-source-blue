@@ -1,0 +1,118 @@
+# ── Outcome Helm values ───────────────────────────────────────────────────────
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []          # e.g. [{ name: regcred }]
+
+# ── Application images (build & push from ServerDotnet/ and frontend/) ─────────
+server:
+  image:
+    repository: ghcr.io/CHANGE_ME/outcome-server
+    tag: ""                   # defaults to .Chart.appVersion
+    pullPolicy: IfNotPresent
+  replicas: 3
+  resources:
+    requests: { cpu: 250m, memory: 384Mi }
+    limits: { cpu: "1", memory: 512Mi }
+  autoscaling:
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 70
+
+frontend:
+  image:
+    repository: ghcr.io/CHANGE_ME/outcome-frontend
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 2
+  # Cluster DNS ClusterIP for nginx's per-request upstream resolution.
+  # Check yours: kubectl -n kube-system get svc kube-dns
+  dnsResolver: "10.96.0.10"
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 128Mi }
+
+# ── Public entry point ─────────────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: nginx
+  host: chat.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "12m"
+  tls:
+    enabled: true
+    secretName: outcome-tls
+    # cert-manager ClusterIssuer to auto-issue the cert. Empty = bring your own tls secret.
+    clusterIssuer: letsencrypt-prod
+
+# ── App config ─────────────────────────────────────────────────────────────────
+config:
+  serverName: Outcome
+  minioBucket: outcome-uploads
+  email:
+    host: ""                  # empty → 2FA codes are logged instead of emailed
+    port: "587"
+    from: no-reply@example.com
+    useSsl: "true"
+
+# ── Secrets (REGENERATE). Provide values here to have the chart create the Secret,
+#    OR set existingSecret to a Secret you manage (with the same keys). ──────────
+secrets:
+  existingSecret: ""
+  jwtKey: ""                  # openssl rand -hex 32
+  postgresPassword: ""
+  minioAccessKey: ""
+  minioSecretKey: ""
+  livekitApiKey: ""           # e.g. LK + 12 hex
+  livekitApiSecret: ""        # openssl rand -hex 24
+
+# ── Bundled data services (disable to use managed Postgres / S3 / Redis) ────────
+postgres:
+  enabled: true
+  image: postgres:16
+  storage: 10Gi
+  storageClass: ""
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+  external:                   # used when enabled=false
+    host: postgres
+    port: 5432
+    database: outcome
+    username: outcome
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+  external:
+    url: redis:6379
+
+minio:
+  enabled: true
+  image: minio/minio:latest
+  storage: 20Gi
+  storageClass: ""
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+  external:
+    endpoint: minio:9000
+    useSsl: "false"
+
+# ── LiveKit SFU (voice/video). Media needs direct UDP to each node, so pods use
+#    hostNetwork + anti-affinity (one per host). Open udp 50000-50200 + tcp 7881. ──
+livekit:
+  image: livekit/livekit-server:latest
+  replicas: 2
+  hostNetwork: true
+  useExternalIp: false        # true on cloud VMs behind NAT (advertise public IP via STUN)
+  nodeIp: ""                  # optional explicit advertised IP (per-node hostIP is used if empty)
+  rtc:
+    tcpPort: 7881
+    portRangeStart: 50000
+    portRangeEnd: 50200
+  resources:
+    requests: { cpu: 500m, memory: 512Mi }

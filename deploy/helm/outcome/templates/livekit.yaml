@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "outcome.fullname" . }}-livekit
+  labels: {{- include "outcome.labels" . | nindent 4 }}
+data:
+  livekit.yaml: |
+    port: 7880
+    bind_addresses:
+      - 0.0.0.0
+    redis:
+      address: {{ include "outcome.redisUrl" . }}
+    rtc:
+      tcp_port: {{ .Values.livekit.rtc.tcpPort }}
+      port_range_start: {{ .Values.livekit.rtc.portRangeStart }}
+      port_range_end: {{ .Values.livekit.rtc.portRangeEnd }}
+      use_external_ip: {{ .Values.livekit.useExternalIp }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "outcome.fullname" . }}-livekit
+  labels: {{- include "outcome.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: livekit }
+  ports: [{ name: signal, port: 7880, targetPort: 7880 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "outcome.fullname" . }}-livekit
+  labels: {{- include "outcome.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.livekit.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: livekit }
+  template:
+    metadata:
+      labels:
+        {{- include "outcome.labels" . | nindent 8 }}
+        app.kubernetes.io/component: livekit
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.livekit.hostNetwork }}
+      # WebRTC media needs direct UDP to each node → hostNetwork + one pod per host.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: livekit }
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: livekit
+          image: {{ .Values.livekit.image }}
+          args: ["--config", "/etc/livekit.yaml", "--node-ip", "$(NODE_IP)"]
+          env:
+            - name: NODE_IP
+              {{- if .Values.livekit.nodeIp }}
+              value: {{ .Values.livekit.nodeIp | quote }}
+              {{- else }}
+              valueFrom: { fieldRef: { fieldPath: status.hostIP } }
+              {{- end }}
+            - name: LIVEKIT_KEY
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: livekit-api-key } }
+            - name: LIVEKIT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: livekit-api-secret } }
+            - name: LIVEKIT_KEYS
+              value: "$(LIVEKIT_KEY): $(LIVEKIT_SECRET)"
+          ports:
+            - { containerPort: 7880 }
+            - { containerPort: {{ .Values.livekit.rtc.tcpPort }} }
+          volumeMounts:
+            - { name: config, mountPath: /etc/livekit.yaml, subPath: livekit.yaml }
+          resources: {{- toYaml .Values.livekit.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap: { name: {{ include "outcome.fullname" . }}-livekit }

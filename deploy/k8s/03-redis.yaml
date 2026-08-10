@@ -1,0 +1,37 @@
+# Redis backplane: WS fan-out between API replicas, reconnect replay buffer,
+# 2FA challenges, admin log tickets, and LiveKit multi-node routing.
+# State is ephemeral by design (pure cache/bus) — no persistence needed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: outcome
+spec:
+  selector: { app: redis }
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: outcome
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "no", "--save", ""]
+          ports: [{ containerPort: 6379 }]
+          readinessProbe:
+            exec: { command: ["redis-cli", "ping"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }

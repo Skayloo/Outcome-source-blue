@@ -1,0 +1,82 @@
+# LiveKit SFU, multi-node via Redis. WebRTC media needs direct UDP to each node,
+# so pods run with hostNetwork + anti-affinity (one node per k8s host) — the
+# standard self-hosted LiveKit pattern. Set rtc.use_external_ip / node_ip for
+# your network, and open udp 50000-50200 + tcp 7881 on the hosts' firewalls.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: livekit-config
+  namespace: outcome
+data:
+  livekit.yaml: |
+    port: 7880
+    bind_addresses:
+      - 0.0.0.0
+    # Keys are injected via LIVEKIT_KEYS env (from the Secret) — see the Deployment.
+    redis:
+      address: redis.outcome.svc.cluster.local:6379
+    rtc:
+      tcp_port: 7881
+      port_range_start: 50000
+      port_range_end: 50200
+      # In front of NAT / on cloud VMs flip this on so nodes advertise their public IP.
+      use_external_ip: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: livekit
+  namespace: outcome
+spec:
+  selector: { app: livekit }
+  ports:
+    - name: signal
+      port: 7880
+      targetPort: 7880
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: livekit
+  namespace: outcome
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: livekit }
+  template:
+    metadata:
+      labels: { app: livekit }
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: livekit }
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: livekit
+          image: livekit/livekit-server:latest
+          args: ["--config", "/etc/livekit.yaml"]
+          env:
+            # "key: secret" pair; sourced from the shared Secret so it always
+            # matches what the API signs tokens with.
+            - name: LIVEKIT_KEY
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: livekit-api-key } }
+            - name: LIVEKIT_SECRET
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: livekit-api-secret } }
+            - name: LIVEKIT_KEYS
+              value: "$(LIVEKIT_KEY): $(LIVEKIT_SECRET)"
+          ports:
+            - { containerPort: 7880 }
+            - { containerPort: 7881 }
+          volumeMounts:
+            - name: config
+              mountPath: /etc/livekit.yaml
+              subPath: livekit.yaml
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+      volumes:
+        - name: config
+          configMap: { name: livekit-config }

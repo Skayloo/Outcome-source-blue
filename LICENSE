@@ -1,0 +1,31 @@
+Outcome — proprietary license
+
+Copyright (c) 2026 skayloo. All rights reserved.
+
+This repository and its contents (source code, assets, documentation) are
+proprietary. No permission is granted to use, copy, modify, or distribute
+this source code, in whole or in part, without prior written consent of the
+copyright holder.
+
+The Outcome application is distributed to end users exclusively as prebuilt
+Docker images (`skayloo/outcome-server`, `skayloo/outcome-frontend`). Those
+images may be pulled and self-hosted free of charge for any personal or
+commercial purpose; decompiling, modifying, or redistributing the images or
+their contents is not permitted.
+
+Deployment configuration is published separately under the MIT license at
+https://github.com/Skayloo/Outcome.
+
+Third-party dependencies bundled in the images remain under their respective
+open-source licenses.
+
+No trademark or patent rights are granted by this license. "Outcome", the
+Outcome name, logo and other marks of the copyright holder may not be used to
+name, brand or endorse any derivative or unrelated work.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

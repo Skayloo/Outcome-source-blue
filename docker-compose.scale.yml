@@ -1,0 +1,24 @@
+# Replicated deployment overlay.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.scale.yml up -d --build
+#
+# Runs 3 API replicas behind the frontend nginx (which load-balances via Docker DNS).
+# All cross-replica coordination rides Redis:
+#  - WS broadcast fan-out / per-user delivery / force-close  (outcome:bus pub/sub)
+#  - reconnect replay buffer + global frame sequence          (outcome:replay:* / outcome:seq)
+#  - 2FA partial challenges, admin log-stream tickets
+# Postgres/MinIO stay single-node (scale those at the infra level when needed).
+#
+# NOTE on voice: LiveKit stays a SINGLE node here. Two SFU nodes behind ONE host's
+# NAT advertise conflicting/unreachable media candidates, which breaks audio
+# ("only works after rejoining"). Real LiveKit horizontal scale = one node per
+# physical host with its own public IP — see deploy/k8s (2 nodes, hostNetwork +
+# anti-affinity). Scale that at the infra level, not with a 2nd container here.
+
+services:
+  server:
+    # Replicas can't share one host port — REST/WS are reached through the frontend
+    # nginx at :8080 (which resolves `server` via Docker DNS round-robin).
+    ports: !override []
+    deploy:
+      replicas: 3

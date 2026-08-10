@@ -1,0 +1,327 @@
+# ── Outcome — production Docker Compose ───────────────────────────────────────
+# Edge TLS via caddy-docker-proxy (lucaslorentz/caddy-docker-proxy): the Caddyfile is
+# GENERATED from container labels — each service declares its own routing (see the
+# frontend's `caddy.*` labels), and adding a service to the edge is adding labels, not
+# editing a config file. Auto Let's Encrypt for every host named in the labels.
+# Edge → frontend (HTTP, nginx routes /api + /livekit to the API) → API (N replicas) →
+# Postgres / Redis / MinIO / LiveKit. All secrets come from .env; data services are NOT
+# published on the host. Only Caddy (80/443) and LiveKit media ports are reachable
+# from outside.
+#
+#   cp .env.example .env && edit .env         # fill every secret + your domain
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Migrations run automatically on API start, serialized behind a Postgres advisory
+# lock, so all replicas booting at once is safe.
+name: outcome
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "2" }
+
+services:
+  caddy:
+    # caddy-docker-proxy: watches the Docker socket and BUILDS the Caddyfile from the
+    # `caddy.*` labels of running containers. No mounted config; routing lives on the
+    # services themselves. The data volume is carried over, so existing certs survive.
+    image: lucaslorentz/caddy-docker-proxy:2.10-alpine
+    restart: unless-stopped
+    <<: *logging
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    labels:
+      # Site-less labels on the proxy container become GLOBAL Caddyfile options.
+      caddy.email: ${ACME_EMAIL}
+      # The legacy domain 301s to the canonical one, path and query preserved — old links
+      # land on the same page. (Its DNS record must stay alive for the cert + redirect to
+      # keep working; delete the record only when traffic on it dies out.)
+      caddy_1: ${OUTCOME_LEGACY_DOMAIN}
+      caddy_1.redir: https://${OUTCOME_DOMAIN}{uri} permanent
+      # The mail host is an HTTP no-op, but naming it here makes Caddy obtain and RENEW its
+      # TLS certificate — which the mailserver container reads for SMTP/IMAP (see its mounts).
+      caddy_2: mail.${OUTCOME_DOMAIN}
+      caddy_2.respond: '"Outcome mail" 200'
+    depends_on: [frontend]
+
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      # Behind Caddy the frontend stays plain HTTP — the edge terminates TLS with a
+      # real cert. (Leave TLS_SAN empty; secure context comes from the browser's https URL.)
+      TLS_SAN: ""
+    labels:
+      # The edge site: canonical domain + www. (The legacy domain lives as a 301 on the
+      # caddy container's labels.) nginx inside this container fans /api + /livekit +
+      # /uploads out to the API.
+      caddy: ${OUTCOME_DOMAIN}, www.${OUTCOME_DOMAIN}
+      caddy.encode: zstd gzip
+      # Uploads can be up to 100 MB (enforced by the app); allow some headroom.
+      caddy.request_body.max_size: 110MB
+      caddy.reverse_proxy: "{{upstreams 80}}"
+    depends_on: [server]
+
+  server:
+    image: ${SERVER_IMAGE}
+    build:
+      context: ../../ServerDotnet
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      ASPNETCORE_URLS: "http://0.0.0.0:5000"
+      # Runtime queries ride PgBouncer (transaction pooling). "No Reset On Close" skips Npgsql's
+      # DISCARD ALL on connection return — required with a transaction pooler; the pooler does
+      # its own reset. Pool size is per REPLICA; PgBouncer squeezes them all onto ~20 backends.
+      ConnectionStrings__Postgres: "Host=pgbouncer;Port=5432;Database=outcome;Username=outcome;Password=${POSTGRES_PASSWORD};No Reset On Close=true;Maximum Pool Size=100"
+      # Migrations go STRAIGHT to Postgres — session advisory lock (see EfMigrationRunner).
+      ConnectionStrings__PostgresDirect: "Host=postgres;Port=5432;Database=outcome;Username=outcome;Password=${POSTGRES_PASSWORD}"
+      OUTCOME_Redis__Url: "redis:6379"
+      OUTCOME_Server__Name: "${SERVER_NAME}"
+      OUTCOME_JwtAuth__JwtKey: "${JWT_KEY}"
+      OUTCOME_Minio__Endpoint: "minio:9000"
+      OUTCOME_Minio__AccessKey: "${MINIO_ACCESS_KEY}"
+      OUTCOME_Minio__SecretKey: "${MINIO_SECRET_KEY}"
+      OUTCOME_Minio__Bucket: "${MINIO_BUCKET}"
+      OUTCOME_Minio__UseSsl: "false"
+      # AES-256-GCM at-rest encryption for uploaded files (base64 of 32 bytes). Regenerate per deploy.
+      OUTCOME_Minio__EncryptionKey: "${MINIO_ENC_KEY}"
+      OUTCOME_Voice__LiveKitApiKey: "${LIVEKIT_API_KEY}"
+      OUTCOME_Voice__LiveKitApiSecret: "${LIVEKIT_API_SECRET}"
+      # Browser-facing signaling URL (rides the same-origin /livekit proxy through Caddy).
+      OUTCOME_Voice__LiveKitUrl: "wss://${OUTCOME_DOMAIN}/livekit"
+      OUTCOME_Voice__LiveKitInternalUrl: "ws://livekit:7880"
+      OUTCOME_Email__Host: "${EMAIL_HOST}"
+      OUTCOME_Email__Port: "${EMAIL_PORT}"
+      OUTCOME_Email__Username: "${EMAIL_USERNAME}"
+      OUTCOME_Email__Password: "${EMAIL_PASSWORD}"
+      OUTCOME_Email__From: "${EMAIL_FROM}"
+      OUTCOME_Email__UseSsl: "${EMAIL_USE_SSL}"
+      # SSO. A provider turns ON simply by having both a client id and a secret — the
+      # clients ask /auth/oauth/providers and render only the buttons that will work.
+      # PublicOrigin must be the browser-facing https origin: it builds the redirect_uri
+      # registered with the provider, and behind Caddy the request's own host is internal.
+      OUTCOME_OAuth__PublicOrigin: "https://${OUTCOME_DOMAIN}"
+      OUTCOME_OAuth__Google__ClientId: "${GOOGLE_CLIENT_ID}"
+      OUTCOME_OAuth__Google__ClientSecret: "${GOOGLE_CLIENT_SECRET}"
+      OUTCOME_OAuth__Yandex__ClientId: "${YANDEX_CLIENT_ID}"
+      OUTCOME_OAuth__Yandex__ClientSecret: "${YANDEX_CLIENT_SECRET}"
+      # Apple push. APNS_KEY is the .p8 on ONE line with literal \n between the PEM lines —
+      # the server puts the newlines back. Leave it empty and push is simply off.
+      OUTCOME_Apns__Key: "${APNS_KEY:-}"
+      OUTCOME_Apns__KeyId: "${APNS_KEY_ID:-}"
+      OUTCOME_Apns__TeamId: "${APNS_TEAM_ID:-}"
+      OUTCOME_Apns__BundleId: "${APNS_BUNDLE_ID:-com.outcome.outcome}"
+    healthcheck:
+      # curl, not wget: the aspnet base image ships neither, and the Dockerfile installs curl
+      # precisely for this check. With wget the probe could never succeed — the container sat
+      # permanently `unhealthy`, which would stall any `condition: service_healthy` dependant.
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+    depends_on:
+      postgres: { condition: service_healthy }
+      pgbouncer: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_started }
+    deploy:
+      replicas: ${SERVER_REPLICAS:-3}
+  pgbouncer:
+    # Transaction-mode pooler between the API replicas and Postgres. Npgsql pools client-side
+    # per replica, so N replicas × pool max can blow past Postgres' max_connections; PgBouncer
+    # multiplexes them onto a small steady set of server connections. Migrations bypass it
+    # (ConnectionStrings__PostgresDirect) — they hold a SESSION advisory lock, which
+    # transaction pooling would silently break.
+    image: edoburu/pgbouncer:v1.24.1-p1
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: outcome
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_NAME: outcome
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: 20        # server connections per db — plenty for chat's query mix
+      MAX_CLIENT_CONN: 500
+      # Npgsql uses protocol-level prepared statements; 1.21+ tracks them across pooled sessions.
+      MAX_PREPARED_STATEMENTS: 200
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=$${DB_PASSWORD} psql -h 127.0.0.1 -p 5432 -U outcome -d outcome -c 'SELECT 1' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      postgres: { condition: service_healthy }
+
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      POSTGRES_DB: outcome
+      POSTGRES_USER: outcome
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U outcome -d outcome"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    restart: unless-stopped
+    <<: *logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  livekit:
+    image: livekit/livekit-server:latest
+    # --node-ip advertises the host's PUBLIC IP for media (ICE); media bypasses Caddy.
+    command: ["--node-ip", "${LIVEKIT_NODE_IP}"]
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      # LiveKit reads keys from LIVEKIT_KEYS ("key: secret"), kept out of the config file.
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"
+      # Full config INLINE (not the mounted livekit.yaml) because the webhook section must name
+      # the signing key id, which lives in env — Compose interpolates it here; a static file can't.
+      # Mirrors ./livekit.yaml; keep the two in sync when changing RTC settings.
+      LIVEKIT_CONFIG: |
+        port: 7880
+        bind_addresses:
+          - 0.0.0.0
+        redis:
+          address: redis:6379
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: false
+        # Webhooks feed the API's guest-presence registry (and stale-member cleanup): guests join
+        # LiveKit directly, so these events are how members NOT in the room learn a guest exists.
+        # Who counts as "speaking" — this is what lights the ring on everyone ELSE's tile,
+        # not the client. The defaults assume a raw microphone; we now put a denoiser in
+        # front of it, which makes pauses silent and speech quieter and more even, so the
+        # stock threshold only tripped when somebody raised their voice.
+        audio:
+          # 0-127, and 0 is the LOUDEST — so a higher number counts quieter speech as
+          # active. 35 is the default; 45 covers someone talking normally at arm's length.
+          active_level: 45
+          # How much of the window has to be above that level. 40% wants a sustained
+          # sentence; 20% lights on a short answer too.
+          min_percentile: 20
+          # How often the server tells clients, and how much it smooths. Lower is snappier
+          # at the cost of a little more chatter.
+          update_interval: 300
+          smooth_intervals: 3
+        webhook:
+          api_key: ${LIVEKIT_API_KEY}
+          urls:
+            - http://server:5000/api/v1/livekit/webhook
+    ports:
+      # 7880 (signal) stays internal — the API proxies it. Media MUST be host-reachable:
+      - "7881:7881"                          # ICE/TCP fallback
+      - "7882:7882/udp"                      # ICE/UDP — single muxed port, all participants
+    depends_on:
+      redis: { condition: service_healthy }
+
+  mailserver:
+    # docker-mailserver: Postfix + Dovecot + rspamd (spam filter AND DKIM signing) in one
+    # container. Handles the domain's mailboxes (IMAP) and the app's transactional mail
+    # (SMTP submission). ClamAV stays off — it alone eats ~1.3 GB RAM; rspamd suffices.
+    # Manage accounts/aliases with:  docker exec outcome-mailserver-1 setup email add ...
+    image: ghcr.io/docker-mailserver/docker-mailserver:15.0
+    hostname: mail.${OUTCOME_DOMAIN}
+    restart: unless-stopped
+    <<: *logging
+    ports:
+      - "25:25"      # SMTP — inbound mail from other servers + our outbound
+      - "465:465"    # SMTPS submission (implicit TLS)
+      - "587:587"    # submission (STARTTLS) — the app sends through this
+      - "993:993"    # IMAPS — mail apps read mailboxes here
+    environment:
+      ENABLE_RSPAMD: 1
+      # rspamd is the ONE filter: amavis (the legacy default) must be off or it sits in the
+      # outbound path too — it BOUNCED every submission while rspamd was also enabled.
+      ENABLE_AMAVIS: 0
+      # OpenDKIM SIGNS outbound with the keys in mail-config/opendkim (zero extra config);
+      # rspamd handles filtering and the DMARC/SPF checks, so those daemons stay off.
+      ENABLE_OPENDKIM: 1
+      ENABLE_OPENDMARC: 0
+      ENABLE_POLICYD_SPF: 0
+      ENABLE_CLAMAV: 0
+      ENABLE_FAIL2BAN: 0     # needs NET_ADMIN; edge exposure is small enough without it
+      SPOOF_PROTECTION: 1    # authenticated users may only send as themselves
+      POSTMASTER_ADDRESS: admin@${OUTCOME_DOMAIN}
+      # TLS: reuse the certificate Caddy obtains for mail.outcome.ru (caddy_2 label above);
+      # DMS watches these files, so Caddy's renewals are picked up automatically.
+      SSL_TYPE: manual
+      SSL_CERT_PATH: /certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.${OUTCOME_DOMAIN}/mail.${OUTCOME_DOMAIN}.crt
+      SSL_KEY_PATH: /certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.${OUTCOME_DOMAIN}/mail.${OUTCOME_DOMAIN}.key
+    volumes:
+      - maildata:/var/mail
+      - mailstate:/var/mail-state
+      - maillogs:/var/log/mail
+      - ./mail-config/:/tmp/docker-mailserver/
+      - caddy_data:/certs:ro
+    networks:
+      default:
+        # The app submits mail to this NAME so the cert (mail.outcome.ru) validates —
+        # docker DNS resolves it to the container without leaving the compose network.
+        aliases: ["mail.${OUTCOME_DOMAIN}"]
+    stop_grace_period: 1m
+    healthcheck:
+      test: ["CMD", "ss", "-ltn", "src", ":25"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  minio_data:
+  caddy_data:
+  caddy_config:
+  maildata:
+  mailstate:
+  maillogs:

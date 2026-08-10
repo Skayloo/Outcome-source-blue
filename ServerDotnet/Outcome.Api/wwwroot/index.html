@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Outcome API</title>
+    <style>
+      body { margin: 0 }
+      /* Orange brand accent over Scalar's dark base (theme: none → we own the palette). */
+      :root,
+      .light-mode,
+      .dark-mode {
+        --scalar-color-accent: #F97316;          /* orange-500 — links, active items */
+        --scalar-color-accent-hover: #FB923C;    /* orange-400 */
+        --scalar-color-1: #F4F4F5;               /* primary text */
+        --scalar-color-2: #C9CBD1;               /* secondary text */
+        --scalar-color-3: #8B8E98;               /* muted text */
+        --scalar-background-1: #16130F;          /* warm near-black */
+        --scalar-background-2: #1E1A14;          /* panels */
+        --scalar-background-3: #2A241B;          /* hover / code blocks */
+        --scalar-border-color: #3A3127;          /* warm borders */
+        --scalar-button-1: #F97316;              /* primary button */
+        --scalar-button-1-hover: #FB923C;
+        --scalar-button-1-color: #1A1410;
+        --scalar-sidebar-background-1: var(--scalar-background-2);
+        --scalar-sidebar-item-active-background: rgba(249, 115, 22, 0.14);
+        --scalar-sidebar-color-active: #FB923C;
+        --scalar-link-color: var(--scalar-color-accent);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Scalar API Reference (OpenAPI 3.1) — renders the document served at /openapi/v1.json.
+         theme:none lets our CSS variables above define the orange brand palette. -->
+    <script
+      id="api-reference"
+      data-url="/openapi/v1.json"
+      data-configuration='{"theme":"none","title":"Outcome API","hideDownloadButton":false,"darkMode":true,"hideDarkModeToggle":true}'
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  </body>
+</html>

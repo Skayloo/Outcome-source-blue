@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\Outcome.Abstractions\Outcome.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Shared\Outcome.Domain.Abstractions\Outcome.Domain.Abstractions.csproj" />
+    <ProjectReference Include="..\Outcome.Chat.Domain\Outcome.Chat.Domain.csproj" />
+    <ProjectReference Include="..\Outcome.Chat.Dto\Outcome.Chat.Dto.csproj" />
+    <!-- For cross-module FK configuration (chat/server entities → users/roles). -->
+    <ProjectReference Include="..\..\Identity\Outcome.Identity.Domain\Outcome.Identity.Domain.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.9" />
+  </ItemGroup>
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+</Project>

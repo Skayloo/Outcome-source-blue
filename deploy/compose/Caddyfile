@@ -1,0 +1,14 @@
+# Caddy edge: terminates TLS (auto Let's Encrypt) and reverse-proxies to the frontend.
+# WebSockets (chat + the /livekit signaling path) are proxied transparently.
+{
+	email {$ACME_EMAIL}
+}
+
+{$OUTCOME_DOMAIN} {
+	encode zstd gzip
+	# Uploads can be up to 10 MB (enforced by the app); allow some headroom.
+	request_body {
+		max_size 12MB
+	}
+	reverse_proxy frontend:80
+}

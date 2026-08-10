@@ -1,0 +1,10 @@
+#root {
+  height: 100%;
+  display: flex;
+}
+
+/* The single active page (.connect-page or .app) must fill the root. */
+#root > * {
+  flex: 1;
+  min-width: 0;
+}

@@ -1,0 +1,10 @@
+apiVersion: v2
+name: outcome
+description: Outcome — self-hosted Discord-style chat (API + web + Postgres/Redis/MinIO/LiveKit)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+home: https://github.com/CHANGE_ME/outcome
+sources:
+  - https://github.com/CHANGE_ME/outcome
+keywords: [chat, voice, video, livekit, self-hosted]

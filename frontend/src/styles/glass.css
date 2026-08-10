@@ -1,0 +1,454 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIQUID GLASS — the material layer
+   ───────────────────────────────────────────────────────────────────────────
+   The old shell was a row of opaque slabs butted together: every surface met
+   its neighbour at a hard right angle and the only thing separating them was a
+   1px line. It read as a grid of boxes rather than as depth.
+
+   Here the app is a lit room. One ambient backdrop carries the brand light, and
+   the chrome floats on it as translucent panels with rounded corners, a bright
+   top edge where the light catches, and a shadow underneath. Hierarchy comes
+   from how thick each pane is, not from borders.
+
+   Two rules this file keeps to, both from Apple's material guidance:
+     • never stack one translucent surface directly on another — inner elements
+       tint with flat overlays (--bg-modifier-*), they do not blur again;
+     • bigger surfaces read as thicker — more blur and a deeper shadow than the
+       small floating chips.
+
+   Loaded after app.css/panes.css so it can restyle without editing 3 800 lines
+   of layout, and every value derives from the theme tokens, so the light and
+   deep-ink themes come along for free.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Gap between floating panels, and the radius that makes them read as panels. */
+  --glass-gap: 12px;
+  --radius-panel: 20px;
+
+  /* Material thickness. Structural panels are heavier than transient ones so the
+     chrome never competes with the conversation for attention. */
+  --glass-blur-panel: 26px;
+  --glass-blur-float: 34px;
+
+  /* Softer radii throughout. The interface was drawn with 6/10/16 and looked cut
+     rather than moulded. */
+  --radius-sm: 9px;
+  --radius-md: 13px;
+  --radius-lg: 20px;
+}
+
+/* Tints derive from the theme's own surface colours, so a theme swap re-tints the
+   glass instead of showing the wrong hue through it. They live on BODY, not :root —
+   the themes redefine --bg-* on body.theme-*, and a color-mix resolved up on :root
+   would quietly bake in the dark palette and paint a charcoal slab onto paper. */
+body {
+  --glass-panel:   color-mix(in oklab, var(--bg-secondary) 66%, transparent);
+  --glass-content: color-mix(in oklab, var(--bg-primary) 80%, transparent);
+  --glass-float:   color-mix(in oklab, var(--bg-floating) 72%, transparent);
+  --glass-chip:    color-mix(in oklab, var(--bg-input) 62%, transparent);
+
+  /* Edges. The top edge is brighter — that is where light lands on a real pane. */
+  --glass-edge:     rgba(255, 255, 255, 0.08);
+  --glass-edge-top: rgba(255, 255, 255, 0.14);
+
+  --glass-shadow: 0 10px 30px -12px rgba(4, 2, 10, 0.55), 0 2px 8px rgba(4, 2, 10, 0.32);
+}
+
+/* Paper themes are lit from a different direction: a white edge on a light surface is
+   invisible, so the light catches as a faint dark contour instead. */
+body.theme-light {
+  --glass-edge:     rgba(70, 50, 25, 0.10);
+  --glass-edge-top: rgba(255, 255, 255, 0.65);
+  --glass-shadow:   0 10px 30px -14px rgba(70, 50, 25, 0.28), 0 2px 8px rgba(70, 50, 25, 0.10);
+  /* Paper is close in tone to the room behind it, so the panes need more body than
+     the dark theme's do or they stop reading as separate surfaces at all. */
+  --glass-panel:    color-mix(in oklab, var(--bg-secondary) 78%, transparent);
+  --glass-content:  color-mix(in oklab, var(--bg-primary) 88%, transparent);
+  --glass-float:    color-mix(in oklab, var(--bg-floating) 84%, transparent);
+  --glass-chip:     color-mix(in oklab, var(--bg-input) 78%, transparent);
+}
+
+/* ── The room ─────────────────────────────────────────────────────────────────
+   Two large, very soft washes of the brand's own two hues. They are what the
+   panels blur, and what makes the corners of the app feel lit rather than flat.
+   Fixed, low-contrast and static — nothing here animates, so there is no slow
+   drifting background to make anyone queasy. */
+.app {
+  position: relative;
+  padding: var(--glass-gap);
+  gap: var(--glass-gap);
+  background:
+    radial-gradient(1250px 820px at 4% -14%,
+      color-mix(in oklab, var(--accent) 42%, transparent), transparent 58%),
+    radial-gradient(1000px 720px at 106% 114%,
+      color-mix(in oklab, var(--accent-secondary) 30%, transparent), transparent 60%),
+    radial-gradient(760px 560px at 72% -18%,
+      color-mix(in oklab, var(--accent-secondary) 16%, transparent), transparent 62%),
+    var(--bg-tertiary);
+}
+
+/* ── Structural panels ───────────────────────────────────────────────────────
+   The navigator and the conversation. Rounded, floating, and separated by the
+   ambient light between them rather than by a border. */
+.navigator,
+.panes > .chat-area {
+  border-radius: var(--radius-panel);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge-top);
+  overflow: hidden;
+}
+
+.navigator {
+  background: var(--glass-panel);
+  backdrop-filter: blur(var(--glass-blur-panel)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-panel)) saturate(150%);
+  border-right: 1px solid var(--glass-edge); /* was a hard divider against the chat */
+}
+
+/* The conversation is the content layer: the most opaque surface in the room, because
+   running text over a busy blur is where legibility goes to die. */
+.panes > .chat-area {
+  background: var(--glass-content);
+  backdrop-filter: blur(var(--glass-blur-panel)) saturate(130%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-panel)) saturate(130%);
+}
+
+/* Split view: the second pane already had its own frosting from panes.css. Keep it a
+   shade further back, but drop the inset left border — on a rounded panel that line
+   ran past the corner and looked like a crack. */
+.panes > .chat-area-secondary {
+  background: color-mix(in oklab, var(--bg-primary) 66%, transparent);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-edge-top);
+}
+
+/* Panels are transparent, so anything inside them that painted its own solid background
+   would punch an opaque hole through the glass. */
+.unified-sidebar,
+.channel-sidebar,
+.messages-container,
+.messages-slot,
+.chat-area .chat-header {
+  background: transparent;
+}
+
+/* ── Chrome inside the panels ────────────────────────────────────────────────
+   A hairline under a header is the angular look the panels just got rid of. The
+   header keeps its rank with a whisper of tint and a fade, not a rule. */
+.chat-area .chat-header,
+.unified-sidebar-header,
+.channel-sidebar-header {
+  border-bottom: none;
+  box-shadow: 0 1px 0 var(--glass-edge);
+}
+
+.navigator .server-rail {
+  border-bottom: none;
+  box-shadow: 0 1px 0 var(--glass-edge);
+}
+
+/* ── The composer ────────────────────────────────────────────────────────────
+   A glass strip you type into, sitting on the conversation rather than nailed to
+   the bottom of it. One line tall until the text needs more — the surrounding
+   padding was framing it like a panel, which made a single-line message box take
+   a fifth of the column. */
+.message-input-wrap {
+  border-top: none;
+  padding-top: 8px;
+  padding-bottom: 14px;
+}
+
+.msg-textarea {
+  min-height: 0;
+  padding: 8px 6px;
+}
+
+.message-input-box {
+  background: var(--glass-chip);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elevation-low), inset 0 1px 0 var(--glass-edge-top);
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.message-input-box:focus-within {
+  border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+  box-shadow: var(--elevation-low), inset 0 1px 0 var(--glass-edge-top), var(--glow-accent-sm);
+}
+
+/* The voice dock is viewport-fixed but has to line up with the sidebar rows above it.
+   Its old 12px offset assumed a navigator flush against the window edge; the panels
+   moved inward by the gap when they started floating, and the dock stayed behind. */
+.voice-dock {
+  left: calc(var(--glass-gap) + 11px); /* gap + the panel's 1px edge + the sidebar's own 10px */
+  bottom: calc(66px + var(--glass-gap));
+}
+
+/* ── Floating surfaces ───────────────────────────────────────────────────────
+   Menus, popovers, palettes, modals and drawers. Thinner and blurrier than the
+   structural panels: they are passing through, and you should still sense the
+   room behind them. */
+.context-menu,
+.ctx-menu,
+.server-dropdown,
+.user-popup,
+.emoji-picker,
+.tooltip,
+.cmd-modal,
+.quick-switch-modal,
+.search-overlay-box,
+.explore-modal,
+.profile-modal,
+.forward-modal,
+.bug-modal,
+.srvset-modal,
+.vis-modal,
+.app .member-list {
+  background: var(--glass-float);
+  backdrop-filter: blur(var(--glass-blur-float)) saturate(170%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-float)) saturate(170%);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--elevation-high), inset 0 1px 0 var(--glass-edge-top);
+}
+
+.context-menu,
+.ctx-menu,
+.server-dropdown,
+.user-popup,
+.emoji-picker,
+.tooltip {
+  border-radius: var(--radius-md);
+}
+
+.cmd-modal,
+.quick-switch-modal,
+.search-overlay-box,
+.explore-modal,
+.profile-modal,
+.forward-modal,
+.bug-modal,
+.srvset-modal,
+.vis-modal {
+  border-radius: var(--radius-panel);
+}
+
+/* The member drawer flies in from the right edge, so only its left corners are visible. */
+.app .member-list {
+  border-radius: var(--radius-panel) 0 0 var(--radius-panel);
+  border-left: 1px solid var(--glass-edge);
+}
+
+/* Dimming scrims: a modal task pushes the room back, it does not hide it. */
+.settings-overlay,
+.cmd-overlay,
+.qs-overlay,
+.search-overlay,
+.lightbox-overlay {
+  background: var(--bg-overlay);
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+}
+
+/* ── Controls ────────────────────────────────────────────────────────────────
+   Inputs and the search pill are the one place a light material belongs on top
+   of a panel: they are what you reach for, so they catch more light than what
+   surrounds them. */
+.nav-search,
+.chat-header .search-input,
+.search-overlay-input {
+  background: var(--glass-chip);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-pill);
+}
+
+.nav-search:hover {
+  background: color-mix(in oklab, var(--bg-input) 78%, transparent);
+  border-color: var(--glass-edge-top);
+}
+
+/* ── Accessibility ───────────────────────────────────────────────────────────
+   Translucency is a preference, not a requirement. Turning it off must leave a
+   readable, fully solid interface rather than a washed-out one. */
+@media (prefers-reduced-transparency: reduce) {
+  .navigator,
+  .panes > .chat-area,
+  .panes > .chat-area-secondary,
+  .message-input-box,
+  .context-menu,
+  .ctx-menu,
+  .server-dropdown,
+  .user-popup,
+  .emoji-picker,
+  .tooltip,
+  .cmd-modal,
+  .quick-switch-modal,
+  .search-overlay-box,
+  .explore-modal,
+  .forward-modal,
+  .bug-modal,
+  .srvset-modal,
+  .vis-modal,
+  .app .member-list,
+  .nav-search,
+  .chat-header .search-input,
+  .search-overlay-input,
+  .settings-overlay,
+  .cmd-overlay,
+  .qs-overlay,
+  .search-overlay,
+  .lightbox-overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .navigator { background: var(--bg-secondary); }
+  .panes > .chat-area,
+  .panes > .chat-area-secondary { background: var(--bg-primary); }
+  .context-menu,
+  .ctx-menu,
+  .server-dropdown,
+  .user-popup,
+  .emoji-picker,
+  .tooltip,
+  .cmd-modal,
+  .quick-switch-modal,
+  .search-overlay-box,
+  .explore-modal,
+  .forward-modal,
+  .bug-modal,
+  .srvset-modal,
+  .vis-modal,
+  .app .member-list { background: var(--bg-floating); }
+  .message-input-box,
+  .nav-search,
+  .chat-header .search-input,
+  .search-overlay-input { background: var(--bg-input); }
+  .app { background: var(--bg-tertiary); }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --glass-edge:     rgba(255, 255, 255, 0.26);
+    --glass-edge-top: rgba(255, 255, 255, 0.34);
+  }
+  body.theme-light {
+    --glass-edge:     rgba(70, 50, 25, 0.34);
+    --glass-edge-top: rgba(70, 50, 25, 0.22);
+  }
+}
+
+/* ── Phones ──────────────────────────────────────────────────────────────────
+   The chat gets the whole screen; floating panels with a gap around them would
+   just be a smaller chat. The navigator and member list are off-canvas drawers
+   here, so they keep their glass but square off against the screen edge. */
+@media (max-width: 768px) {
+  .app { padding: 0; gap: 0; }
+
+  .panes > .chat-area {
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+  }
+
+  .navigator {
+    border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+  }
+}
+
+/* ── User profile ────────────────────────────────────────────────────────────
+   Who someone is, opened from the DM header, a message author or a roster row.
+   Same material as the other floating surfaces; the layout is a portrait, then the
+   facts, then what you can do about them. */
+.profile-modal {
+  position: relative;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  padding: 30px 24px 22px;
+  color: var(--text-normal);
+}
+
+.profile-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-circle);
+  color: var(--text-muted);
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.profile-close:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+
+.profile-head { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+
+.profile-avatar-wrap { position: relative; line-height: 0; }
+
+/* The presence dot sits ON the picture, cut out of it, the way every messenger does it. */
+.profile-presence {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-circle);
+  background: var(--text-faint);
+  box-shadow: 0 0 0 3px var(--bg-floating);
+}
+.profile-presence.online { background: var(--green); }
+
+.profile-name {
+  margin-top: 8px;
+  font-size: var(--font-size-xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--header-primary);
+}
+.profile-status { font-size: var(--font-size-sm); color: var(--text-muted); }
+.profile-status.online { color: var(--green); }
+
+.profile-facts { margin-top: 18px; display: flex; flex-direction: column; }
+
+.profile-fact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 2px;
+  font-size: var(--font-size-sm);
+}
+.profile-fact + .profile-fact { border-top: 1px solid var(--glass-edge); }
+.profile-fact svg { color: var(--text-faint); flex-shrink: 0; }
+.pf-label { flex: 1; color: var(--text-muted); }
+.pf-value { font-weight: 600; color: var(--text-normal); }
+.pf-value.accent { color: var(--accent); }
+
+.profile-actions { margin-top: 18px; display: flex; flex-direction: column; gap: 8px; }
+
+.profile-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-modifier-hover);
+  color: var(--text-normal);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.profile-action:hover { background: var(--bg-modifier-active); }
+.profile-action.call { color: var(--green); }
+.profile-action.call:hover { background: color-mix(in oklab, var(--green) 14%, transparent); }
+
+/* The name in a DM header and a message author are people, so they read as pressable. */
+.ch-name.clickable, .msg-author.clickable { cursor: pointer; }
+.ch-name.clickable:hover, .msg-author.clickable:hover { text-decoration: underline; }
+
+/* What the noise filter is actually doing right now, in the settings row that answers it. */
+.ns-active { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-muted); }
+.ns-active.strong { color: var(--green); }

@@ -1,0 +1,18 @@
+# LiveKit SFU config for the Compose/Swarm stack. API keys are injected via the
+# LIVEKIT_KEYS env var (kept out of this file); the advertised media IP is set with
+# --node-ip (LIVEKIT_NODE_IP). Redis keeps signal state consistent across API replicas.
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+redis:
+  address: redis:6379
+rtc:
+  tcp_port: 7881
+  # ALL participants share ONE muxed UDP port. A port RANGE here (one port per participant)
+  # silently caps concurrent voice users at the range size — 55000-55100 meant ~100 people
+  # in voice, total, regardless of hardware. The mux port has no such ceiling and is also
+  # far cheaper for Docker to publish than a 100-port range.
+  udp_port: 7882
+  # The advertised IP is set explicitly via --node-ip, which is more reliable than
+  # STUN-based detection (which returns a router's public IP on a LAN).
+  use_external_ip: false

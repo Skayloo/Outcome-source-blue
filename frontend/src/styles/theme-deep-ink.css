@@ -1,0 +1,61 @@
+/* Deep Ink / Precision — cool near-black, Linear/Raycast-grade restraint.
+   Violet used only as a sharp signal (primary / selection / state); everything
+   else is quiet cool greys separated by hairlines. Zero decorative glow.
+   Applied as body.theme-deep-ink over the tokens.css defaults. */
+
+body.theme-deep-ink {
+  /* Backgrounds — cool near-black, tight tonal steps */
+  --bg-tertiary:   #08080b;
+  --bg-secondary:  #0d0d12;
+  --bg-primary:    #131318;
+  --bg-input:      #1c1c23;
+  --bg-hover:      #18181f;
+  --bg-active:     #23232c;
+  --bg-floating:   #101015;
+  --bg-overlay:    rgba(2, 2, 4, 0.74);
+
+  --bg-modifier-hover:    rgba(255, 255, 255, 0.035);
+  --bg-modifier-active:   rgba(255, 255, 255, 0.055);
+  --bg-modifier-selected: rgba(124, 92, 255, 0.16);
+
+  /* Accent — a sharp, slightly cooler violet signal */
+  --accent:        #7c5cff;
+  --accent-hover:  #8f74ff;
+  --accent-active: #6a48f0;
+  --accent-secondary: #22d3ee;
+
+  /* Text — neutral cool grey-white */
+  --text-normal:   #d6d6de;
+  --text-muted:    #8b8b99;
+  --text-faint:    #61616d;
+  --text-micro:    #494954;
+  --text-link:     #8aa4ff;
+
+  --header-primary:   #f1f1f5;
+  --header-secondary: #b9b9c4;
+
+  --interactive-normal: #9a9aa8;
+  --interactive-hover:  #e4e4ec;
+  --interactive-active: #ffffff;
+  --interactive-muted:  #3a3a44;
+  --channel-icon: #61616d;
+
+  --border:        rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.11);
+  --border-glow:   transparent;
+
+  --role-owner:  #fb7185;
+  --role-admin:  #fbbf24;
+  --role-mod:    #34d399;
+  --role-member: #8b8b99;
+
+  --scrollbar-thin-thumb:  #23232c;
+  --scrollbar-auto-thumb:  #23232c;
+
+  /* Crisp, cool shadows; glow reduced to a hairline ring (no bloom). */
+  --elevation-low:  0 1px 2px rgba(0, 0, 0, 0.5);
+  --elevation-med:  0 8px 24px -8px rgba(0, 0, 0, 0.66), 0 2px 6px rgba(0, 0, 0, 0.5);
+  --elevation-high: 0 20px 52px -14px rgba(0, 0, 0, 0.8), 0 6px 16px rgba(0, 0, 0, 0.55);
+  --glow-accent:    0 0 0 1px color-mix(in oklab, var(--accent) 55%, transparent);
+  --glow-accent-sm: 0 0 0 1px color-mix(in oklab, var(--accent) 40%, transparent);
+}

@@ -1,0 +1,75 @@
+# Outcome API — freely scalable: all cross-replica state rides Redis
+# (WS fan-out, replay buffer, 2FA challenges, log tickets) and migrations
+# are serialized behind a Postgres advisory lock.
+apiVersion: v1
+kind: Service
+metadata:
+  name: server
+  namespace: outcome
+spec:
+  selector: { app: server }
+  ports:
+    - port: 5000
+      targetPort: 5000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  namespace: outcome
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: server }
+  template:
+    metadata:
+      labels: { app: server }
+    spec:
+      containers:
+        - name: server
+          # Build & push from ServerDotnet/Dockerfile; retag via kustomize `images:`.
+          image: outcome-server:latest
+          ports: [{ containerPort: 5000 }]
+          env:
+            - name: ASPNETCORE_URLS
+              value: "http://0.0.0.0:5000"
+            - name: ConnectionStrings__Postgres
+              value: "Host=postgres;Port=5432;Database=outcome;Username=outcome;Password=$(PG_PASSWORD)"
+            - name: PG_PASSWORD
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: postgres-password } }
+            - name: OUTCOME_Redis__Url
+              value: "redis:6379"
+            - name: OUTCOME_Server__Name
+              value: "Outcome Server"
+            - name: OUTCOME_JwtAuth__JwtKey
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: jwt-key } }
+            - name: OUTCOME_Minio__Endpoint
+              value: "minio:9000"
+            - name: OUTCOME_Minio__AccessKey
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: minio-access-key } }
+            - name: OUTCOME_Minio__SecretKey
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: minio-secret-key } }
+            - name: OUTCOME_Minio__Bucket
+              value: "outcome-uploads"
+            - name: OUTCOME_Minio__UseSsl
+              value: "false"
+            - name: OUTCOME_Voice__LiveKitApiKey
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: livekit-api-key } }
+            - name: OUTCOME_Voice__LiveKitApiSecret
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: livekit-api-secret } }
+            # Public signaling URL the BROWSER can reach (wss behind your ingress/LB);
+            # the /livekit reverse-proxy path is used when this isn't directly reachable.
+            - name: OUTCOME_Voice__LiveKitUrl
+              value: "wss://chat.example.com/livekit"
+            - name: OUTCOME_Voice__LiveKitInternalUrl
+              value: "ws://livekit:7880"
+          readinessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 250m, memory: 384Mi }

@@ -1,0 +1,17 @@
+# Everything is open except what follows. Written as bare Disallow lines on purpose: an
+# anchored "Allow: /$" alongside them invites a crawler to read the root as the ONLY thing
+# permitted, and there is nothing here that needs an Allow to be reachable.
+User-agent: *
+
+# Guest links ARE the access token — a crawler putting one in an index hands the room to
+# whoever searches for it.
+Disallow: /guest/
+Disallow: /admin
+Disallow: /api/
+
+# The app itself. It is behind a sign-in and renders entirely in the browser, so what a
+# crawler would file away is an empty page — one that then competes with the landing at "/"
+# for the same searches and wins nothing.
+Disallow: /app
+
+Sitemap: https://outcome.ru/sitemap.xml

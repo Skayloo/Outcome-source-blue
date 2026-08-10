@@ -1,0 +1,24 @@
+# LiveKit SFU (single node per host). Redis is used for signal state so it stays
+# consistent with API replicas; true multi-node LiveKit means ONE node per PHYSICAL
+# host with its own public IP (see deploy/k8s) — two nodes behind one host's NAT
+# just fight over reachable media candidates and break audio.
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+keys:
+  # Must match OUTCOME_Voice__LiveKitApiKey/Secret in docker-compose.yml.
+  LK349f99acd290: c4e6b63ef38d978da6d021507f1a06b72ba495fdd08c1a79
+redis:
+  address: redis:6379
+rtc:
+  tcp_port: 7881
+  port_range_start: 55000
+  port_range_end: 55100
+  # Advertise the host's PUBLIC IP as an ICE candidate. Required whenever the browser
+  # reaches LiveKit across a network (VPS/NAT) — otherwise the node only offers its
+  # internal Docker IP (172.x) which no remote client can reach, so audio never flows.
+  # The advertised IP is now set explicitly via `--node-ip` (LIVEKIT_NODE_IP) in
+  # docker-compose — the host's LAN IP for a local network, or the public IP on a VPS.
+  # That beats STUN detection on a LAN (which returns the router's public IP and breaks
+  # hairpin routing), so external-IP auto-detection stays off.
+  use_external_ip: false

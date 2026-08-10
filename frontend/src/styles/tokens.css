@@ -1,0 +1,148 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — "Warm Graphite + Iris"
+   Outcome's own identity: a warm near-black graphite room (faint violet hush,
+   not cold blue-black), a single electric-iris signature for actions/selection/
+   state, hairline borders + layered warm shadows instead of RGB glow. The brand
+   cyan lives on only as the logo's second gradient stop + the sparing link hue.
+   Single source of truth — overridable by the optional theme classes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Backgrounds — warm graphite ramp (content = lightest, rail = deepest) */
+  --bg-tertiary:   #141118;  /* server rail, deepest */
+  --bg-secondary:  #1b1722;  /* channel sidebar, member list, panels */
+  --bg-primary:    #221d2b;  /* message/content area */
+  --bg-input:      #2c2639;  /* inputs, composer */
+  --bg-hover:      #272031;
+  --bg-active:     #332b43;
+  --bg-floating:   #1b1722;  /* menus, popovers */
+  --bg-overlay:    rgba(8, 6, 12, 0.72);
+
+  /* Background modifiers (semi-transparent overlays) */
+  --bg-modifier-hover:    rgba(255, 255, 255, 0.04);
+  --bg-modifier-active:   rgba(255, 255, 255, 0.06);
+  --bg-modifier-selected: rgba(139, 92, 246, 0.14);
+
+  /* Accent — electric iris. Secondary = brand cyan (logo gradient continuity). */
+  --accent:        #8b5cf6;
+  --accent-hover:  #9d78f8;
+  --accent-active: #7b4cef;
+  --accent-primary:   var(--accent);
+  --accent-secondary: #22d3ee;
+  --accent-gradient:  linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  --border-glow:      transparent;
+
+  /* Text — soft warm white on graphite */
+  --text-normal:   #e8e4f0;
+  --text-muted:    #a49db4;
+  --text-faint:    #7f7791;
+  --text-micro:    #635c73;
+  --text-link:     #67c9f5;
+
+  /* Semantic text aliases */
+  --text-positive: #34d399;
+  --text-warning:  #fbbf24;
+  --text-danger:   #fb6a6a;
+
+  /* Header colors */
+  --header-primary:   #f5f2fb;
+  --header-secondary: #c3bcd2;
+
+  /* Interactive icon states */
+  --interactive-normal: #b0a8c0;
+  --interactive-hover:  #e8e4f0;
+  --interactive-active: #ffffff;
+  --interactive-muted:  #4d4660;
+
+  /* Channel icon */
+  --channel-icon: #7f7791;
+
+  /* Status colors */
+  --green:         #34d399;
+  --yellow:        #fbbf24;
+  --red:           #fb6a6a;
+
+  /* Borders — hairlines (surfaces separate by tone + 1px line, not glow) */
+  --border:        rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  /* Role colors */
+  --role-owner:    #fb7185;
+  --role-admin:    #fbbf24;
+  --role-mod:      #34d399;
+  --role-member:   #a49db4;
+
+  /* Elevation shadows — layered + tinted toward the warm near-black canvas. */
+  --elevation-low:  0 1px 2px rgba(8, 5, 14, 0.4), 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+  --elevation-med:  0 8px 24px -8px rgba(6, 4, 12, 0.6), 0 2px 6px rgba(6, 4, 12, 0.4);
+  --elevation-high: 0 20px 52px -14px rgba(4, 2, 10, 0.72), 0 6px 16px rgba(4, 2, 10, 0.45);
+  /* Accent glow — the brand's one purposeful lighting effect (active/focus/brand only). */
+  --glow-accent:    0 0 0 1px color-mix(in oklab, var(--accent) 55%, transparent),
+                    0 0 20px -3px color-mix(in oklab, var(--accent) 42%, transparent);
+  --glow-accent-sm: 0 0 14px -4px color-mix(in oklab, var(--accent) 48%, transparent);
+
+  /* Scrollbar colors */
+  --scrollbar-thin-thumb:  #2a2438;
+  --scrollbar-auto-thumb:  #2a2438;
+  --scrollbar-auto-track:  transparent;
+
+  /* ── Motion ────────────────────────────────────────────────────────────────
+     Custom easing curves — the built-in CSS easings are too weak to feel
+     intentional. ease-out for enter/exit (instant feedback), in-out for
+     on-screen movement, drawer for iOS-like sheets. Never ease-in on UI. */
+  --ease-out:    cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* Duration scale — UI stays under 300ms; press feedback is near-instant. */
+  --dur-press:  140ms;
+  --dur-fast:   170ms;  /* tooltips, hovers */
+  --dur-menu:   190ms;  /* dropdowns, popovers, context menus */
+  --dur-modal:  240ms;  /* modals, drawers */
+
+  /* Transition timing (kept as tokens; now carry the strong ease-out curve) */
+  --transition-fast:   var(--dur-press) var(--ease-out);
+  --transition-normal: var(--dur-fast) var(--ease-out);
+  --transition-slow:   var(--dur-menu) var(--ease-out);
+
+  /* Typography — Onest is the signature UI family (self-hosted, full Cyrillic). */
+  --font-display: "Onest", "Segoe UI Variable Display", system-ui, sans-serif;
+  --font-body:    "Onest", "Segoe UI Variable Text", system-ui, sans-serif;
+  --font-mono:    "Cascadia Code", "JetBrains Mono", "Consolas", monospace;
+
+  /* Typography scale (fixed px — product UI, tight ratio) */
+  --font-size-xxs: 10px;
+  --font-size-xs:  12px;
+  --font-size-sm:  13px;
+  --font-size-md:  14px;
+  --font-size-lg:  16px;
+  --font-size-xl:  20px;
+  --font-size-xxl: 24px;
+
+  /* Radii */
+  --radius-sm:     6px;
+  --radius-md:     10px;
+  --radius-lg:     16px;
+  --radius-pill:   24px;
+  --radius-circle: 50%;
+
+  /* Spacing */
+  --sidebar-width: 240px;
+  --header-height: 48px;
+
+  /* Message layout */
+  --message-group-spacing: 17px;
+  --message-inline-spacing: 3px;
+  --avatar-size: 40px;
+  --avatar-offset-left: 16px;
+  --message-content-left: 72px;
+  --message-content-right: 48px;
+  /* Reading measure for message PROSE only — media, voice players and attachments
+     keep the full column. The old 900px column ran ~125 characters per line at 14px,
+     nearly double what the eye tracks comfortably. */
+  --measure: 68ch;
+  /* Feed column. Sized to the measure above plus the avatar gutter, so the
+     conversation reads as one centered composition instead of text stranded on the
+     left of a much wider column. Feed and composer share it — one spine. */
+  --feed-column: 760px;
+}

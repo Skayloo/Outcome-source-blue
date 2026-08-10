@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Outcome.Abstractions\Outcome.Abstractions.csproj" />
+    <ProjectReference Include="..\Outcome.Domain.Abstractions\Outcome.Domain.Abstractions.csproj" />
+    <ProjectReference Include="..\..\Identity\Outcome.Identity.Domain\Outcome.Identity.Domain.csproj" />
+    <ProjectReference Include="..\..\Identity\Outcome.Identity.Dto\Outcome.Identity.Dto.csproj" />
+    <ProjectReference Include="..\..\Identity\Outcome.Identity.Db\Outcome.Identity.Db.csproj" />
+    <ProjectReference Include="..\..\Chat\Outcome.Chat.Domain\Outcome.Chat.Domain.csproj" />
+    <ProjectReference Include="..\..\Chat\Outcome.Chat.Dto\Outcome.Chat.Dto.csproj" />
+    <ProjectReference Include="..\..\Chat\Outcome.Chat.Db\Outcome.Chat.Db.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+</Project>

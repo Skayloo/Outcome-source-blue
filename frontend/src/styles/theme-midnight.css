@@ -1,0 +1,40 @@
+/* Midnight theme — near-black, OLED-friendly. Applied as body.theme-midnight,
+   overriding the tokens.css :root defaults. */
+
+body.theme-midnight {
+  /* Backgrounds — pure dark */
+  --bg-tertiary:   #000000;
+  --bg-secondary:  #0a0a0b;
+  --bg-primary:    #0f0f10;
+  --bg-input:      #161618;
+  --bg-hover:      #161618;
+  --bg-active:     #1f1f22;
+  --bg-overlay:    rgba(0, 0, 0, 0.8);
+
+  --bg-modifier-hover:    rgba(255, 255, 255, 0.04);
+  --bg-modifier-active:   rgba(255, 255, 255, 0.07);
+  --bg-modifier-selected: rgba(255, 255, 255, 0.10);
+
+  /* Text — slightly dimmer to suit the darker base */
+  --text-normal:   #d4d6da;
+  --text-muted:    #8b8e96;
+  --text-faint:    #6b6e76;
+  --text-micro:    #54565d;
+
+  --header-primary:   #ececee;
+  --header-secondary: #aaadb4;
+
+  --interactive-normal: #aaadb4;
+  --interactive-hover:  #d4d6da;
+  --interactive-active: #ffffff;
+  --interactive-muted:  #3a3b40;
+
+  --channel-icon: #6b6e76;
+
+  --border:        #1c1c1f;
+  --border-strong: #2a2a2e;
+  --border-glow:   rgba(255, 255, 255, 0.04);
+
+  --scrollbar-thin-thumb:  #050506;
+  --scrollbar-auto-thumb:  #050506;
+}

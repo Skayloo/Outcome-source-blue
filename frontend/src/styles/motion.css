@@ -1,0 +1,135 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOTION SYSTEM — Emil Kowalski's design-engineering principles.
+   Press feedback, origin-aware entrances, staggered reveals. Every UI motion
+   is ease-out and under ~250ms; enter animations never start from scale(0).
+   Everything here degrades to instant/opacity under prefers-reduced-motion.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Press feedback ────────────────────────────────────────────────────────
+   Pressable controls scale down slightly on :active so the UI feels like it
+   heard the click. Curated to buttons + rail tiles — never list rows. */
+.btn-primary,
+.input-btn,
+.ac-btn,
+.rail-btn,
+.rail-server,
+.server-header-btn,
+.settings-close-btn,
+.category-add-btn,
+.vw-controls button,
+.bug-new-btn,
+.bug-pager-btn,
+.bug-filter-tab,
+.bug-back,
+.bug-attach-add,
+.explore-join,
+.bug-status-select {
+  transition:
+    transform var(--dur-press) var(--ease-out),
+    background var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    filter var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+.btn-primary:active,
+.input-btn:active,
+.ac-btn:active,
+.rail-btn:active,
+.rail-server:active,
+.settings-close-btn:active,
+.bug-new-btn:active,
+.bug-pager-btn:active:not(:disabled),
+.bug-filter-tab:active,
+.bug-back:active,
+.bug-attach-add:active,
+.explore-join:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* The primary button lifts a touch on hover (pointer devices only) and presses flat. */
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+  .btn-primary:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+}
+
+/* ── Overlay + modal entrances ─────────────────────────────────────────────
+   Backdrops fade; modals fade + settle from 0.96 (never from nothing) around a
+   centered origin — modals aren't anchored to a trigger. */
+@keyframes oc-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes oc-modal-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.965); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes oc-menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes oc-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.settings-overlay.open {
+  animation: oc-overlay-in var(--dur-fast) var(--ease-out) both;
+}
+.bug-modal,
+.explore-modal,
+.vis-modal {
+  animation: oc-modal-in var(--dur-modal) var(--ease-out) both;
+  transform-origin: center;
+  will-change: transform, opacity;
+}
+
+/* Dropdowns / context menus scale in from their top edge (toward the trigger). */
+.server-dropdown {
+  animation: oc-menu-in var(--dur-menu) var(--ease-out) both;
+  transform-origin: top;
+  will-change: transform, opacity;
+}
+
+/* ── Staggered reveals (modal contents only — mounted on user action) ───────
+   Cards cascade in with a short delay. Safe here: the modal is foreground when
+   it mounts. Kept short so it never feels slow. */
+.bug-list .bug-card,
+.admin-bug-list .admin-bug-card,
+.explore-grid .explore-card {
+  animation: oc-rise var(--dur-fast) var(--ease-out) both;
+}
+.bug-list .bug-card:nth-child(1),
+.admin-bug-list .admin-bug-card:nth-child(1),
+.explore-grid .explore-card:nth-child(1) { animation-delay: 0ms; }
+.bug-list .bug-card:nth-child(2),
+.admin-bug-list .admin-bug-card:nth-child(2),
+.explore-grid .explore-card:nth-child(2) { animation-delay: 40ms; }
+.bug-list .bug-card:nth-child(3),
+.admin-bug-list .admin-bug-card:nth-child(3),
+.explore-grid .explore-card:nth-child(3) { animation-delay: 80ms; }
+.bug-list .bug-card:nth-child(4),
+.admin-bug-list .admin-bug-card:nth-child(4),
+.explore-grid .explore-card:nth-child(4) { animation-delay: 120ms; }
+.bug-list .bug-card:nth-child(n + 5),
+.admin-bug-list .admin-bug-card:nth-child(n + 5),
+.explore-grid .explore-card:nth-child(n + 5) { animation-delay: 150ms; }
+
+/* ── Reduced motion ────────────────────────────────────────────────────────
+   Keep opacity fades (they aid comprehension); drop movement + press-scale. */
+@media (prefers-reduced-motion: reduce) {
+  .settings-overlay.open,
+  .bug-modal, .explore-modal, .vis-modal,
+  .server-dropdown,
+  .bug-list .bug-card, .admin-bug-list .admin-bug-card, .explore-grid .explore-card {
+    animation: oc-overlay-in var(--dur-fast) var(--ease-out) both;
+    transform: none !important;
+  }
+  .btn-primary:active, .input-btn:active, .ac-btn:active, .rail-btn:active,
+  .rail-server:active, .settings-close-btn:active, .bug-new-btn:active,
+  .bug-pager-btn:active, .bug-filter-tab:active, .bug-back:active,
+  .bug-attach-add:active, .explore-join:active,
+  .btn-primary:hover { transform: none; }
+}

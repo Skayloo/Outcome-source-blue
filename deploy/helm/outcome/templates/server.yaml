@@ -1,0 +1,75 @@
+{{- $pgHost := include "outcome.postgresHost" . -}}
+{{- $pgPort := ternary "5432" (toString .Values.postgres.external.port) .Values.postgres.enabled -}}
+{{- $pgDb := ternary "outcome" .Values.postgres.external.database .Values.postgres.enabled -}}
+{{- $pgUser := ternary "outcome" .Values.postgres.external.username .Values.postgres.enabled -}}
+{{- $minioSsl := ternary "false" (toString .Values.minio.external.useSsl) .Values.minio.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "outcome.fullname" . }}-server
+  labels: {{- include "outcome.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: server }
+  ports: [{ port: 5000, targetPort: 5000 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "outcome.fullname" . }}-server
+  labels: {{- include "outcome.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.server.autoscaling.enabled }}
+  replicas: {{ .Values.server.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: server }
+  template:
+    metadata:
+      labels:
+        {{- include "outcome.labels" . | nindent 8 }}
+        app.kubernetes.io/component: server
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: server
+          image: {{ include "outcome.serverImage" . }}
+          imagePullPolicy: {{ .Values.server.image.pullPolicy }}
+          ports: [{ containerPort: 5000 }]
+          env:
+            - { name: ASPNETCORE_URLS, value: "http://0.0.0.0:5000" }
+            - name: PG_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: postgres-password } }
+            - name: ConnectionStrings__Postgres
+              value: "Host={{ $pgHost }};Port={{ $pgPort }};Database={{ $pgDb }};Username={{ $pgUser }};Password=$(PG_PASSWORD)"
+            - { name: OUTCOME_Redis__Url, value: {{ include "outcome.redisUrl" . | quote }} }
+            - { name: OUTCOME_Server__Name, value: {{ .Values.config.serverName | quote }} }
+            - name: OUTCOME_JwtAuth__JwtKey
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: jwt-key } }
+            - { name: OUTCOME_Minio__Endpoint, value: {{ include "outcome.minioEndpoint" . | quote }} }
+            - name: OUTCOME_Minio__AccessKey
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: minio-access-key } }
+            - name: OUTCOME_Minio__SecretKey
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: minio-secret-key } }
+            - { name: OUTCOME_Minio__Bucket, value: {{ .Values.config.minioBucket | quote }} }
+            - { name: OUTCOME_Minio__UseSsl, value: {{ $minioSsl | quote }} }
+            - name: OUTCOME_Voice__LiveKitApiKey
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: livekit-api-key } }
+            - name: OUTCOME_Voice__LiveKitApiSecret
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: livekit-api-secret } }
+            - { name: OUTCOME_Voice__LiveKitUrl, value: "wss://{{ .Values.ingress.host }}/livekit" }
+            - { name: OUTCOME_Voice__LiveKitInternalUrl, value: {{ include "outcome.livekitInternalUrl" . | quote }} }
+            - { name: OUTCOME_Email__Host, value: {{ .Values.config.email.host | quote }} }
+            - { name: OUTCOME_Email__Port, value: {{ .Values.config.email.port | quote }} }
+            - { name: OUTCOME_Email__From, value: {{ .Values.config.email.from | quote }} }
+            - { name: OUTCOME_Email__UseSsl, value: {{ .Values.config.email.useSsl | quote }} }
+          readinessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          resources: {{- toYaml .Values.server.resources | nindent 12 }}

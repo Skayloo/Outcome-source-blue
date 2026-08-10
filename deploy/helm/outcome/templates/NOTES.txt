@@ -1,0 +1,31 @@
+Outcome is deploying as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+1. Wait for the pods to become ready:
+     kubectl -n {{ .Release.Namespace }} get pods -w
+
+2. Open your app:
+{{- if .Values.ingress.enabled }}
+     https://{{ .Values.ingress.host }}
+   (make sure {{ .Values.ingress.host }} DNS points at your ingress controller{{ if and .Values.ingress.tls.enabled .Values.ingress.tls.clusterIssuer }}; cert-manager will issue the TLS cert via "{{ .Values.ingress.tls.clusterIssuer }}"{{ end }})
+{{- else }}
+     (ingress disabled — expose {{ include "outcome.fullname" . }}-frontend:80 behind your own edge/TLS)
+{{- end }}
+   Complete first-run setup to create the owner account.
+
+3. Voice/video (LiveKit) media:
+   LiveKit runs with hostNetwork ({{ .Values.livekit.replicas }} replica(s), one per node) and
+   advertises {{ if .Values.livekit.nodeIp }}nodeIp {{ .Values.livekit.nodeIp }}{{ else }}each node's hostIP{{ end }}.
+   Media does NOT traverse the ingress — open tcp {{ .Values.livekit.rtc.tcpPort }} and
+   udp {{ .Values.livekit.rtc.portRangeStart }}-{{ .Values.livekit.rtc.portRangeEnd }} on those nodes'
+   firewalls, and ensure their advertised IPs are reachable by browsers.
+
+{{- if not .Values.secrets.existingSecret }}
+{{- if or (not .Values.secrets.jwtKey) (not .Values.secrets.postgresPassword) }}
+
+WARNING: set fresh secrets before a real deployment, e.g.:
+     --set secrets.jwtKey=$(openssl rand -hex 32) \
+     --set secrets.postgresPassword=$(openssl rand -hex 24) \
+     --set secrets.minioAccessKey=... --set secrets.minioSecretKey=... \
+     --set secrets.livekitApiKey=... --set secrets.livekitApiSecret=...
+{{- end }}
+{{- end }}

@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "outcome.fullname" . }}-frontend
+  labels: {{- include "outcome.labels" . | nindent 4 }}
+spec:
+  selector: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: frontend }
+  ports: [{ port: 80, targetPort: 80 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "outcome.fullname" . }}-frontend
+  labels: {{- include "outcome.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/component: frontend }
+  template:
+    metadata:
+      labels:
+        {{- include "outcome.labels" . | nindent 8 }}
+        app.kubernetes.io/component: frontend
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: frontend
+          image: {{ include "outcome.frontendImage" . }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports: [{ containerPort: 80 }]
+          env:
+            # nginx resolves the API upstream per-request via cluster DNS. The default is the
+            # kubeadm CoreDNS ClusterIP; check yours: kubectl -n kube-system get svc kube-dns.
+            - { name: DNS_RESOLVER, value: {{ .Values.frontend.dnsResolver | default "10.96.0.10" | quote }} }
+            - { name: BACKEND_UPSTREAM, value: "{{ include "outcome.fullname" . }}-server.{{ .Release.Namespace }}.svc.cluster.local:5000" }
+            # Behind the Ingress the frontend is plain HTTP — the Ingress terminates TLS.
+            - { name: TLS_SAN, value: "" }
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            periodSeconds: 10
+          resources: {{- toYaml .Values.frontend.resources | nindent 12 }}

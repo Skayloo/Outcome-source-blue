@@ -1,0 +1,51 @@
+# Single-node Postgres. For production prefer a managed database or a proper
+# HA operator (CloudNativePG / Zalando); the app only needs a connection string.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: outcome
+spec:
+  selector: { app: postgres }
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: outcome
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres }
+  template:
+    metadata:
+      labels: { app: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports: [{ containerPort: 5432 }]
+          env:
+            - name: POSTGRES_DB
+              value: outcome
+            - name: POSTGRES_USER
+              value: outcome
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: postgres-password } }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "outcome", "-d", "outcome"] }
+            periodSeconds: 5
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 10Gi } }

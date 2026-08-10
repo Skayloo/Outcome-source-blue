@@ -1,0 +1,79 @@
+# ───────────────────────────── .NET ─────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+.vs/
+artifacts/
+[Tt]est[Rr]esults/
+*.nupkg
+project.lock.json
+
+# ──────────────────────────── Node ──────────────────────────────
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+playwright-report/
+test-results/
+coverage/
+
+# ──────────────────────────── Rust / Tauri (being removed) ──────
+target/
+Cargo.lock.bak
+
+# ──────────────────────────── Go (legacy backend) ───────────────
+*.exe
+*.exe~
+chatserver.exe
+owncord-server
+Server/tmp/
+build-errors.log
+
+# ──────────────────────── Runtime / data ────────────────────────
+# ANCHOR runtime paths (leading slash / explicit prefix). An unanchored `data/`,
+# `uploads/` or `*.db` matches at ANY depth, and git on Windows compares ignore
+# patterns case-insensitively (core.ignorecase=true) — so `*.db` silently swallowed
+# the entire Outcome.Identity.Db + Outcome.Chat.Db projects and `uploads/` swallowed
+# Outcome.Chat.Core/Uploads/. All three were missing from the repo; a fresh clone
+# could not build. Keep new runtime rules anchored so they can't eat source folders.
+/data/
+/uploads/
+Server/uploads/   # legacy Go backend's on-disk file store (superseded by MinIO)
+*.db
+*.db-wal
+*.db-shm
+# Belt-and-braces for the `*.db` file rule above: the trailing slash scopes this
+# negation to DIRECTORIES, so *.Db projects are tracked while real SQLite files
+# (and Thumbs.db) stay ignored. The directory itself must be un-ignored — git never
+# descends into an excluded directory, so re-including files inside one is impossible.
+!*.Db/
+*.pem
+acme_certs/
+
+# ──────────────────────── Secrets / local env ───────────────────
+.env
+.env.local
+*.local.yaml
+appsettings.Development.local.json
+
+# ──────────────────────────── OS / editor ───────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Claude Code personal settings
+.claude/settings.local.json
+
+# Mail server state (account hashes + DKIM private keys) lives on the server only
+deploy/compose/mail-config/
+
+# Third-party crypto payment gateway (GPL-3.0), vendored for reference — kept OUT of this
+# proprietary tree on purpose. It runs as a separate service, never linked into our code.
+/tokenpay/
+
+# Apple signing/push keys — secrets, never in the repo (kept in ~/.outcome/)
+*.p8
+*.p12
+*.mobileprovision

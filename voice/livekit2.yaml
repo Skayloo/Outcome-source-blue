@@ -1,0 +1,15 @@
+# LiveKit node 2 (started by docker-compose.scale.yml). Distinct RTC ports so both
+# nodes can publish media ports on the same host; rooms are distributed via Redis.
+port: 7880
+bind_addresses:
+  - 0.0.0.0
+keys:
+  # Must match OUTCOME_Voice__LiveKitApiKey/Secret in docker-compose.yml.
+  LK349f99acd290: c4e6b63ef38d978da6d021507f1a06b72ba495fdd08c1a79
+redis:
+  address: redis:6379
+rtc:
+  tcp_port: 7891
+  port_range_start: 55200
+  port_range_end: 55300
+  use_external_ip: false

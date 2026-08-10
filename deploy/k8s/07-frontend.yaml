@@ -1,0 +1,82 @@
+# Frontend nginx: serves the SPA and reverse-proxies /api + /livekit to the
+# `server` Service (same-origin, no CORS).
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: outcome
+spec:
+  selector: { app: frontend }
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: outcome
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: frontend }
+  template:
+    metadata:
+      labels: { app: frontend }
+    spec:
+      containers:
+        - name: frontend
+          # Build & push from frontend/Dockerfile; retag via kustomize `images:`.
+          image: outcome-frontend:latest
+          ports: [{ containerPort: 80 }]
+          env:
+            # Cluster DNS IP for nginx's per-request upstream resolution
+            # (kubectl -n kube-system get svc kube-dns). 10.96.0.10 = kubeadm default.
+            - name: DNS_RESOLVER
+              value: "10.96.0.10"
+            - name: BACKEND_UPSTREAM
+              value: "server.outcome.svc.cluster.local:5000"
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+---
+# Entry point. The Ingress TERMINATES TLS with a real cert (cert-manager/Let's Encrypt)
+# and proxies to the frontend over plain HTTP on :80 — correct and expected: the browser
+# loads https://<host> (a SECURE CONTEXT → mic/camera/screen share work) and the
+# unencrypted in-cluster hop is invisible to it. So the frontend image needs NO TLS_SAN
+# here (leave its built-in self-signed HTTPS off). WebSockets (incl. the /livekit
+# signaling proxy) need the long read timeout below.
+#
+# NOTE on voice/video MEDIA: LiveKit's RTP media (ICE, UDP/TCP) does NOT flow through the
+# Ingress (an L7 proxy) — the browser reaches it DIRECTLY at LiveKit's advertised node IP
+# + media ports. So LiveKit runs with hostNetwork on a node with a public IP and its media
+# ports must be reachable (see 05-livekit.yaml). Only the wss SIGNALING rides the Ingress
+# via the same-origin /livekit path.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: outcome
+  namespace: outcome
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    # cert-manager issues + renews the TLS cert for the host below.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [chat.example.com]   # ← your domain
+      secretName: outcome-tls     # cert-manager writes the cert here
+  rules:
+    - host: chat.example.com   # ← your domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port: { number: 80 }

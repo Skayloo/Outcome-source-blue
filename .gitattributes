@@ -1,0 +1,7 @@
+# Shell scripts and container config MUST stay LF — CRLF breaks the shebang
+# (#!/bin/sh\r → "not found") and Docker/nginx config parsing.
+*.sh    text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+Dockerfile text eol=lf
+Caddyfile  text eol=lf
