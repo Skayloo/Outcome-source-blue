@@ -144,10 +144,36 @@ public static class UploadEndpoints
             var stream = storage.OpenRead(att.StoredAs);
             if (stream is null) return Results.NotFound();
 
-            ctx.Response.Headers.ContentDisposition = ContentDisposition("inline", att.Filename);
-            return Results.Stream(stream, att.MimeType, enableRangeProcessing: true);
+            // Never let an upload decide it is a document. The stored MIME type comes from the
+            // client whenever MimeSniffer does not recognise the magic bytes, so a file uploaded
+            // as text/html used to be served as text/html, inline, on this origin — a page with
+            // script, reading the session token and the E2EE keys out of the browser's storage.
+            //
+            // Only what we render inline is served inline, with its own type; everything else is
+            // a download of opaque bytes. The sandbox header is the second lock: it strips the
+            // response of an origin, so even a type that slips through can run nothing and reach
+            // nothing.
+            var inline = InlineSafe.Contains(att.MimeType);
+            ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
+            ctx.Response.Headers.ContentDisposition =
+                ContentDisposition(inline ? "inline" : "attachment", att.Filename);
+            return Results.Stream(stream, inline ? att.MimeType : "application/octet-stream",
+                enableRangeProcessing: true);
         });
     }
+
+    /// <summary>
+    /// The only types the client renders in place, and therefore the only ones served with their
+    /// own Content-Type. Nothing here can carry script: SVG is deliberately absent — it is an
+    /// image everywhere except in a browser, where it is a document that can run JavaScript.
+    /// PDF is absent for the same reason.
+    /// </summary>
+    private static readonly HashSet<string> InlineSafe = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png", "image/jpeg", "image/gif", "image/webp",
+        "audio/mp4", "audio/mpeg", "audio/ogg", "audio/webm",
+        "video/mp4", "video/webm", "video/quicktime",
+    };
 
     /// <summary>
     /// Build an RFC 6266 Content-Disposition value that is safe for HTTP headers (ASCII only).
