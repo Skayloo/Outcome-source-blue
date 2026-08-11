@@ -5,6 +5,12 @@ The supported way to run Outcome is the deployment kit —
 prebuilt images; nothing is built from source. This page covers what the kit does not: the
 shape of the stack, the decisions that bite, and how we run it ourselves.
 
+The source those images are built from is published too, at
+[Outcome-source-blue](https://github.com/Skayloo/Outcome-source-blue) — so the claims on this
+page can be checked rather than taken on trust: no telemetry, and no encryption anywhere in
+this edition. It is readable, not open source: the licence there grants no right to use,
+modify or redistribute the code, and running Outcome still means pulling the images.
+
 ## The stack
 
 | Service | |

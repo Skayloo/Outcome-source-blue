@@ -8,7 +8,7 @@ README, policy page and marketing line has to say which one it is talking about.
 This page is the source of truth. If it disagrees with something else, this page is right and
 the other thing is a bug.
 
-|                                   | RED (`outcome.ru`, commercial) | BLUE (public self-hosted images) |
+|                                   | RED (`outcome.ru`, commercial) | BLUE (self-hosted; images and source public) |
 | --------------------------------- | ------------------------------ | -------------------------------- |
 | Transport (HTTPS / WSS)           | TLS                            | TLS                              |
 | Direct messages, end-to-end       | **Yes** — X25519 + XSalsa20-Poly1305, keys never leave the device | **No** — stored as typed |
