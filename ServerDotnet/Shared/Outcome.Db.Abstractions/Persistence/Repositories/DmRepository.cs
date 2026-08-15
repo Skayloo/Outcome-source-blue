@@ -14,6 +14,11 @@ public sealed class DmRepository(OutcomeDbContext db) : IDmRepository
             join p2 in db.DmParticipants.AsNoTracking() on p1.ChannelId equals p2.ChannelId
             join c in db.Channels.AsNoTracking() on p1.ChannelId equals c.Id
             where p1.UserId == userA && p2.UserId == userB && c.Type == "dm"
+            // Oldest wins, and it has to be spelled out: nothing stops a pair from ending up with
+            // two dm channels (opening one is itself a find-then-create race), and an unordered
+            // Take(1) lets Postgres hand each side a different one — two people typing into two
+            // channels, each seeing an empty conversation.
+            orderby p1.ChannelId
             select p1.ChannelId).Take(1).ToListAsync(ct);
         return ids.Count > 0 ? ids[0] : null;
     }
@@ -108,6 +113,12 @@ public sealed class DmRepository(OutcomeDbContext db) : IDmRepository
                     unread.TryGetValue(r.ChannelId, out var uc) ? uc : 0,
                     peerReads.TryGetValue(r.ChannelId, out var pr) ? pr : 0);
             })
+            // Newest conversation first, the way every messenger orders this list. The comment
+            // above called the last message "the sort key" and nothing ever sorted by it, so the
+            // order was whatever the join happened to produce — stable enough to look deliberate.
+            // Ordering by message id, not timestamp: ids are monotonic and need no parsing, and
+            // a channel with no messages yet sorts last rather than first.
+            .OrderByDescending(d => d.LastMessageId ?? 0)
             .ToList();
     }
 }

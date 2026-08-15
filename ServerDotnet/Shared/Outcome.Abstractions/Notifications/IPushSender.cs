@@ -33,7 +33,10 @@ public sealed record PushMessage(
     long ChannelId,
     long RecipientId,
     string? Encrypted = null,
-    string? SenderKey = null);
+    string? SenderKey = null,
+    /// <summary>Signed URL of one image from the message, shown in the banner itself. Null for
+    /// anything that is not a picture: a notification cannot preview a zip.</summary>
+    string? ImageUrl = null);
 
 /// <summary>
 /// An incoming call, on its way to a phone whose app is not running.

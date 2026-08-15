@@ -1,5 +1,7 @@
 import { useStoreState } from "@lib/useStore";
 import { membersStore } from "@stores/members.store";
+import { friendsStore, addOutgoingRequest, promoteToFriend } from "@stores/friends.store";
+import { api } from "@lib/services";
 import { authStore } from "@stores/auth.store";
 import { openDm } from "@lib/dm";
 import { startCall } from "@lib/call";
@@ -40,6 +42,7 @@ export function UserProfileModal(
 ): React.ReactElement {
   const m = useStoreState(membersStore).members.get(userId);
   const me = useStoreState(authStore).user;
+  const fr = useStoreState(friendsStore);
   const self = me?.id === userId;
 
   const name = m?.username ?? username;
@@ -47,6 +50,35 @@ export function UserProfileModal(
   const online = m != null && m.status !== "offline";
   const role = m?.role?.toLowerCase() ?? "member";
   const since = m?.createdAt != null ? monthYear(m.createdAt) : null;
+
+  const isFriend = fr.friends.some((u) => u.id === userId);
+  const requested = fr.outgoing.some((u) => u.id === userId);
+  const theyAsked = fr.incoming.some((u) => u.id === userId);
+  const asUser = { id: userId, username: name, avatar: pic, status: online ? "online" : "offline" };
+
+  const friendButton = isFriend ? (
+    <div className="profile-action muted" aria-disabled>
+      <Icon name="check" size={17} /> У вас в друзьях
+    </div>
+  ) : theyAsked ? (
+    <button
+      className="profile-action"
+      onClick={() => run(async () => { await api.acceptFriend(userId); promoteToFriend(asUser); })}
+    >
+      <Icon name="check" size={17} /> Принять заявку в друзья
+    </button>
+  ) : requested ? (
+    <div className="profile-action muted" aria-disabled>
+      <Icon name="check" size={17} /> Заявка отправлена
+    </div>
+  ) : (
+    <button
+      className="profile-action"
+      onClick={() => run(async () => { await api.sendFriendRequest(userId); addOutgoingRequest(asUser); })}
+    >
+      <Icon name="user-plus" size={17} /> Добавить в друзья
+    </button>
+  );
 
   async function run(fn: () => Promise<unknown> | unknown): Promise<void> {
     onClose();
@@ -104,6 +136,11 @@ export function UserProfileModal(
               <button className="profile-action call" onClick={() => run(() => startCall(userId, name))}>
                 <Icon name="phone" size={17} /> Позвонить
               </button>
+              {/* Friendship, in the same four states the mobile sheet shows. It was missing
+                  here entirely, which made the card able to open a private chat with somebody
+                  but not to befriend them — and left the friends list reachable only from a
+                  screen most people never open. Nothing about it depends on a role. */}
+              {friendButton}
             </div>
           )}
         </div>

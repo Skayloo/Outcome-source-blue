@@ -1,13 +1,26 @@
-// AudioPipeline — unified audio pipeline: input volume + VAD gating
+// AudioPipeline — unified audio pipeline: input volume + VAD gating + loudness
 //
 // Architecture:
-//   rawMicTrack → AudioContext source
-//       ├──→ AnalyserNode (VAD reads raw audio here — always sees real signal)
-//       └──→ GainNode (inputVolume × vadGate) → MediaStreamDestination → WebRTC sender
+//   micTrack → AudioContext source
+//       ├──→ AnalyserNode (VAD)
+//       └──→ GainNode (inputVolume × vadGate) → make-up gain → compressor
+//              → MediaStreamDestination → WebRTC sender
+//
+// The source is LiveKit's `mediaStreamTrack`, and that is the DENOISER'S OUTPUT whenever a
+// processor is attached — the getter returns `processor.processedTrack ?? _mediaStreamTrack`.
+// This header used to claim the analyser saw raw audio; it has not since the day a processor
+// was first set, and the VAD thresholds here were tuned against denoised signal.
+//
+// Loudness lives at the END of this chain on purpose. The browser's own AGC would do the same
+// job, but it runs BEFORE the denoiser and keeps raising the room's noise floor, which leaves
+// the model, the speaking ring and the speech gate all reading a silent room as speech.
 //
 // The pipeline is always active while in a voice session. This avoids
 // creating/destroying it when volume changes, and gives the VAD a stable
 // analyser that's independent of LiveKit's track lifecycle.
+
+/** Replaces what the browser's AGC used to add, applied after the model instead of before. */
+const MAKEUP_GAIN = 2;
 
 import { Track, type Room, type LocalAudioTrack } from "livekit-client";
 import { loadPref, savePref } from "@components/settings/helpers";
@@ -41,13 +54,17 @@ export function micCaptureOptions(): { echoCancellation: boolean; noiseSuppressi
     // Two suppressors in series over-suppress and leave the hum anyway — ours is the only
     // one on the signal whenever it is running.
     noiseSuppression: enhanced ? false : loadPref("noiseSuppression", true),
-    // AGC STAYS ON, and the theory that said otherwise lost to the evidence. Switching it
-    // off was meant to hand the model a steadier noise floor, since the browser applies it
-    // before our worklet. But the filter was already doing its job with AGC on, and without
-    // it everyone came through at about half the volume — AGC is what makes a call sound as
-    // even and as loud as Meet does. An improvement nobody could hear is not worth halving
-    // the loudness of every voice.
-    autoGainControl: loadPref("autoGainControl", true),
+    // AGC is off while the model is running, and this is the second attempt at that. The
+    // first one was right about the cause and wrong about the cost: AGC sits BEFORE the
+    // worklet and keeps lifting the room's noise floor, so the model — and the speaking
+    // indicator, and the gate that is supposed to protect speech — all lose their fixed
+    // reference and stay triggered on a silent room. Turning it off fixed that and left
+    // everyone half as loud, so it was reverted.
+    //
+    // What was missing is the other half: the loudness has to come back AFTER the model,
+    // where it cannot move the floor the model reads. The pipeline does that now with make-up
+    // gain and a compressor, so this can be off for the reason it always should have been.
+    autoGainControl: enhanced ? false : loadPref("autoGainControl", true),
   };
 }
 
@@ -197,10 +214,25 @@ export class AudioPipeline {
 
       const dest = ctx.createMediaStreamDestination();
 
-      // Wire: source → analyser (tap) and source → gain → dest
+      // The loudness AGC used to provide, moved to where it belongs: after the model. Make-up
+      // gain lifts the voice back to the level people expect, and the compressor catches the
+      // peaks that lift would otherwise clip. Both sit downstream of the denoiser, so neither
+      // can raise the noise floor it measures — which is the whole reason AGC had to go.
+      const makeup = ctx.createGain();
+      makeup.gain.setValueAtTime(MAKEUP_GAIN, ctx.currentTime);
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-24, ctx.currentTime);
+      comp.knee.setValueAtTime(30, ctx.currentTime);
+      comp.ratio.setValueAtTime(4, ctx.currentTime);
+      comp.attack.setValueAtTime(0.003, ctx.currentTime);
+      comp.release.setValueAtTime(0.25, ctx.currentTime);
+
+      // Wire: source → analyser (tap) and source → gain → make-up → compressor → dest
       source.connect(analyser);
       source.connect(gainNode);
-      gainNode.connect(dest);
+      gainNode.connect(makeup);
+      makeup.connect(comp);
+      comp.connect(dest);
 
       this.audioPipelineCtx = ctx;
       this.audioPipelineGain = gainNode;

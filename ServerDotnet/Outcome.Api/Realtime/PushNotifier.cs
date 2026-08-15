@@ -38,6 +38,7 @@ public sealed partial class PushNotifier(
     private const int MaxEnvelopeChars = 3200;
 
     public void QueueMessage(Space space, long channelId, long senderId, string senderName, string content,
+        string? imageUrl,
         IReadOnlyList<long>? dmParticipants, long? serverId)
     {
         if (!push.Enabled) return;
@@ -48,7 +49,7 @@ public sealed partial class PushNotifier(
         {
             try
             {
-                await NotifyAsync(space, channelId, senderId, senderName, content, dmParticipants, serverId);
+                await NotifyAsync(space, channelId, senderId, senderName, content, imageUrl, dmParticipants, serverId);
             }
             catch (Exception ex)
             {
@@ -86,6 +87,7 @@ public sealed partial class PushNotifier(
     }
 
     private async Task NotifyAsync(Space space, long channelId, long senderId, string senderName, string content,
+        string? imageUrl,
         IReadOnlyList<long>? dmParticipants, long? serverId)
     {
         await using var scope = scopeFactory.CreateAsyncScopeFor(space);
@@ -139,7 +141,9 @@ public sealed partial class PushNotifier(
                 // Only when they asked to see message text: someone who turned previews off
                 // does not want their device quietly putting the words back.
                 wantsText ? (senderKey is null ? null : content) : null,
-                wantsText ? senderKey : null);
+                wantsText ? senderKey : null,
+                // A preview the recipient asked not to see should not arrive as a picture either.
+                wantsText ? imageUrl : null);
 
             var outcome = await push.SendAsync(d.Token, d.Sandbox, message);
             if (outcome == PushOutcome.Gone) await devices.RemoveAsync(d.Token);

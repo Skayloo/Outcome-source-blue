@@ -71,7 +71,8 @@ public sealed class JwtCurrentUserMiddleware(RequestDelegate next)
 
                     // Session revocation check: the bearer token must map to a live session row.
                     var tokenHash = ExtractTokenHash(ctx);
-                    if (tokenHash is null || !await SessionAliveAsync(sessions, cache, tokenHash, ctx.RequestAborted))
+                    if (tokenHash is null
+                        || !await SessionAliveAsync(sessions, cache, space.Space.Id, tokenHash, ctx.RequestAborted))
                     {
                         ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
                         await ctx.Response.WriteAsJsonAsync(new ErrorEnvelope("UNAUTHORIZED", "session expired or revoked"));
@@ -80,10 +81,15 @@ public sealed class JwtCurrentUserMiddleware(RequestDelegate next)
 
                     // Permissions are claim-based (role_claims ∪ user_claims); the int64 bitfield
                     // exposed on ICurrentUser is derived from those claims for the override math.
-                    if (!cache.TryGetValue($"perm:{user.Id}", out IReadOnlyList<string>? permNames) || permNames is null)
+                    // Keyed by SPACE and user: IMemoryCache is one instance for the whole process
+                    // and every space numbers its users from 1, so "perm:5" alone hands one space's
+                    // effective permissions to a different person in another. The space check above
+                    // stops a token crossing spaces; it does nothing about a cache key that does.
+                    var permKey = AuthCacheKeys.Perm(space.Space.Id, user.Id);
+                    if (!cache.TryGetValue(permKey, out IReadOnlyList<string>? permNames) || permNames is null)
                     {
                         permNames = await permissions.GetEffectiveAsync(user.Id, ctx.RequestAborted);
-                        cache.Set($"perm:{user.Id}", permNames, CacheTtl);
+                        cache.Set(permKey, permNames, CacheTtl);
                     }
                     current.Set(user.Id, user.RoleId, Permissions.ToBits(permNames), permNames, tokenHash);
                 }
@@ -102,9 +108,12 @@ public sealed class JwtCurrentUserMiddleware(RequestDelegate next)
     }
 
     private static async Task<bool> SessionAliveAsync(
-        ISessionRepository sessions, IMemoryCache cache, string tokenHash, CancellationToken ct)
+        ISessionRepository sessions, IMemoryCache cache, long spaceId, string tokenHash, CancellationToken ct)
     {
-        var key = "sess:" + tokenHash;
+        // A token hash cannot collide across spaces, and a foreign token is already turned away
+        // above — so the space here is not fixing a bug, it is making sure this entry can never
+        // answer for a space it was not read in, whatever happens to the check above.
+        var key = AuthCacheKeys.Session(spaceId, tokenHash);
         if (cache.TryGetValue(key, out bool alive)) return alive;
 
         var session = await sessions.GetByTokenHashAsync(tokenHash, ct);

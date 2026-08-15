@@ -3,6 +3,7 @@ using Outcome.Shared.Abstractions.Messaging;
 using Outcome.Shared.Abstractions.Persistence;
 using Outcome.Application.Common;
 using Outcome.Domain.Errors;
+using Outcome.Shared.Abstractions.Security;
 using Perms = Outcome.Shared.Abstractions.Authorization.Permissions;
 
 namespace Outcome.Application.Realtime;
@@ -15,7 +16,8 @@ public sealed class CreateMessageHandler(
     IDmRepository dms,
     IBlockRepository blocks,
     IServerRepository servers,
-    IRoleRepository roles) : IRequestHandler<CreateMessageCommand, CreatedMessage>
+    IRoleRepository roles,
+    IFileUrlSigner fileUrls) : IRequestHandler<CreateMessageCommand, CreatedMessage>
 {
     private const int MaxMessageLength = 4000;
 
@@ -81,7 +83,7 @@ public sealed class CreateMessageHandler(
             ? await attachments.AttachToMessageAsync(cmd.Attachments, id, ct)
             : (IReadOnlyList<Domain.Entities.Attachment>)Array.Empty<Domain.Entities.Attachment>();
         var attachmentDtos = linked
-            .Select(a => new AttachmentDto(a.Id, a.Filename, a.Size, a.MimeType, $"/api/v1/files/{a.Id}", a.Width, a.Height, a.DurationMs, a.Waveform))
+            .Select(a => new AttachmentDto(a.Id, a.Filename, a.Size, a.MimeType, fileUrls.Sign(a.Id), a.Width, a.Height, a.DurationMs, a.Waveform))
             .ToList();
 
         return new CreatedMessage(id, timestamp, content, channel.Type, dmParticipants, attachmentDtos, forwardedFrom, channel.ServerId);

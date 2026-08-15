@@ -20,9 +20,16 @@ public sealed class CurrentServerMiddleware(RequestDelegate next)
 
     public async Task Invoke(
         HttpContext ctx, CurrentServerContext current, CurrentUserContext user,
-        IServerRepository servers, IPermissionRepository permissions, IMemoryCache cache)
+        IServerRepository servers, IPermissionRepository permissions, IMemoryCache cache,
+        Outcome.Infrastructure.Tenancy.ICurrentSpace space)
     {
         var ct = ctx.RequestAborted;
+        // Every key below is scoped to the space. IMemoryCache is one instance for the whole
+        // process, but each space is a separate database numbering its users and servers from 1 —
+        // so "owner:1" or "mem:5:1" describes a different server and a different person in each of
+        // them. Unscoped, this cache handed one space's membership, role and ownership answers to
+        // another: exactly the checks below exist to prevent, defeated by their own cache.
+        var spaceId = space.Space.Id;
         long serverId = 1;   // unauthenticated default (public endpoints don't scope to a tenant)
         if (user.IsAuthenticated)
         {
@@ -35,13 +42,13 @@ public sealed class CurrentServerMiddleware(RequestDelegate next)
             // spoofed X-Server-Id would let a non-member act inside someone else's server. Mirrors
             // the WebSocket auth path. Fall back to the user's primary membership.
             if (long.TryParse(header, out var sid) && sid > 0
-                && await CachedAsync(cache, $"mem:{user.UserId}:{sid}", LongTtl, () => servers.IsMemberAsync(sid, user.UserId, ct)))
+                && await CachedAsync(cache, AuthCacheKeys.Member(spaceId, user.UserId, sid), LongTtl, () => servers.IsMemberAsync(sid, user.UserId, ct)))
             {
                 serverId = sid;
             }
             else
             {
-                var first = await CachedAsync(cache, $"first:{user.UserId}", LongTtl, () => servers.GetFirstForUserAsync(user.UserId, ct));
+                var first = await CachedAsync(cache, AuthCacheKeys.FirstServer(spaceId, user.UserId), LongTtl, () => servers.GetFirstForUserAsync(user.UserId, ct));
                 if (first > 0) serverId = first;
             }
         }
@@ -55,11 +62,11 @@ public sealed class CurrentServerMiddleware(RequestDelegate next)
             // role). No assignment → JwtCurrentUserMiddleware's global perms stand (unchanged behavior).
             // Cached as a plain long with 0 = "no per-server assignment" so the common no-role
             // case is cacheable too (a null result would bypass the cache every request).
-            var memberRole = await CachedAsync(cache, $"mrole:{user.UserId}:{serverId}", ShortTtl,
+            var memberRole = await CachedAsync(cache, AuthCacheKeys.MemberRole(spaceId, user.UserId, serverId), ShortTtl,
                 async () => await servers.GetMemberRoleAsync(serverId, user.UserId, ct) ?? 0L);
             if (memberRole is var psr && psr != 0 && psr != user.RoleId)
             {
-                var names = await CachedAsync(cache, $"perm:{user.UserId}:{serverId}", ShortTtl,
+                var names = await CachedAsync(cache, AuthCacheKeys.Perm(spaceId, user.UserId, serverId), ShortTtl,
                     () => permissions.GetEffectiveForServerAsync(user.UserId, serverId, ct));
                 user.Set(user.UserId, psr, Perms.ToBits(names), names, user.SessionTokenHash ?? string.Empty);
             }
@@ -68,7 +75,7 @@ public sealed class CurrentServerMiddleware(RequestDelegate next)
             // the global Administrator bypass). Skip if already a global admin.
             if ((user.Permissions & Outcome.Domain.Permissions.Permission.Administrator) == 0)
             {
-                var ownerId = await CachedAsync(cache, $"owner:{serverId}", LongTtl, async () =>
+                var ownerId = await CachedAsync(cache, AuthCacheKeys.Owner(spaceId, serverId), LongTtl, async () =>
                 {
                     var info = await servers.GetAsync(serverId, ct);
                     return info?.OwnerId ?? 0L;

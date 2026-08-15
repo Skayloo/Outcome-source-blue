@@ -52,6 +52,33 @@ carries no audio: signalling succeeded over the proxy, media had nowhere to go.
 7882/UDP is the one that matters. If it is blocked, LiveKit falls back to 7881/TCP — which
 works, and is measurably worse under loss. Open the UDP one.
 
+## TURN: off for now, and what it will cost to turn back on
+
+The embedded relay is off (`TURN_ENABLED=0`). It was added to survive networks that mangle
+UDP — a VPN tunnel dropping calls every ten seconds — and it took voice down for everyone
+instead. Worth having eventually; not worth having on the terms it was first deployed with.
+
+The trap is that **the relay's media does not travel on the TLS port you publish.** LiveKit
+listens on 11802 for the TURN handshake and then allocates media on 30000–40000, which docker
+never published. While the server sat in the router's DMZ that range happened to be reachable
+and the thing worked, including on the day it was deployed. DMZ came off, the range went dark,
+and every client that took a relay candidate hit a ten-second ICE timeout with nothing wrong
+in any log: signalling fine, tokens fine, `participant_connection_aborted` and no reason given.
+
+So bringing it back means three things together, and any one of them alone leaves it broken:
+
+1. Narrow the relay range — `turn.relay_range_start` / `relay_range_end`, say 30000–30049.
+2. Publish that range from the container, and forward it on whatever sits in front.
+3. Verify with the DMZ **closed**. An open DMZ makes a misconfigured relay look like a working
+   one, which is exactly how this shipped.
+
+Mind the cost of step 2 on a host with docker's userland proxy: one process per published
+port. Fifty ports, fifty processes.
+
+**Until then, if UDP is being mangled, 7881/TCP already covers it.** It is published,
+reachable, and LiveKit falls back to it on its own — the same failure handled with nothing new
+to operate.
+
 ## Guests
 
 A guest link mints a token for an anonymous visitor. The display name is suffixed server-side

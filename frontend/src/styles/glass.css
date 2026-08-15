@@ -443,6 +443,10 @@ body.theme-light {
 }
 .profile-action:hover { background: var(--bg-modifier-active); }
 .profile-action.call { color: var(--green); }
+/* A state, not a control: "already friends" and "request sent" are things the card reports,
+   so they must not invite a click that would do nothing. */
+.profile-action.muted { color: var(--text-muted); cursor: default; }
+.profile-action.muted:hover { background: var(--bg-modifier-hover); }
 .profile-action.call:hover { background: color-mix(in oklab, var(--green) 14%, transparent); }
 
 /* The name in a DM header and a message author are people, so they read as pressable. */

@@ -4,6 +4,8 @@ using Outcome.Application.Channels;
 using Outcome.Application.Search;
 using Outcome.Domain.Entities;
 
+using Outcome.Shared.Abstractions.Security;
+
 namespace Outcome.Infrastructure.Persistence.Repositories;
 
 public sealed class ChannelRepository(OutcomeDbContext db) : IChannelRepository
@@ -73,7 +75,7 @@ public sealed class ChannelOverrideRepository(OutcomeDbContext db) : IChannelOve
     }
 }
 
-public sealed class MessageRepository(OutcomeDbContext db) : IMessageRepository
+public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUrls) : IMessageRepository
 {
     public async Task<IReadOnlyList<MessageDto>> GetForApiAsync(long channelId, long before, int limit, long requestingUserId, CancellationToken ct = default, bool pinnedOnly = false)
     {
@@ -122,7 +124,7 @@ public sealed class MessageRepository(OutcomeDbContext db) : IMessageRepository
         var attByMsg = atts.GroupBy(a => a.MessageId).ToDictionary(
             g => g.Key,
             g => (IReadOnlyList<AttachmentInfoDto>)g.Select(a =>
-                new AttachmentInfoDto(a.Id, a.Filename, a.Size, a.MimeType, $"/api/v1/files/{a.Id}", a.Width, a.Height, a.DurationMs, a.Waveform, listened.Contains(a.Id), listenedByOthers.Contains(a.Id))).ToList());
+                new AttachmentInfoDto(a.Id, a.Filename, a.Size, a.MimeType, fileUrls.Sign(a.Id), a.Width, a.Height, a.DurationMs, a.Waveform, listened.Contains(a.Id), listenedByOthers.Contains(a.Id))).ToList());
 
         var reactByMsg = reactRows.GroupBy(r => r.MessageId).ToDictionary(
             g => g.Key,

@@ -339,7 +339,13 @@ public sealed class WebSocketHandler(
             }
 
             // Whoever has no socket open hears about it from Apple instead.
+            // The first picture, if there is one, rides along so the banner can show it instead of
+            // the word "attachment". The URL is already signed and already expiring — it is the
+            // same one the app would fetch, handed over a little earlier.
+            var pushImage = created.Attachments
+                .FirstOrDefault(a => a.Mime.StartsWith("image/", StringComparison.Ordinal))?.Url;
             pushNotifier.QueueMessage(auth.Space, channelId, auth.UserId, auth.Username, created.Content,
+                pushImage,
                 created.DmParticipantIds, created.DmParticipantIds is null ? created.ServerId ?? auth.ServerId : null);
         }
         catch (DomainException ex)

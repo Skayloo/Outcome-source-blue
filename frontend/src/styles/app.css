@@ -963,6 +963,36 @@
   flex-shrink: 0; padding-bottom: 4px; user-select: none;
   font-variant-numeric: tabular-nums;
 }
+/* Author line inside a channel bubble. A DM never shows it — two people, no ambiguity. */
+.dm-author {
+  font-size: 13px; font-weight: 600; line-height: 1.2;
+  margin-bottom: 2px; cursor: pointer;
+}
+.dm-author:hover { text-decoration: underline; }
+/* One photo: fills the bubble, keeps its own shape, capped so a tall shot cannot take
+   over the column. No inner frame — the bubble's corners are the frame. */
+.msg-photo { margin-top: 4px; }
+.msg-photo img {
+  display: block; width: 100%; height: auto; max-height: 420px;
+  object-fit: contain; border-radius: 10px; cursor: zoom-in;
+}
+/* Two or more: one block, 2pt seams, tiles cropped on purpose — the grid owns the shape. */
+.msg-album {
+  margin-top: 4px; display: grid; gap: 2px;
+  grid-template-columns: 1fr 1fr; border-radius: 10px; overflow: hidden;
+}
+.msg-album img { display: block; width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; aspect-ratio: 1; }
+/* Three: the first one spans the top, like the phone. */
+.msg-album.n3 img:first-child { grid-column: 1 / -1; aspect-ratio: 16 / 10; }
+
+/* A message that is only pictures loses the bubble's padding: 12px of inset frames text
+   nicely and reads as a fat border around a photo. */
+.dm-bubble.photo-only { padding: 0; overflow: hidden; }
+.dm-bubble.photo-only .msg-photo,
+.dm-bubble.photo-only .msg-album { margin-top: 0; }
+.dm-bubble.photo-only .msg-photo img,
+.dm-bubble.photo-only .msg-album { border-radius: 0; }
+
 .dm-bubble img { max-width: 100%; }
 .dm-bubble .msg-text { margin: 0; }
 .message.dm-row.grouped { margin-top: 2px; min-height: 0; }
@@ -995,6 +1025,10 @@
 .message .msg-text {
   font-size: var(--font-size-md); line-height: 1.5; word-break: break-word;
   max-width: var(--measure);
+  /* Keep the line breaks the sender typed. HTML collapses them by default, so a message
+     written across three lines on the phone arrived here as one run-on paragraph. pre-wrap
+     rather than pre: newlines are honoured, long lines still wrap on their own. */
+  white-space: pre-wrap;
 }
 /* Bubbles already carry their own cap; don't fight it. */
 .dm-bubble .msg-text { max-width: none; }
@@ -3564,6 +3598,17 @@
 .inbox-list { padding: 4px 8px 10px; }
 
 /* Pinned friend-requests card. */
+/* The Friends row that replaced the "Inbox" title. It is a button wearing the header's
+   clothes, so it lines up with every other sidebar header while behaving like a link. */
+.friends-entry {
+  width: 100%; background: none; border: none; border-bottom: 1px solid var(--border-glow, var(--border));
+  cursor: pointer; text-align: left; color: var(--accent);
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.friends-entry .server-name { flex: 1; color: var(--header-primary); }
+.friends-entry:hover { background: color-mix(in oklab, var(--accent) 8%, transparent); }
+.friends-entry:active { background: color-mix(in oklab, var(--accent) 14%, transparent); }
+
 .inbox-request-card {
   display: flex; align-items: center; gap: 10px; width: 100%;
   margin: 6px 0 10px; padding: 11px 12px; border-radius: 12px; cursor: pointer;

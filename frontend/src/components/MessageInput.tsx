@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
 import { useStoreState } from "@lib/useStore";
+import { authStore } from "@stores/auth.store";
 import { channelsStore } from "@stores/channels.store";
 import { dmStore } from "@stores/dm.store";
 import { membersStore } from "@stores/members.store";
@@ -179,10 +180,13 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
     setMentionQ(m ? m[2]! : null);
     setMentionIdx(0);
   }
+  // Yourself is not a candidate — mentioning yourself notifies nobody. The iOS client has always
+  // filtered it out; the web one listed you among the people you could ping.
+  const me = authStore.getState().user?.id ?? 0;
   const mentionCands = mentionQ === null
     ? []
     : [...mentionMembers.members.values()]
-        .filter((u) => u.username.toLowerCase().startsWith(mentionQ.toLowerCase()))
+        .filter((u) => u.id !== me && u.username.toLowerCase().startsWith(mentionQ.toLowerCase()))
         .slice(0, 8);
   function applyMention(username: string): void {
     const ta = taRef.current;

@@ -56,6 +56,9 @@ builder.Services.AddScoped<ICurrentServer>(sp => sp.GetRequiredService<CurrentSe
 // and admin log-stream tickets all move to Redis so ANY number of API replicas behaves
 // like one server. Without it, everything stays in-process (single-instance mode).
 var redisUrl = builder.Configuration["Redis:Url"];
+builder.Services.AddSingleton<Outcome.Shared.Abstractions.Security.IFileUrlSigner,
+    Outcome.Api.Security.FileUrlSigner>();
+
 if (!string.IsNullOrWhiteSpace(redisUrl))
 {
     var redisOptions = StackExchange.Redis.ConfigurationOptions.Parse(redisUrl);
@@ -322,6 +325,13 @@ app.MapGet("/api/v1/admin/logs/stream", async (HttpContext ctx, Outcome.Api.Logg
 });
 
 // SPA fallback — serve index.html for client-side routes (web build lands in wwwroot).
+//
+// wwwroot ships EMPTY, and must stay that way. It used to hold a standalone Scalar page, which
+// this fallback then served on every extensionless unmatched path — in production too, because
+// the fallback does not care that MapScalarApiReference above is Development-only. That page
+// pulled its script from a public CDN, unpinned and without SRI, onto the app's own origin,
+// where localStorage holds the session token and the long-term E2EE private key. Anything
+// dropped in here is served to the internet on the origin that owns those secrets.
 app.MapFallbackToFile("index.html");
 
 app.Run();

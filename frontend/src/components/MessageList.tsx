@@ -197,12 +197,33 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           </div>
         ))}
 
-        {m.attachments.map((att) => isVoice(att) ? (
+        {/* Pictures are laid out together, as one album — the phone does it and a column of
+            separate framed thumbnails is not what "sent five photos" looks like anywhere.
+            One picture keeps its own proportions and fills the bubble. */}
+        {(() => {
+          const imgs = m.attachments.filter((a) => isImage(a.mime));
+          if (imgs.length === 0) return null;
+          if (imgs.length === 1) {
+            const a = imgs[0]!;
+            return (
+              <div className="msg-photo" key={a.id}>
+                <img src={assetUrl(a.url)} alt={a.filename} loading="lazy"
+                  onClick={() => openLightbox(assetUrl(a.url), a.filename)} />
+              </div>
+            );
+          }
+          return (
+            <div className={"msg-album n" + Math.min(imgs.length, 4)}>
+              {imgs.map((a) => (
+                <img key={a.id} src={assetUrl(a.url)} alt={a.filename} loading="lazy"
+                  onClick={() => openLightbox(assetUrl(a.url), a.filename)} />
+              ))}
+            </div>
+          );
+        })()}
+
+        {m.attachments.filter((a) => !isImage(a.mime)).map((att) => isVoice(att) ? (
           <VoiceMessage key={att.id} att={att} channelId={m.channelId} messageId={m.id} sender={m.user.username} own={own} />
-        ) : isImage(att.mime) ? (
-          <div className="msg-image" key={att.id}>
-            <img src={assetUrl(att.url)} alt={att.filename} onClick={() => openLightbox(assetUrl(att.url), att.filename)} style={{ maxWidth: 400, maxHeight: 320, borderRadius: 8, display: "block", cursor: "zoom-in" }} />
-          </div>
         ) : (
           <div className="msg-file" key={att.id}>
             <div className="msg-file-inner">
@@ -258,39 +279,29 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
     );
 
     rows.push(
-      isDm ? (
-        // Telegram-style DM: mine right (accent bubble), theirs left (surface bubble +
-        // avatar), a small translucent time hugging the bubble's inner side.
-        <div id={`msg-${m.id}`} className={"message dm-row" + (own ? " own" : " theirs") + (grouped ? " grouped" : "") + (pickerFor === m.id ? " picker-open" : "") + (flashId === m.id ? " flash" : "") + (!own && mentionsMe(m.content) ? " mention-me" : "")} key={m.id}>
-          {!own && (grouped
-            ? <span className="dm-ava-spacer" />
-            : <Avatar username={m.user.username} avatar={m.user.avatar} size={30} color={colorFor(m.user.id)} className="dm-ava" />)}
-          {own && <span className="dm-time" title={new Date(m.timestamp).toLocaleString()}>{ticks(m)}{formatTime(m.timestamp)}</span>}
-          <div className="dm-bubble">
-            {replyRef}
-            {body}
-          </div>
-          {!own && <span className="dm-time" title={new Date(m.timestamp).toLocaleString()}>{formatTime(m.timestamp)}</span>}
-          {actions}
-        </div>
-      ) : (
-        <div id={`msg-${m.id}`} className={"message" + (grouped ? " grouped" : "") + (pickerFor === m.id ? " picker-open" : "") + (flashId === m.id ? " flash" : "") + (!own && mentionsMe(m.content) ? " mention-me" : "")} key={m.id}>
-          {replyRef}
-          {!grouped
-            ? <Avatar username={m.user.username} avatar={m.user.avatar} size={40} color={colorFor(m.user.id)} className="msg-avatar" />
-            : <span className="msg-hover-time">{formatTime(m.timestamp)}</span>}
-          {!grouped && (
-            <div className="msg-header">
-              <span className="msg-author clickable" style={{ color: colorFor(m.user.id) }}
-                onClick={() => setProfile({ id: m.user.id, username: m.user.username, avatar: m.user.avatar })}
-              >{m.user.username}</span>
-              <span className="msg-time" title={new Date(m.timestamp).toLocaleString()}>{formatTime(m.timestamp)}{own && ticks(m)}</span>
-            </div>
+      // One layout everywhere. Channels used to be a flat Discord-style list while DMs were
+      // bubbles; the phone has always been bubbles for both, and two different chats in one
+      // product is just two things to keep in sync. A channel adds the author's name inside
+      // the bubble, which a DM does not need — there are only two people in it.
+      <div id={`msg-${m.id}`} className={"message dm-row" + (own ? " own" : " theirs") + (grouped ? " grouped" : "") + (pickerFor === m.id ? " picker-open" : "") + (flashId === m.id ? " flash" : "") + (!own && mentionsMe(m.content) ? " mention-me" : "")} key={m.id}>
+        {!own && (grouped
+          ? <span className="dm-ava-spacer" />
+          : <Avatar username={m.user.username} avatar={m.user.avatar} size={30} color={colorFor(m.user.id)} className="dm-ava" />)}
+        {own && <span className="dm-time" title={new Date(m.timestamp).toLocaleString()}>{ticks(m)}{formatTime(m.timestamp)}</span>}
+        <div className={"dm-bubble" + (
+          !m.content.trim() && m.attachments.length > 0 && m.attachments.every((a) => isImage(a.mime))
+            ? " photo-only" : "")}>
+          {!isDm && !own && !grouped && (
+            <div className="dm-author clickable" style={{ color: colorFor(m.user.id) }}
+              onClick={() => setProfile({ id: m.user.id, username: m.user.username, avatar: m.user.avatar })}
+            >{m.user.username}</div>
           )}
+          {replyRef}
           {body}
-          {actions}
         </div>
-      ),
+        {!own && <span className="dm-time" title={new Date(m.timestamp).toLocaleString()}>{formatTime(m.timestamp)}</span>}
+        {actions}
+      </div>,
     );
     prev = m;
   }

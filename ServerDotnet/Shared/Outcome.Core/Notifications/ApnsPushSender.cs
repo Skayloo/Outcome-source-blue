@@ -101,6 +101,14 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
             ["user_id"] = message.RecipientId,
         };
 
+        if (message.ImageUrl is { Length: > 0 } image)
+        {
+            // Same flag as the encrypted case, for a different reason: only the extension can
+            // fetch the picture and hang it on the banner. Without it iOS shows the text alone.
+            aps["mutable-content"] = 1;
+            payload["image_url"] = image;
+        }
+
         if (message.Encrypted is { Length: > 0 } envelope && message.SenderKey is { Length: > 0 } senderKey)
         {
             // Wakes the notification service extension, which is the only party that can turn

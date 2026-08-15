@@ -241,11 +241,15 @@ export function VoiceTab() {
         <Row label={t("settings.nsStrength")} desc={t("settings.nsStrengthDesc")}>
           <Slider
             k="nsStrength"
-            def={40}
-            min={25}
-            max={100}
-            step={5}
-            format={(n) => `${n}%`}
+            def={20}
+            // Decibels, not percent: the number goes straight to the model's attenuation
+            // limit. The old range said 25–100% and read like a quality dial, so 40 looked
+            // modest — it is 40 dB, deep into where the model takes speech with the noise.
+            // 40 dB is the ceiling now, and nothing here can reach the setting that ate words.
+            min={0}
+            max={40}
+            step={2}
+            format={(n) => `${n} dB`}
             // Every change rebuilds the processor, so settle first: dragging across the
             // range would otherwise tear down and rebuild it a dozen times mid-call.
             onChange={() => {

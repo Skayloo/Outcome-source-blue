@@ -2,11 +2,12 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Caching.Memory;
 using Outcome.Shared.Abstractions.Security;
+using Outcome.Infrastructure.Tenancy;
 
 namespace Outcome.Infrastructure.Security;
 
 /// <inheritdoc cref="IPasswordResetStore"/>
-public sealed class PasswordResetStore(IMemoryCache cache) : IPasswordResetStore
+public sealed class PasswordResetStore(IMemoryCache cache, ICurrentSpace space) : IPasswordResetStore
 {
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(10);
     private const int MaxFailures = 5;
@@ -18,7 +19,10 @@ public sealed class PasswordResetStore(IMemoryCache cache) : IPasswordResetStore
     }
 
     // Normalize the email so the "forgot" and "reset" steps hit the same key regardless of casing.
-    private static string Key(string email) => "pwreset:" + email.Trim().ToLowerInvariant();
+    // Scoped to the space as well: one process-wide IMemoryCache serves every space, and the same
+    // address can belong to two unrelated accounts in two of them. A code issued for one must not
+    // unlock the other, and one space's request must not evict the other's pending code.
+    private string Key(string email) => $"pwreset:s{space.Space.Id}:{email.Trim().ToLowerInvariant()}";
 
     public void Issue(string email, string code) =>
         cache.Set(Key(email), new Entry { Code = code }, Ttl);

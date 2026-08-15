@@ -37,6 +37,11 @@ public interface IUserRepository
     Task AssignRoleAsync(long userId, long roleId, CancellationToken ct = default);
     Task ReassignRoleAsync(long fromRoleId, long toRoleId, CancellationToken ct = default);
     Task UpdateProfileAsync(long id, string? username, string? avatar, string? publicKey, string? e2eeBackup, bool? pushPreview = null, CancellationToken ct = default);
+
+    /// <summary>Is this file somebody's avatar? Avatars are stored as a bare path and shown to
+    /// anyone who can see the person — including guests with no session — so they are the one
+    /// upload that must stay fetchable without a signed link.</summary>
+    Task<bool> IsAvatarAsync(string filePath, CancellationToken ct = default);
     Task UpdatePasswordAsync(long id, string passwordHash, CancellationToken ct = default);
     Task<IReadOnlyList<UserSearchDto>> SearchAsync(string query, long excludeUserId, int limit, CancellationToken ct = default);
 }

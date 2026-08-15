@@ -133,10 +133,24 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
         // software was not keeping and a way for a notification to reach a phone whose owner
         // had asked to be gone.
         await db.DeviceTokens.Where(d => d.UserId == id).ExecuteDeleteAsync(ct);
+        // Release the name and the address. The row stays so old replies can still render a
+        // "Deleted message" placeholder, but it stops squatting the two things a person needs to
+        // come back: registration reads them straight out of this table and does not care that the
+        // account is deleted, so "delete my account" quietly meant "and never use this email
+        // again". The username is RENAMED rather than exempted from the check, because
+        // normalized_user_name is a unique index — exempting it would trade a refusal at signup
+        // for a constraint violation at insert.
+        //
+        // It is also the address itself: keeping a real mailbox on file for someone who asked to
+        // be gone is the same promise the device tokens were breaking.
         await db.Users.Where(u => u.Id == id).ExecuteUpdateAsync(s => s
             .SetProperty(u => u.Deleted, true)
             .SetProperty(u => u.DeletedAt, DateTime.UtcNow)
-            .SetProperty(u => u.Status, "offline"), ct);
+            .SetProperty(u => u.Status, "offline")
+            .SetProperty(u => u.UserName, u => "deleted_" + u.Id)
+            .SetProperty(u => u.NormalizedUserName, u => "DELETED_" + u.Id)
+            .SetProperty(u => u.Email, u => "deleted_" + u.Id + "@deleted.invalid")
+            .SetProperty(u => u.NormalizedEmail, u => "DELETED_" + u.Id + "@DELETED.INVALID"), ct);
     }
 
     public Task AssignRoleAsync(long userId, long roleId, CancellationToken ct = default) =>
@@ -148,6 +162,9 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
     // normalized_user_name is what Identity's uniqueness check reads: writing username without
     // it leaves the OLD name squatting the unique index, and the new one invisible to
     // UserManager.FindByNameAsync.
+    public Task<bool> IsAvatarAsync(string filePath, CancellationToken ct = default) =>
+        db.Users.AsNoTracking().AnyAsync(u => u.Avatar == filePath, ct);
+
     public Task UpdateProfileAsync(long id, string? username, string? avatar, string? publicKey, string? e2eeBackup, bool? pushPreview = null, CancellationToken ct = default) =>
         db.Users.Where(u => u.Id == id).ExecuteUpdateAsync(s => s
             .SetProperty(u => u.UserName, u => username ?? u.UserName)

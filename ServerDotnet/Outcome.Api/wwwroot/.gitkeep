@@ -1,0 +1,10 @@
+This directory must exist and must stay empty.
+
+Exist: StaticWebAssetsLoader resolves it at startup and throws
+DirectoryNotFoundException if it is missing, before any configuration is read.
+
+Empty: MapFallbackToFile serves whatever index.html lands here on every
+extensionless unmatched path, in production too — the Development-only guard on
+the Scalar endpoint does not apply to static files. It previously held a Scalar
+page that loaded its script from a public CDN, unpinned and without SRI, on the
+same origin whose localStorage holds the session token and the E2EE private key.

@@ -93,3 +93,20 @@ public interface IPasswordResetStore
     /// counts the miss and evicts after 5 failures otherwise.</summary>
     bool Verify(string email, string code);
 }
+
+/// <summary>
+/// Turns an attachment id into the URL clients fetch it by, carrying an expiring signature.
+///
+/// The endpoint behind those URLs takes no session: an &lt;img src&gt; cannot send an
+/// Authorization header, so the link itself has to be the credential. An unguessable id alone
+/// made it a permanent one — anyone it ever reached kept access forever. A signature bounds
+/// that to its lifetime, and re-reading the message mints a fresh link.
+/// </summary>
+public interface IFileUrlSigner
+{
+    /// <summary>The path a client should fetch, signature included.</summary>
+    string Sign(string attachmentId);
+
+    /// <summary>True iff the query carries a live signature for this id.</summary>
+    bool Verify(string attachmentId, string? expires, string? signature);
+}

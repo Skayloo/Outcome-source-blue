@@ -11,8 +11,23 @@ import { t } from "@lib/i18n";
 import { api } from "@lib/services";
 
 const PRIMARY_KEYS = ["server_name", "motd"] as const;
-// Boolean switches that get dedicated Toggle rows (stored as "1"/"0" strings server-side).
+// Boolean switches that get dedicated Toggle rows. This panel writes "1"/"0", but it is not the
+// only writer, and the server reads "true"/"false" just as happily — see AuthRules.ParseBoolean.
 const REGISTRATION_KEYS = ["registration_open", "registration_invite_only", "registration_email_verify"] as const;
+
+/**
+ * Read a stored setting the way the SERVER reads it. Comparing `value === "1"` looked equivalent
+ * and was not: `registration_email_verify` is stored as "true", so the switch drew itself OFF
+ * while the feature was ON — and the next save on this page wrote that lie back as "0". A
+ * setting that silently disables itself is worse than one that never worked.
+ */
+function isOn(value: string | undefined, fallback: boolean): boolean {
+  switch ((value ?? "").trim().toLowerCase()) {
+    case "1": case "true": return true;
+    case "0": case "false": return false;
+    default: return fallback;
+  }
+}
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
@@ -173,20 +188,20 @@ export function ServerSettingsPanel() {
           <Section title={t("admin.registration")} />
           <Row label={t("admin.regOpen")} desc={t("admin.regOpenDesc")}>
             <Toggle
-              on={(draft["registration_open"] ?? "1") === "1"}
+              on={isOn(draft["registration_open"], true)}
               onChange={(v) => setField("registration_open", v ? "1" : "0")}
             />
           </Row>
           {/* The keys may be absent until first toggled — treat missing as OFF (open registration). */}
           <Row label={t("admin.regInviteOnly")} desc={t("admin.regInviteOnlyDesc")}>
             <Toggle
-              on={(draft["registration_invite_only"] ?? "0") === "1"}
+              on={isOn(draft["registration_invite_only"], false)}
               onChange={(v) => setField("registration_invite_only", v ? "1" : "0")}
             />
           </Row>
           <Row label={t("admin.regEmailVerify")} desc={t("admin.regEmailVerifyDesc")}>
             <Toggle
-              on={(draft["registration_email_verify"] ?? "0") === "1"}
+              on={isOn(draft["registration_email_verify"], false)}
               onChange={(v) => setField("registration_email_verify", v ? "1" : "0")}
             />
           </Row>

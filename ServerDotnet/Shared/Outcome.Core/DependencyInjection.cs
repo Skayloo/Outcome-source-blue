@@ -95,11 +95,14 @@ public static class DependencyInjection
         // Security services.
         services.AddMemoryCache();
         services.AddSingleton<IRateLimiter, SlidingWindowRateLimiter>();
+        // The four challenge stores are SCOPED, not singletons: each one keys its entries by the
+        // requesting space, and the space is only known per request. Their state lives in the
+        // singleton IMemoryCache either way, so scoping costs nothing.
         services.AddScoped<IPartialAuthStore, PartialAuthStore>();
         services.AddScoped<IPendingRegistrationStore, PendingRegistrationStore>();
-        services.AddSingleton<IPasswordResetStore, PasswordResetStore>();
+        services.AddScoped<IPasswordResetStore, PasswordResetStore>();
         services.AddSingleton<ITotpService, TotpService>();
-        services.AddSingleton<IPendingTotpStore, PendingTotpStore>();
+        services.AddScoped<IPendingTotpStore, PendingTotpStore>();
         services.AddSingleton<IEmailSender, SmtpEmailSender>();
         services.AddSingleton<IPushSender, ApnsPushSender>();
 

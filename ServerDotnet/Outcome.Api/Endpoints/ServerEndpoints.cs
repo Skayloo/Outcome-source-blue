@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using Outcome.Api.Realtime;
+using Outcome.Api.Security;
 using Outcome.Shared.Abstractions.Persistence;
 using Outcome.Shared.Abstractions.Realtime;
 using Outcome.Shared.Abstractions.Security;
@@ -145,7 +146,7 @@ public static class ServerEndpoints
         // are stripped at resolution), so this can't hand out instance admin. The owner's role is fixed,
         // and the "Owner" role itself is never assignable.
         app.MapPost("/api/v1/servers/{serverId:long}/members/{userId:long}/role",
-            async (long serverId, long userId, AssignServerRoleBody body, ICurrentUser current, ICurrentServer srv, IServerRepository servers, IMemoryCache cache) =>
+            async (long serverId, long userId, AssignServerRoleBody body, ICurrentUser current, ICurrentServer srv, IServerRepository servers, IMemoryCache cache, ICurrentSpace space) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             var info = await servers.GetAsync(serverId) ?? throw DomainException.NotFound("server not found");
@@ -165,9 +166,9 @@ public static class ServerEndpoints
             if (!await servers.AssignMemberRoleAsync(serverId, userId, body.RoleId))
                 throw DomainException.NotFound("member not found in this server");
             // Evict the middleware's cached role/permission entries so the change applies immediately.
-            cache.Remove($"mrole:{userId}:{serverId}");
-            cache.Remove($"perm:{userId}:{serverId}");
-            cache.Remove($"perm:{userId}");
+            cache.Remove(AuthCacheKeys.MemberRole(space.Space.Id, userId, serverId));
+            cache.Remove(AuthCacheKeys.Perm(space.Space.Id, userId, serverId));
+            cache.Remove(AuthCacheKeys.Perm(space.Space.Id, userId));
             return Results.NoContent();
         });
 
@@ -176,7 +177,7 @@ public static class ServerEndpoints
         // owner can't be kicked, and you can't kick yourself (use "leave server").
         app.MapDelete("/api/v1/servers/{serverId:long}/members/{userId:long}",
             async (long serverId, long userId, ICurrentUser current, ICurrentServer srv,
-                   IServerRepository servers, IConnectionRegistry registry, IMemoryCache cache) =>
+                   IServerRepository servers, IConnectionRegistry registry, IMemoryCache cache, ICurrentSpace space) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             var info = await servers.GetAsync(serverId) ?? throw DomainException.NotFound("server not found");
@@ -192,11 +193,11 @@ public static class ServerEndpoints
                 throw DomainException.NotFound("member not found in this server");
 
             // Evict the removed user's membership/role/permission caches so access is revoked at once.
-            cache.Remove($"mem:{userId}:{serverId}");
-            cache.Remove($"first:{userId}");
-            cache.Remove($"mrole:{userId}:{serverId}");
-            cache.Remove($"perm:{userId}:{serverId}");
-            cache.Remove($"perm:{userId}");
+            cache.Remove(AuthCacheKeys.Member(space.Space.Id, userId, serverId));
+            cache.Remove(AuthCacheKeys.FirstServer(space.Space.Id, userId));
+            cache.Remove(AuthCacheKeys.MemberRole(space.Space.Id, userId, serverId));
+            cache.Remove(AuthCacheKeys.Perm(space.Space.Id, userId, serverId));
+            cache.Remove(AuthCacheKeys.Perm(space.Space.Id, userId));
             await registry.BroadcastToServerAsync(serverId, WsFrames.MemberLeave(userId));
             return Results.NoContent();
         });

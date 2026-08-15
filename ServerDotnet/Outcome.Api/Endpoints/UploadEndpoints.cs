@@ -25,7 +25,8 @@ public static class UploadEndpoints
         // (instead of an IFormFile parameter) so the body-size cap is applied BEFORE the body is
         // buffered — parameter binding would read the form too early to limit it.
         app.MapPost("/api/v1/uploads",
-            async (HttpContext ctx, ICurrentUser current, IFileStorage storage, ISender mediator) =>
+            async (HttpContext ctx, ICurrentUser current, IFileStorage storage, ISender mediator,
+                   IFileUrlSigner fileUrls) =>
             {
                 if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
 
@@ -65,7 +66,7 @@ public static class UploadEndpoints
                     throw;
                 }
 
-                return new UploadResultDto(id, file.FileName, file.Length, mime, $"/api/v1/files/{id}", null, null);
+                return new UploadResultDto(id, file.FileName, file.Length, mime, fileUrls.Sign(id), null, null);
             }).DisableAntiforgery();
 
         // POST /api/v1/uploads/voice — a recorded voice message. The raw clip (webm/ogg/mp4,
@@ -74,7 +75,8 @@ public static class UploadEndpoints
         // ffmpeg can't decode it, so a send never hard-fails.
         app.MapPost("/api/v1/uploads/voice",
             async (HttpContext ctx, ICurrentUser current, IFileStorage storage,
-                   Outcome.Infrastructure.Media.VoiceTranscoder transcoder, ISender mediator) =>
+                   Outcome.Infrastructure.Media.VoiceTranscoder transcoder, ISender mediator,
+                   IFileUrlSigner fileUrls) =>
             {
                 if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
 
@@ -122,12 +124,25 @@ public static class UploadEndpoints
                 }
                 catch { storage.Delete(id); throw; }
 
-                return new UploadResultDto(id, "voice-message.m4a", size, mime, $"/api/v1/files/{id}", null, null, durationMs, waveform);
+                return new UploadResultDto(id, "voice-message.m4a", size, mime, fileUrls.Sign(id), null, null, durationMs, waveform);
             }).DisableAntiforgery();
 
-        // GET /api/v1/files/{id} — public (ids are unguessable UUIDs).
-        app.MapGet("/api/v1/files/{id}", async (string id, HttpContext ctx, IAttachmentRepository attachments, IFileStorage storage) =>
+        // GET /api/v1/files/{id} — no session, but not public: the signed query is the credential.
+        app.MapGet("/api/v1/files/{id}", async (string id, HttpContext ctx, IAttachmentRepository attachments,
+            IFileStorage storage, IFileUrlSigner fileUrls, IUserRepository users) =>
         {
+            // The link IS the credential — an <img src> carries no session — so it has to expire.
+            // An id alone was a permanent one: anywhere it was ever forwarded, pasted or logged,
+            // it kept working. NotFound rather than Forbidden on purpose: a 403 confirms the id
+            // exists, which is the one bit an unsigned guess should not learn.
+            // Avatars are the exception, and they have to be: the path is stored on the user row
+            // and handed out from a dozen DTOs, so it cannot carry a signature that expires — and
+            // it is shown to guests, who have no session to sign one with. Signing attachments
+            // broke every existing avatar until this was here.
+            if (!fileUrls.Verify(id, ctx.Request.Query["e"], ctx.Request.Query["s"])
+                && !await users.IsAvatarAsync($"/api/v1/files/{id}", ctx.RequestAborted))
+                return Results.NotFound();
+
             var att = await attachments.GetByIdAsync(id, ctx.RequestAborted);
             if (att is null) return Results.NotFound();
 

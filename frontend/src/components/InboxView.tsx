@@ -119,9 +119,18 @@ export function InboxView() {
 
   return (
     <>
-      <div className="unified-sidebar-header inbox-header">
-        <span className="server-name">{t("inbox.title")}</span>
-      </div>
+      {/* Friends lives HERE, not behind the small "+" beside the Direct heading, and not only
+          as a card that appears when somebody happens to be waiting. It is a destination people
+          look for by name; a header that just says "Inbox" told them nothing and sent them
+          hunting. The badge carries what the separate request card used to say. */}
+      <button
+        className="unified-sidebar-header inbox-header friends-entry"
+        onClick={() => { openModal("friends"); closeDrawer(); }}
+      >
+        <Icon name="users" size={17} />
+        <span className="server-name">{t("friends.title")}</span>
+        {incoming > 0 && <span className="unread-badge">{incoming}</span>}
+      </button>
 
       <button className="nav-search" onClick={() => openModal("command")}>
         <Icon name="arrow-right" size={14} />
@@ -130,14 +139,6 @@ export function InboxView() {
       </button>
 
       <div className="channel-list inbox-list">
-        {incoming > 0 && (
-          <button className="inbox-request-card" onClick={() => { openModal("friends"); closeDrawer(); }}>
-            <span className="ireq-icon"><Icon name="users" size={18} /></span>
-            <span className="ireq-text">{t("inbox.requests")}</span>
-            <span className="unread-badge">{incoming}</span>
-          </button>
-        )}
-
         {attention > 0 && (
           <>
             <div className="inbox-section">{t("inbox.attention")}</div>
