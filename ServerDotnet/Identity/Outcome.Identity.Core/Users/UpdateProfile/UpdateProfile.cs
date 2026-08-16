@@ -10,4 +10,4 @@ using Outcome.Domain.Errors;
 namespace Outcome.Application.Users;
 
 // ── PATCH /api/v1/users/me ───────────────────────────────────────────────────
-public sealed record UpdateProfileCommand(long UserId, string? Username, string? Avatar, string? PublicKey = null, string? E2eeBackup = null, bool? PushPreview = null) : ICommand<MemberProfileDto>;
+public sealed record UpdateProfileCommand(long UserId, string? Username, string? Avatar, bool? PushPreview = null) : ICommand<MemberProfileDto>;

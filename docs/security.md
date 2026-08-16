@@ -14,11 +14,10 @@ everything else in the next release.
 
 ## What the product actually protects
 
-[encryption.md](encryption.md) is the authoritative per-edition answer, and it is short. The
-summary: RED end-to-end encrypts direct messages and one-to-one calls and encrypts uploads at
-rest; BLUE encrypts nothing at rest and nothing end to end, and says so in its own README.
-Channel messages are not end-to-end encrypted in either — a channel is a room whose history a
-newcomer is meant to be able to read, and per-device keys cannot do that.
+This build encrypts nothing end to end and nothing at rest. Messages, calls and uploads are
+readable by the server, which is yours — that is the whole trade a self-hosted install makes,
+and it is worth being plain about rather than implying otherwise. Everything below is about
+the protections that DO apply: transport, authentication, authorisation and rate limiting.
 
 ## Authentication
 

@@ -405,16 +405,6 @@ export function createApiClient(
       return request<MemberResponse>("PATCH", "/users/me", { push_preview: on }, signal);
     },
 
-    /** Publish this device's E2EE public identity key (base64 X25519). Idempotent. */
-    publishPublicKey(publicKey: string, signal?: AbortSignal): Promise<MemberResponse> {
-      return request<MemberResponse>("PATCH", "/users/me", { public_key: publicKey }, signal);
-    },
-
-    /** Store the password-wrapped backup of this user's E2EE secret key (opaque to the server). */
-    putE2eeBackup(backup: string, signal?: AbortSignal): Promise<MemberResponse> {
-      return request<MemberResponse>("PATCH", "/users/me", { e2ee_backup: backup }, signal);
-    },
-
     changePassword(
       currentPassword: string,
       newPassword: string,

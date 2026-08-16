@@ -35,19 +35,8 @@ public sealed class UpdateProfileHandler(IUserRepository users, IRoleRepository 
         if (newAvatar is { Length: > 2_000_000 })
             throw DomainException.BadRequest("avatar is too large");
 
-        // E2EE identity key: null = unchanged. Base64 of a 32-byte X25519 key (~44 chars); cap generously.
-        string? newPublicKey = cmd.PublicKey;
-        if (newPublicKey is { Length: > 1000 })
-            throw DomainException.BadRequest("public key is too large");
-
-        // E2EE key backup: null = unchanged. Opaque, password-wrapped secret key (~120 chars); cap generously.
-        string? newBackup = cmd.E2eeBackup;
-        if (newBackup is { Length: > 4000 })
-            throw DomainException.BadRequest("e2ee backup is too large");
-
-        if (newUsername is not null || newAvatar is not null || newPublicKey is not null || newBackup is not null
-            || cmd.PushPreview is not null)
-            await users.UpdateProfileAsync(cmd.UserId, newUsername, newAvatar, newPublicKey, newBackup, cmd.PushPreview, ct);
+        if (newUsername is not null || newAvatar is not null || cmd.PushPreview is not null)
+            await users.UpdateProfileAsync(cmd.UserId, newUsername, newAvatar, cmd.PushPreview, ct);
 
         return await MemberProfile.BuildAsync(users, roles, cmd.UserId, ct);
     }

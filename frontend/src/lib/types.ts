@@ -313,21 +313,6 @@ export interface VoiceTokenPayload {
    *  WS key exchange, so members and keyless guests share one key. Absent → ordinary exchange. */
 }
 
-// Voice E2EE key exchange (server → client; the key blobs are opaque NaCl-box ciphertext).
-export interface VoiceKeyFirstPayload {
-  readonly channel_id: number;
-}
-export interface VoiceKeyRequestPayload {
-  readonly channel_id: number;
-  readonly from_user_id: number;
-  readonly public_key: string;
-}
-export interface VoiceKeySharePayload {
-  readonly channel_id: number;
-  readonly key: string; // base64(nonce‖box) — the room key sealed to us
-  readonly public_key: string; // sender's identity key
-}
-
 export interface MemberJoinPayload {
   readonly user: UserWithRole;
 }
@@ -359,7 +344,6 @@ export interface DmRecipient {
   readonly username: string;
   readonly avatar: string;
   readonly status: string;
-  readonly public_key?: string | null; // base64 X25519 identity key for E2EE DMs (null = no key)
 }
 
 /** DM channel object in ready payload and dm_channel_open event. */
@@ -514,9 +498,6 @@ export type ServerMessage =
   | (WsEnvelope<VoiceConfigPayload> & { readonly type: "voice_config" })
   | (WsEnvelope<VoiceSpeakersPayload> & { readonly type: "voice_speakers" })
   | (WsEnvelope<VoiceTokenPayload> & { readonly type: "voice_token" })
-  | (WsEnvelope<VoiceKeyFirstPayload> & { readonly type: "voice_key_first" })
-  | (WsEnvelope<VoiceKeyRequestPayload> & { readonly type: "voice_key_request" })
-  | (WsEnvelope<VoiceKeySharePayload> & { readonly type: "voice_key_share" })
   | (WsEnvelope<MemberJoinPayload> & { readonly type: "member_join" })
   | (WsEnvelope<MemberLeavePayload> & { readonly type: "member_leave" })
   | (WsEnvelope<MemberUpdatePayload> & { readonly type: "member_update" })
@@ -666,14 +647,6 @@ export interface MemberResponse {
   readonly avatar: string | null;
   readonly role: string;
   readonly status: UserStatus;
-  /** Password-wrapped backup of this user's E2EE secret key (only present on GET /users/me for self). */
-  readonly e2ee_backup?: string | null;
-  /** The account's PUBLISHED identity key — what peers encrypt to. A device must never
-   *  overwrite it with a freshly-minted key, or every message sealed to it is lost. */
-  readonly public_key?: string | null;
-  /** False ⇒ SSO-only account with no password of its own, so its E2EE key backup needs a
-   *  separate passphrase. Absent on older servers — treat that as true. */
-  readonly password_set?: boolean;
   /** Show message text in push notifications, or only who sent it. Absent on older
    *  servers — treat that as true. */
   readonly push_preview?: boolean;

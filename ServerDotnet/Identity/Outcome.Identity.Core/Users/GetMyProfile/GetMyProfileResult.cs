@@ -12,7 +12,6 @@ namespace Outcome.Application.Users;
 /// <summary>Self profile shape matching the client's MemberResponse (role NAME, avatar nullable).</summary>
 public sealed record MemberProfileDto(
     long Id, string Username, string? Avatar, string Role, string Status, bool TotpEnabled, DateTime CreatedAt,
-    string? PublicKey, string? E2eeBackup,
     /// <summary>False ⇒ SSO-only account with no password of its own: the E2EE key backup cannot
     /// be wrapped with a password, so this account (and only this account) needs a passphrase.</summary>
     bool PasswordSet,
@@ -31,7 +30,7 @@ internal static class MemberProfile
             user.Id, user.Username,
             string.IsNullOrEmpty(user.Avatar) ? null : user.Avatar,
             (role?.Name ?? "member").ToLowerInvariant(),
-            user.Status, user.TotpSecret is not null, user.CreatedAt, user.PublicKey, user.E2eeBackup,
+            user.Status, user.TotpSecret is not null, user.CreatedAt,
             user.PasswordSet, user.PushPreview);
     }
 }

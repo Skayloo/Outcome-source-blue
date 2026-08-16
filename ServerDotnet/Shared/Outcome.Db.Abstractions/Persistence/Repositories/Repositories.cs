@@ -165,13 +165,11 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
     public Task<bool> IsAvatarAsync(string filePath, CancellationToken ct = default) =>
         db.Users.AsNoTracking().AnyAsync(u => u.Avatar == filePath, ct);
 
-    public Task UpdateProfileAsync(long id, string? username, string? avatar, string? publicKey, string? e2eeBackup, bool? pushPreview = null, CancellationToken ct = default) =>
+    public Task UpdateProfileAsync(long id, string? username, string? avatar, bool? pushPreview = null, CancellationToken ct = default) =>
         db.Users.Where(u => u.Id == id).ExecuteUpdateAsync(s => s
             .SetProperty(u => u.UserName, u => username ?? u.UserName)
             .SetProperty(u => u.NormalizedUserName, u => username != null ? username.ToUpper() : u.NormalizedUserName)
             .SetProperty(u => u.Avatar, u => avatar ?? u.Avatar)
-            .SetProperty(u => u.PublicKey, u => publicKey ?? u.PublicKey)
-            .SetProperty(u => u.E2eeBackup, u => e2eeBackup ?? u.E2eeBackup)
             .SetProperty(u => u.PushPreview, u => pushPreview ?? u.PushPreview), ct);
 
     public Task UpdatePasswordAsync(long id, string passwordHash, CancellationToken ct = default) =>

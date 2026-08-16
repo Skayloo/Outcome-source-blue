@@ -1,6 +1,6 @@
 namespace Outcome.Application.Dm;
 
-public sealed record DmUserDto(long Id, string Username, string Avatar, string Status, string? PublicKey);
+public sealed record DmUserDto(long Id, string Username, string Avatar, string Status);
 
 public sealed record DmChannelInfoDto(
     long ChannelId, DmUserDto Recipient, long? LastMessageId, string LastMessage, string LastMessageAt, int UnreadCount,

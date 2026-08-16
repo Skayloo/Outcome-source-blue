@@ -30,12 +30,10 @@ public sealed partial class PushNotifier(
     private const int MaxBodyChars = 180;
     /// <summary>What an end-to-end encrypted direct message looks like from the server: an
     /// envelope it cannot open. Mirrors MARKER in the clients' e2ee modules.</summary>
-    private const string E2eeMarker = "oce2ee:v1:";
     private const string NoPreview = "Новое сообщение";
     /// <summary>Apple caps an alert push at 4 KB, and the envelope is by far the largest thing
     /// in ours. Past this the push is sent without it and the phone shows the fallback — a long
     /// message loses its preview rather than the notification failing to arrive.</summary>
-    private const int MaxEnvelopeChars = 3200;
 
     public void QueueMessage(Space space, long channelId, long senderId, string senderName, string content,
         string? imageUrl,
@@ -120,14 +118,6 @@ public sealed partial class PushNotifier(
         foreach (var id in candidates)
             preview[id] = (await users.GetByIdAsync(id))?.PushPreview ?? true;
 
-        // An encrypted message travels as-is, for the recipient's device to open. We carry the
-        // sender's key with it because the envelope is useless without it — and the phone, on a
-        // lock screen with no network guarantee, is in no position to go and fetch it.
-        var encrypted = content.StartsWith(E2eeMarker, StringComparison.Ordinal);
-        string? senderKey = null;
-        if (encrypted && content.Length <= MaxEnvelopeChars)
-            senderKey = (await users.GetByIdAsync(senderId))?.PublicKey;
-
         var devices = sp.GetRequiredService<IDeviceTokenRepository>();
         var tokens = await devices.ListForUsersAsync(candidates);
         foreach (var d in tokens)
@@ -138,10 +128,6 @@ public sealed partial class PushNotifier(
                 wantsText ? Preview(content) : NoPreview,
                 channelId,
                 d.UserId,
-                // Only when they asked to see message text: someone who turned previews off
-                // does not want their device quietly putting the words back.
-                wantsText ? (senderKey is null ? null : content) : null,
-                wantsText ? senderKey : null,
                 // A preview the recipient asked not to see should not arrive as a picture either.
                 wantsText ? imageUrl : null);
 
@@ -181,7 +167,6 @@ public sealed partial class PushNotifier(
     {
         var text = content.Trim();
         if (text.Length == 0) return "Вложение";
-        if (text.StartsWith(E2eeMarker, StringComparison.Ordinal)) return NoPreview;
         return text.Length <= MaxBodyChars ? text : text[..MaxBodyChars] + "…";
     }
 }

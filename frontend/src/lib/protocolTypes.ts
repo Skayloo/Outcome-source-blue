@@ -28,11 +28,6 @@ export const ServerMessageType = {
   VOICE_CONFIG: "voice_config",
   VOICE_TOKEN: "voice_token",
   VOICE_SPEAKERS: "voice_speakers",
-  // Voice E2EE key exchange (server-blind relay)
-  VOICE_KEY_FIRST: "voice_key_first",
-  VOICE_KEY_REGIME: "voice_key_regime",
-  VOICE_KEY_REQUEST: "voice_key_request",
-  VOICE_KEY_SHARE: "voice_key_share",
   MEMBER_JOIN: "member_join",
   MEMBER_LEAVE: "member_leave",
   MEMBER_UPDATE: "member_update",
@@ -80,9 +75,6 @@ export const ClientMessageType = {
   VOICE_DEAFEN: "voice_deafen",
   VOICE_CAMERA: "voice_camera",
   VOICE_SCREENSHARE: "voice_screenshare",
-  // Voice E2EE key exchange (client → server)
-  VOICE_KEY_REQUEST: "voice_key_request",
-  VOICE_KEY_SHARE: "voice_key_share",
   PING: "ping",
   // Extension (not in protocol-schema.json but used in practice)
   VOICE_TOKEN_REFRESH: "voice_token_refresh",

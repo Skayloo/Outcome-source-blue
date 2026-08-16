@@ -64,7 +64,7 @@ public sealed class DmRepository(OutcomeDbContext db) : IDmRepository
             join p in db.DmParticipants.AsNoTracking() on os.ChannelId equals p.ChannelId
             where p.UserId != userId
             join u in db.Users.AsNoTracking() on p.UserId equals u.Id
-            select new { os.ChannelId, u.Id, Username = u.UserName!, u.Avatar, u.Status, u.PublicKey }).ToListAsync(ct);
+            select new { os.ChannelId, u.Id, Username = u.UserName!, u.Avatar, u.Status }).ToListAsync(ct);
 
         var chIds = rows.Select(r => r.ChannelId).ToList();
 
@@ -106,7 +106,7 @@ public sealed class DmRepository(OutcomeDbContext db) : IDmRepository
                 var last = lastMsgs.TryGetValue(r.ChannelId, out var lm) ? lm : null;
                 return new DmChannelInfoDto(
                     r.ChannelId,
-                    new DmUserDto(r.Id, r.Username, r.Avatar ?? string.Empty, r.Status, r.PublicKey),
+                    new DmUserDto(r.Id, r.Username, r.Avatar ?? string.Empty, r.Status),
                     last?.Id,
                     last?.Content ?? string.Empty,
                     last?.Timestamp.ToString("o") ?? string.Empty,

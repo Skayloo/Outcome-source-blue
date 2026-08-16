@@ -36,7 +36,7 @@ public sealed class CreateOrOpenDmHandler(IDmRepository dms, IUserRepository use
 
         return new CreateDmResult(
             channelId,
-            new DmUserDto(recipient.Id, recipient.Username, recipient.Avatar ?? string.Empty, recipient.Status, recipient.PublicKey),
+            new DmUserDto(recipient.Id, recipient.Username, recipient.Avatar ?? string.Empty, recipient.Status),
             created);
     }
 }

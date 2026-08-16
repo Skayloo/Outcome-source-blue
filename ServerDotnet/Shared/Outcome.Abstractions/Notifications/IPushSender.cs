@@ -19,21 +19,13 @@ public enum PushOutcome
 /// <param name="Title">Who it is from.</param>
 /// <param name="Body">What is shown if nothing else happens — the fallback the OS displays
 /// when the device cannot, or will not, do better.</param>
-/// <param name="RecipientId">Whose account this is going to. The device may be shared between
-/// accounts, and each has its own encryption key.</param>
-/// <param name="Encrypted">The untouched end-to-end envelope. The server cannot open it; it is
-/// carried so the recipient's device can, and replace <paramref name="Body"/> with the real
-/// text. Null when there is nothing to decrypt, when the user asked for no previews, or when
-/// the envelope would not fit in a push.</param>
-/// <param name="SenderKey">The sender's public key, without which the envelope cannot be
-/// opened.</param>
+/// <param name="RecipientId">Whose account this is going to. The device may be shared
+/// between accounts.</param>
 public sealed record PushMessage(
     string Title,
     string Body,
     long ChannelId,
     long RecipientId,
-    string? Encrypted = null,
-    string? SenderKey = null,
     /// <summary>Signed URL of one image from the message, shown in the banner itself. Null for
     /// anything that is not a picture: a notification cannot preview a zip.</summary>
     string? ImageUrl = null);

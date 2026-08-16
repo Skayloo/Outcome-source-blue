@@ -109,15 +109,6 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
             payload["image_url"] = image;
         }
 
-        if (message.Encrypted is { Length: > 0 } envelope && message.SenderKey is { Length: > 0 } senderKey)
-        {
-            // Wakes the notification service extension, which is the only party that can turn
-            // this envelope into words. Without the flag iOS shows the fallback and never runs it.
-            aps["mutable-content"] = 1;
-            payload["e2ee"] = envelope;
-            payload["sender_key"] = senderKey;
-        }
-
         var json = payload.ToJsonString();
         var (status, reason) = await PostAsync(sandbox ? SandboxHost : ProdHost, deviceToken, json, ct);
 

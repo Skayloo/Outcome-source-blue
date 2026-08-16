@@ -10,7 +10,6 @@ export interface DmUser {
   readonly username: string;
   readonly avatar: string;
   readonly status: string;
-  readonly publicKey: string | null; // base64 X25519 identity key for E2EE DMs
 }
 
 export interface DmChannel {

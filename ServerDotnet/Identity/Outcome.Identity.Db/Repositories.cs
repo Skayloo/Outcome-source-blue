@@ -36,7 +36,7 @@ public interface IUserRepository
     Task SoftDeleteAsync(long id, CancellationToken ct = default);
     Task AssignRoleAsync(long userId, long roleId, CancellationToken ct = default);
     Task ReassignRoleAsync(long fromRoleId, long toRoleId, CancellationToken ct = default);
-    Task UpdateProfileAsync(long id, string? username, string? avatar, string? publicKey, string? e2eeBackup, bool? pushPreview = null, CancellationToken ct = default);
+    Task UpdateProfileAsync(long id, string? username, string? avatar, bool? pushPreview = null, CancellationToken ct = default);
 
     /// <summary>Is this file somebody's avatar? Avatars are stored as a bare path and shown to
     /// anyone who can see the person — including guests with no session — so they are the one

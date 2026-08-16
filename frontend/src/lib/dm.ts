@@ -23,7 +23,6 @@ export async function openDm(userId: number): Promise<void> {
         username: r.recipient.username,
         avatar: r.recipient.avatar,
         status: r.recipient.status,
-        publicKey: r.recipient.public_key ?? null,
       },
       lastMessageId: null,
       lastMessage: "",

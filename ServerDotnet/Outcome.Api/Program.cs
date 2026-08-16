@@ -401,8 +401,8 @@ static async Task ResetPresenceAsync(WebApplication app, ILogger logger)
 /// every boot and does nothing once they all have values — the query only selects NULLs, so it
 /// costs one indexless scan of a small table and stops.
 ///
-/// It has to happen HERE rather than in a migration or an external tool: the bytes are
-/// encrypted at rest, and the only thing that can read them is the server holding the key.
+/// It has to happen HERE rather than in a migration or an external tool: it needs the same
+/// storage client the server already has configured.
 ///
 /// Bounded per boot. An install with thousands of old pictures finishes over several restarts rather
 /// than holding startup open, and a picture that cannot be measured is simply skipped — the

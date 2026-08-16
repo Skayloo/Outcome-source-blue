@@ -7,7 +7,7 @@ namespace Outcome.Api.Endpoints;
 
 public static class UserEndpoints
 {
-    public sealed record UpdateProfileBody(string? Username, string? Avatar, string? PublicKey, string? E2eeBackup, bool? PushPreview);
+    public sealed record UpdateProfileBody(string? Username, string? Avatar, bool? PushPreview);
     public sealed record ChangePasswordBody(string CurrentPassword, string NewPassword);
 
     public static void MapUserEndpoints(this IEndpointRouteBuilder app)
@@ -35,7 +35,7 @@ public static class UserEndpoints
         app.MapPatch("/api/v1/users/me", async (UpdateProfileBody body, ICurrentUser current, ISender mediator) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
-            return await mediator.Send(new UpdateProfileCommand(current.UserId, body.Username, body.Avatar, body.PublicKey, body.E2eeBackup, body.PushPreview));
+            return await mediator.Send(new UpdateProfileCommand(current.UserId, body.Username, body.Avatar, body.PushPreview));
         });
 
         app.MapPut("/api/v1/users/me/password", async (ChangePasswordBody body, ICurrentUser current, ISender mediator) =>

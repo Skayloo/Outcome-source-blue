@@ -103,7 +103,6 @@ function mapDmPayload(p: DmChannelPayload): DmChannel {
       username: p.recipient.username,
       avatar: p.recipient.avatar,
       status: p.recipient.status,
-      publicKey: p.recipient.public_key ?? null,
     },
     lastMessageId: p.last_message_id,
     lastMessage: p.last_message,

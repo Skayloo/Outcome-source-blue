@@ -97,8 +97,6 @@ services:
       OUTCOME_Minio__SecretKey: "${MINIO_SECRET_KEY}"
       OUTCOME_Minio__Bucket: "${MINIO_BUCKET}"
       OUTCOME_Minio__UseSsl: "false"
-      # AES-256-GCM at-rest encryption for uploaded files (base64 of 32 bytes). Regenerate per deploy.
-      OUTCOME_Minio__EncryptionKey: "${MINIO_ENC_KEY}"
       OUTCOME_Voice__LiveKitApiKey: "${LIVEKIT_API_KEY}"
       OUTCOME_Voice__LiveKitApiSecret: "${LIVEKIT_API_SECRET}"
       # Browser-facing signaling URL (rides the same-origin /livekit proxy through Caddy).

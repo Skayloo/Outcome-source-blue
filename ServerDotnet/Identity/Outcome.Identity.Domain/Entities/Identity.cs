@@ -33,17 +33,6 @@ public sealed class User : IdentityUser<long>
     public string? BanReason { get; set; }
     public DateTime? BanExpires { get; set; }
 
-    /// <summary>Base64 X25519 public identity key for E2EE direct messages. Published by the
-    /// user's device; the matching secret key never leaves the device. Null ⇒ no E2EE key yet
-    /// (peers then fall back to plaintext DMs). Auto-maps to column <c>public_key text</c>.</summary>
-    public string? PublicKey { get; set; }
-
-    /// <summary>Encrypted backup of this user's E2EE identity SECRET key, wrapped client-side with a
-    /// key derived from their password (PBKDF2 → NaCl secretbox). The server stores it opaquely and
-    /// NEVER sees the plaintext key. Lets a new device / cache-cleared browser restore the SAME key
-    /// (and thus read DM history) after re-login. Null ⇒ no backup yet. Column <c>e2ee_backup text</c>.</summary>
-    public string? E2eeBackup { get; set; }
-
     /// <summary>C#-side alias for Identity's <see cref="IdentityUser{TKey}.UserName"/>. Not mapped —
     /// EF LINQ must use <c>UserName</c>; materialized C# code may use this.</summary>
     [NotMapped]
