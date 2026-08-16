@@ -1221,10 +1221,6 @@ namespace Outcome.Db.Abstractions.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
-                    b.Property<string>("E2eeBackup")
-                        .HasColumnType("text")
-                        .HasColumnName("e2ee_backup");
-
                     b.Property<string>("Email")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
@@ -1271,10 +1267,6 @@ namespace Outcome.Db.Abstractions.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("boolean")
                         .HasColumnName("phone_number_confirmed");
-
-                    b.Property<string>("PublicKey")
-                        .HasColumnType("text")
-                        .HasColumnName("public_key");
 
                     b.Property<bool>("PushPreview")
                         .ValueGeneratedOnAdd()
