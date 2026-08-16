@@ -1555,6 +1555,21 @@
   flex-wrap: wrap;
 }
 .attachment-preview-bar.visible { display: flex; }
+/* Sits above the composer, inside the scroller's own corner. Appears only once there is a
+   real distance to travel — a button that shows up after two lines of scrolling is noise. */
+.jump-to-end {
+  position: sticky; bottom: 12px; float: right; right: 18px;
+  z-index: 6; width: 42px; height: 42px; margin-right: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: var(--radius-circle);
+  background: var(--bg-floating, var(--bg-tertiary)); color: var(--text-normal);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  cursor: pointer;
+  transition: transform 140ms ease-out, background 140ms ease-out;
+}
+.jump-to-end:hover { background: var(--bg-modifier-hover); }
+.jump-to-end:active { transform: scale(.94); }
+
 /* Attach menu: photo or file. Anchored to the button rather than centred, so it reads as
    belonging to it — and the backdrop is what closes it, including on a click in the text. */
 .attach-wrap { position: relative; display: inline-flex; }

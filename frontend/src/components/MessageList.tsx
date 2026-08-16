@@ -92,13 +92,39 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   // view down while they're scrolled up reading history. Channel switches always snap.
   const nearBottomRef = useRef(true);
   const lastChannelRef = useRef<number | null>(null);
+  // Whether the view should be glued to the end. Set when a chat opens and held until the
+  // reader scrolls away themselves — WITHOUT it, opening a busy chat drops you into the
+  // middle: the scroll is set while the pictures and avatars are still zero-height, every one
+  // that loads pushes the end further down, and the position that was the bottom a moment ago
+  // is now nowhere near it.
+  const stickRef = useRef(true);
+  const [showJump, setShowJump] = useState(false);
+
+  const toBottom = (smooth = false) => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+  };
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const channelSwitched = lastChannelRef.current !== channelId;
     lastChannelRef.current = channelId;
-    if (channelSwitched || nearBottomRef.current) el.scrollTop = el.scrollHeight;
+    if (channelSwitched) { stickRef.current = true; setShowJump(false); }
+    if (channelSwitched || nearBottomRef.current) toBottom();
   }, [messages.length, channelId]);
+
+  // Re-pin on every size change while glued. A picture finishing its download is a size
+  // change, and it is the one that used to leave the reader halfway up.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => { if (stickRef.current) toBottom(); });
+    ro.observe(el);
+    for (const child of Array.from(el.children)) ro.observe(child);
+    return () => ro.disconnect();
+  }, [channelId, messages.length]);
 
   if (channelId == null) return <div className="messages-container" ref={containerRef} />;
 
@@ -335,7 +361,11 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       ref={containerRef}
       onScroll={(e) => {
         const el = e.currentTarget;
-        nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        nearBottomRef.current = fromBottom < 80;
+        // Scrolling away is the reader taking over; nothing re-pins until they come back.
+        stickRef.current = fromBottom < 80;
+        setShowJump(fromBottom > 400);
       }}
     >
       {rows.length === 0 ? (
@@ -345,6 +375,12 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           <div className="channel-welcome-text">{t("chat.welcomeText")}</div>
         </div>
       ) : rows}
+      {showJump && (
+        <button className="jump-to-end" title={t("chat.jumpToEnd")}
+          onClick={() => { stickRef.current = true; setShowJump(false); toBottom(true); }}>
+          <Icon name="chevron-down" size={20} />
+        </button>
+      )}
       {fwdFor && <ForwardModal message={fwdFor} onClose={() => setFwdFor(null)} />}
       {profile && (
         <UserProfileModal

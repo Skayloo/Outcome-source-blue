@@ -334,6 +334,7 @@ export const ru: Record<string, string> = {
   "chat.download": "Скачать",
   "chat.openOriginal": "Открыть оригинал",
   "chat.dropToUpload": "Отпустите, чтобы прикрепить к сообщению",
+  "chat.jumpToEnd": "В конец чата",
   "chat.dropToTarget": "Загрузить в {name}",
   "chat.edit": "Изменить",
   "chat.editMessagePlaceholder": "Изменить сообщение…",

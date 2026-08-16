@@ -334,6 +334,7 @@ export const en: Record<string, string> = {
   "chat.download": "Download",
   "chat.openOriginal": "Open original",
   "chat.dropToUpload": "Release to attach it to your message",
+  "chat.jumpToEnd": "Jump to the latest",
   "chat.dropToTarget": "Upload to {name}",
   "chat.edit": "Edit",
   "chat.editMessagePlaceholder": "Edit message…",
