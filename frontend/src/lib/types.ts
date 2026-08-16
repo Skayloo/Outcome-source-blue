@@ -647,6 +647,10 @@ export interface MemberResponse {
   readonly avatar: string | null;
   readonly role: string;
   readonly status: UserStatus;
+  /** False ⇒ an account made by a provider sign-in, with no password of its own — it
+   *  cannot be signed into from the mobile app, which has no provider sign-in. Absent on
+   *  older servers — treat that as true. */
+  readonly password_set?: boolean;
   /** Show message text in push notifications, or only who sent it. Absent on older
    *  servers — treat that as true. */
   readonly push_preview?: boolean;

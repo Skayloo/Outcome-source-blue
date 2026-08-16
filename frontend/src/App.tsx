@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { authStore } from "@stores/auth.store";
+import { SetPasswordGate } from "@components/SetPasswordGate";
 import { useStoreState } from "@lib/useStore";
 import { restoreSession, hasStoredSession, clearStoredSession } from "@lib/session";
 import { consumeSsoRedirect } from "@lib/sso";
@@ -82,5 +83,8 @@ export function App() {
     return isOwner ? <AdminPage /> : <AdminDenied />;
   }
 
-  return <MainPage />;
+  // Every authenticated route goes through here: an account created by a provider sign-in
+  // has no password, and a password is what the iOS app needs to let them in and what the
+  // key backup is wrapped with. No password, no app.
+  return <SetPasswordGate><MainPage /></SetPasswordGate>;
 }
