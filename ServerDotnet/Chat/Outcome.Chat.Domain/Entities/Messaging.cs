@@ -33,6 +33,14 @@ public sealed class Attachment
     public int? DurationMs { get; set; }
     /// <summary>JSON array of ~0-100 amplitude peaks for the waveform bars. Null for non-audio.</summary>
     public string? Waveform { get; set; }
+
+    /// <summary>Where this file sits among the ones sent with the same message, counted from
+    /// zero. The sender's order is known ONLY at send time — it is the order of the ids in the
+    /// message — and nothing else recovers it: the primary key is a random GUID, and upload
+    /// time is a guess that holds right up until two files finish out of the order they were
+    /// picked. Null on rows written before this column existed; those fall back to upload
+    /// time, which is the best that can be said about them after the fact.</summary>
+    public int? Position { get; set; }
 }
 
 /// <summary>An emoji reaction on a message by a user.</summary>

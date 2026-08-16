@@ -434,19 +434,34 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
     public Task<Attachment?> GetByIdAsync(string id, CancellationToken ct = default) =>
         db.Attachments.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
 
+    public async Task<IReadOnlyList<Attachment>> ListImagesAsync(int limit, CancellationToken ct = default) =>
+        await db.Attachments.AsNoTracking()
+            .Where(a => a.MimeType.StartsWith("image/"))
+            .OrderBy(a => a.Id)
+            .Take(limit)
+            .ToListAsync(ct);
+
+    public Task SetDimensionsAsync(string id, int width, int height, CancellationToken ct = default) =>
+        db.Attachments.Where(a => a.Id == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(a => a.Width, width).SetProperty(a => a.Height, height), ct);
+
     public async Task<IReadOnlyList<Attachment>> AttachToMessageAsync(IReadOnlyList<string> ids, long messageId, CancellationToken ct = default)
     {
         if (ids.Count == 0) return Array.Empty<Attachment>();
         var atts = await db.Attachments.Where(a => ids.Contains(a.Id)).ToListAsync(ct);
         var result = new List<Attachment>();
-        foreach (var id in ids)
+        // `ids` IS the sender's order — this loop is the only place it is ever known, so it is
+        // the only place the position can be recorded.
+        for (var position = 0; position < ids.Count; position++)
         {
+            var id = ids[position];
             var a = atts.FirstOrDefault(x => x.Id == id);
             if (a is null) continue;
             if (a.MessageId is null)
             {
                 // Fresh upload — claim it.
                 a.MessageId = messageId;
+                a.Position = position;
                 result.Add(a);
             }
             else
@@ -465,6 +480,7 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
                     Height = a.Height,
                     DurationMs = a.DurationMs,
                     Waveform = a.Waveform,
+                    Position = position,
                 };
                 db.Attachments.Add(clone);
                 result.Add(clone);

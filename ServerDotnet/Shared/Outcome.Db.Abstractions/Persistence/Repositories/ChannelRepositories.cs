@@ -94,8 +94,14 @@ public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUr
 
         var ids = msgs.Select(m => m.Id).ToList();
 
+        // ORDER BY, or an album is shuffled. Without it Postgres returns the rows however the
+        // plan happens to produce them — in practice the primary key, which is a random GUID —
+        // so photos arrive in an order unrelated to the one they were sent in. Position is the
+        // sender's own order, recorded when the message was created; upload time only catches
+        // rows written before that column existed, and id makes the result stable either way.
         var atts = await db.Attachments.AsNoTracking()
             .Where(a => a.MessageId != null && ids.Contains(a.MessageId.Value))
+            .OrderBy(a => a.Position ?? int.MaxValue).ThenBy(a => a.UploadedAt).ThenBy(a => a.Id)
             .Select(a => new { a.Id, MessageId = a.MessageId!.Value, a.Filename, a.Size, a.MimeType, a.Width, a.Height, a.DurationMs, a.Waveform })
             .ToListAsync(ct);
 

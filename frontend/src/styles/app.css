@@ -977,13 +977,13 @@
   object-fit: contain; border-radius: 10px; cursor: zoom-in;
 }
 /* Two or more: one block, 2pt seams, tiles cropped on purpose — the grid owns the shape. */
+/* The column count comes from the component, which derives it from how many pictures there
+   are — there is no rule here per number of photos, and none is needed up to ten or past it. */
 .msg-album {
   margin-top: 4px; display: grid; gap: 2px;
-  grid-template-columns: 1fr 1fr; border-radius: 10px; overflow: hidden;
+  border-radius: 10px; overflow: hidden;
 }
 .msg-album img { display: block; width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; aspect-ratio: 1; }
-/* Three: the first one spans the top, like the phone. */
-.msg-album.n3 img:first-child { grid-column: 1 / -1; aspect-ratio: 16 / 10; }
 
 /* A message that is only pictures loses the bubble's padding: 12px of inset frames text
    nicely and reads as a fat border around a photo. */
@@ -1539,38 +1539,29 @@
   flex-wrap: wrap;
 }
 .attachment-preview-bar.visible { display: flex; }
-.attachment-preview-item {
-  position: relative; border-radius: var(--radius-sm);
-  overflow: hidden; background: var(--bg-secondary);
+/* A chip for anything without a picture, a tile for anything with one. */
+.attachment-preview {
+  position: relative; display: flex; align-items: center; gap: 6px;
+  padding: 6px 26px 6px 10px; border-radius: var(--radius-sm);
+  background: var(--bg-secondary); font-size: 13px; color: var(--text-normal);
 }
-.attachment-preview-img {
-  display: block; max-width: 120px; max-height: 120px;
-  object-fit: cover; border-radius: var(--radius-sm);
+.attachment-preview .att-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-preview.thumb { padding: 0; width: 76px; height: 76px; overflow: hidden; }
+.attachment-preview.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Over the picture, not beside it — a bar next to a tile would stretch the row. */
+.attachment-preview.thumb .att-progress {
+  position: absolute; left: 6px; right: 6px; bottom: 6px; width: auto; margin: 0;
+  background: rgba(0, 0, 0, .55);
 }
-.attachment-preview-file {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 12px; font-size: 20px;
-}
-.attachment-preview-name {
-  font-size: 12px; color: var(--text-muted); max-width: 80px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.attachment-preview-remove {
+.attachment-preview .remove-btn {
   position: absolute; top: 2px; right: 2px;
-  width: 20px; height: 20px; border-radius: var(--radius-circle);
-  background: rgba(0,0,0,.7); color: var(--header-primary);
-  font-size: 14px; display: flex; align-items: center;
-  justify-content: center; cursor: pointer; border: none;
-  transition: background .15s;
+  width: 20px; height: 20px; border: none; border-radius: var(--radius-circle);
+  background: rgba(0, 0, 0, .7); color: var(--header-primary);
+  font-size: 14px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s ease-out;
 }
-.attachment-preview-remove:hover { background: rgba(255,255,255,.2); }
-.attachment-preview-item.uploading { opacity: .6; }
-.attachment-preview-spinner {
-  position: absolute; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  animation: spinCentered 1s linear infinite;
-}
-@keyframes spinCentered { to { transform: translate(-50%, -50%) rotate(360deg); } }
+.attachment-preview .remove-btn:hover { background: rgba(255, 255, 255, .2); }
 @keyframes iconSpin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -3408,6 +3399,35 @@
   border-radius: 8px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
   cursor: default;
 }
+
+/* Album navigation. Big targets pinned to the sides — the picture stays clickable in the
+   middle, and clicking THROUGH to the backdrop still closes. */
+.lightbox-nav {
+  position: fixed; top: 50%; transform: translateY(-50%);
+  width: 48px; height: 48px; border-radius: var(--radius-circle);
+  display: grid; place-items: center; cursor: pointer;
+  background: rgba(0, 0, 0, .45); color: #fff; border: none;
+  transition: background .15s ease;
+}
+.lightbox-nav:hover { background: rgba(0, 0, 0, .7); }
+.lightbox-nav.prev { left: 18px; }
+.lightbox-nav.next { right: 18px; }
+.lightbox-count {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+  color: rgba(255, 255, 255, .8); font-size: 13px;
+  font-variant-numeric: tabular-nums; user-select: none;
+  display: flex; align-items: center; gap: 10px; max-width: 70vw;
+}
+.lightbox-img.loading {
+  /* The thumbnail blown up to full size is soft; say so, so the softness reads as "still
+     arriving" and not as a photo that came out badly. */
+  filter: blur(6px);
+}
+.lightbox-img { transition: filter 180ms ease-out; }
+.lightbox-name {
+  color: rgba(255, 255, 255, .55);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .lightbox-close {
   position: fixed; top: 18px; right: 20px;
   width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
@@ -3840,19 +3860,22 @@
 @keyframes vrec-pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
 .voice-rec-label { color: var(--text-normal); font-size: 14px; font-variant-numeric: tabular-nums; }
 
+/* No frame of its own — the bubble already is one, and a second rounded box inside it
+   boxed the clip into a window with the waveform squeezed into what was left. Same change
+   the phone got: draw the player straight onto the bubble. */
 .voice-msg {
-  display: inline-flex; align-items: center; gap: 10px;
-  background: var(--bg-secondary); border: 1px solid var(--border);
-  border-radius: 14px; padding: 8px 12px; margin-top: 4px; max-width: 360px;
+  display: flex; align-items: center; gap: 10px;
+  background: none; border: none;
+  border-radius: 0; padding: 0; margin-top: 4px; width: 100%; min-width: 240px;
 }
 .voice-msg-play {
-  flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%;
+  flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--accent); color: #fff; cursor: pointer;
 }
 .voice-msg-play:hover { filter: brightness(1.08); }
 .voice-msg-wave {
-  display: flex; align-items: center; gap: 2px; height: 32px; flex: 1;
+  display: flex; align-items: center; gap: 2px; height: 38px; flex: 1;
   min-width: 120px; cursor: pointer;
 }
 .vm-bar {

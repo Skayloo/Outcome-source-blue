@@ -48,6 +48,18 @@ export function assetUrl(path: string | null | undefined): string | undefined {
   return serverOrigin() + (path.startsWith("/") ? path : `/${path}`);
 }
 
+/**
+ * The same file, downscaled. Avatars are drawn at thirty pixels and thumbnails at a few
+ * hundred, and both were being served whatever the camera produced — a 600 KB avatar, a 6 MB
+ * thumbnail. The server keeps a preview beside every picture and hands it over for this;
+ * anything without one falls back to the original, so the URL is always safe to use.
+ */
+export function assetUrlSmall(path: string | null | undefined): string | undefined {
+  const url = assetUrl(path);
+  if (!url) return undefined;
+  return url + (url.includes("?") ? "&" : "?") + "sz=sm";
+}
+
 /** The host last used to sign in — prefills the login screen's server field. */
 export function readLastHost(): string {
   try { return localStorage.getItem(LAST_HOST_KEY) ?? ""; } catch { return ""; }

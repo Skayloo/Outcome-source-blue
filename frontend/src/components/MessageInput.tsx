@@ -17,7 +17,18 @@ import { t } from "@lib/i18n";
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // matches the server's cap in UploadEndpoints
 
-interface Pending { key: number; filename: string; progress: number; serverId: string | null }
+interface Pending {
+  key: number; filename: string; progress: number; serverId: string | null;
+  /** Object URL of a picked image, so the composer shows the PICTURE rather than a filename.
+   *  Made from the local file, so it appears the instant it is chosen and owes the server
+   *  nothing. Must be revoked, or every picture picked in a session stays in memory. */
+  preview: string | null;
+}
+
+/** Object URLs are held by the document until revoked; dropping the row is not enough. */
+function releasePreview(p: Pending): void {
+  if (p.preview) URL.revokeObjectURL(p.preview);
+}
 
 export function MessageInput({ channelId }: { channelId?: number } = {}) {
   useStoreState(channelsStore);
@@ -71,7 +82,8 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
         continue;
       }
       const key = keySeq.current++;
-      setPending((p) => [...p, { key, filename: f.name, progress: 0, serverId: null }]);
+      const preview = f.type.startsWith("image/") ? URL.createObjectURL(f) : null;
+      setPending((p) => [...p, { key, filename: f.name, progress: 0, serverId: null, preview }]);
       api.uploadFileWithProgress(f, (pct) => {
         setPending((p) => p.map((x) => (x.key === key ? { ...x, progress: pct } : x)));
       })
@@ -80,7 +92,11 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
         })
         .catch(() => {
           setTransientError(t("chat.uploadFailed", { name: f.name }));
-          setPending((p) => p.filter((x) => x.key !== key));
+          setPending((p) => {
+            const gone = p.find((x) => x.key === key);
+            if (gone) releasePreview(gone);
+            return p.filter((x) => x.key !== key);
+          });
         });
     }
   }
@@ -110,7 +126,7 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
     if (composer.replyTo) payload.reply_to = composer.replyTo.id;
     wsSend("chat_send", payload);
     setText("");
-    setPending([]);
+    setPending((p) => { p.forEach(releasePreview); return []; });
     clearComposer();
   }
 
@@ -312,15 +328,33 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
       )}
       {pending.length > 0 && (
         <div className="attachment-preview-bar visible">
-          {pending.map((p) => (
-            <div className="attachment-preview" key={p.key}>
-              <span className="att-name">{p.filename}</span>
-              {p.serverId === null && (
-                <span className="att-progress"><span className="att-progress-bar" style={{ width: `${p.progress}%` }} /></span>
-              )}
-              <button className="remove-btn" onClick={() => setPending((x) => x.filter((y) => y.key !== p.key))}>×</button>
-            </div>
-          ))}
+          {pending.map((p) => {
+            const drop = () => setPending((x) => {
+              const gone = x.find((y) => y.key === p.key);
+              if (gone) releasePreview(gone);
+              return x.filter((y) => y.key !== p.key);
+            });
+            // A picture shows as a picture. Choosing five and seeing five filenames tells you
+            // how many you picked but not WHICH, which is the only thing worth checking before
+            // it is sent.
+            return p.preview ? (
+              <div className="attachment-preview thumb" key={p.key} title={p.filename}>
+                <img src={p.preview} alt={p.filename} />
+                {p.serverId === null && (
+                  <span className="att-progress"><span className="att-progress-bar" style={{ width: `${p.progress}%` }} /></span>
+                )}
+                <button className="remove-btn" onClick={drop}>×</button>
+              </div>
+            ) : (
+              <div className="attachment-preview" key={p.key}>
+                <span className="att-name">{p.filename}</span>
+                {p.serverId === null && (
+                  <span className="att-progress"><span className="att-progress-bar" style={{ width: `${p.progress}%` }} /></span>
+                )}
+                <button className="remove-btn" onClick={drop}>×</button>
+              </div>
+            );
+          })}
         </div>
       )}
       {recording ? (

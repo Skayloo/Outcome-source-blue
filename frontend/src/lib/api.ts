@@ -548,9 +548,10 @@ export function createApiClient(
       return request<void>("DELETE", `/friends/${userId}`, undefined, signal);
     },
 
-    /** Rename a server. Owner / server-admin. */
-    renameServer(id: number, name: string, signal?: AbortSignal): Promise<void> {
-      return request<void>("PATCH", `/servers/${id}`, { name }, signal);
+    /** Rename a server and/or set its picture. Owner / server-admin.
+     *  icon: undefined leaves it alone, "" removes it, otherwise a /api/v1/files/{id} URL. */
+    renameServer(id: number, name: string, icon?: string, signal?: AbortSignal): Promise<void> {
+      return request<void>("PATCH", `/servers/${id}`, icon === undefined ? { name } : { name, icon }, signal);
     },
 
     /** Soft-delete a server (owner only): kicks all members, then hides it. */

@@ -16,6 +16,7 @@ using Outcome.Infrastructure.Configuration;
 using Outcome.Infrastructure.Migrations;
 using Outcome.Infrastructure.Tenancy;
 using Outcome.Shared.Abstractions.Persistence;
+using Outcome.Shared.Abstractions.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -355,6 +356,7 @@ static async Task MigrateDatabaseAsync(WebApplication app)
             await registry.EnsureSchemaAsync();
             await provisioner.ProvisionAllAsync();
             await ResetPresenceAsync(app, logger);
+            await BackfillImageDimensionsAsync(app, logger);
             return;
         }
         catch (Exception ex) when (attempt < maxAttempts)
@@ -390,6 +392,76 @@ static async Task ResetPresenceAsync(WebApplication app, ILogger logger)
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Space {Slug}: could not reset presence", space.Slug);
+        }
+    }
+}
+
+/// <summary>
+/// Fills in width/height for images stored before the server started measuring them. Runs at
+/// every boot and does nothing once they all have values — the query only selects NULLs, so it
+/// costs one indexless scan of a small table and stops.
+///
+/// It has to happen HERE rather than in a migration or an external tool: the bytes are
+/// encrypted at rest, and the only thing that can read them is the server holding the key.
+///
+/// Bounded per boot. An install with thousands of old pictures finishes over several restarts rather
+/// than holding startup open, and a picture that cannot be measured is simply skipped — the
+/// dimensions are a rendering hint, and their absence is the behaviour we had all along.
+/// </summary>
+static async Task BackfillImageDimensionsAsync(WebApplication app, ILogger logger)
+{
+    const int perBoot = 500;
+    var registry = app.Services.GetRequiredService<SpaceRegistry>();
+    var scopes = app.Services.GetRequiredService<IServiceScopeFactory>();
+    foreach (var space in await registry.ListAsync())
+    {
+        if (!space.Active) continue;
+        try
+        {
+            await using var scope = scopes.CreateAsyncScopeFor(space);
+            var attachments = scope.ServiceProvider.GetRequiredService<IAttachmentRepository>();
+            var storage = scope.ServiceProvider.GetRequiredService<IFileStorage>();
+
+            var pending = await attachments.ListImagesAsync(perBoot);
+            if (pending.Count == 0) continue;
+
+            var measured = 0;
+            foreach (var att in pending)
+            {
+                // Decide BEFORE downloading: once everything is done this is one cheap
+                // existence check per picture and no bytes move at all.
+                bool needsPreview;
+                await using (var probe = storage.OpenRead(att.StoredAs + "_sm")) needsPreview = probe is null;
+                if (att.Width is not null && !needsPreview) continue;
+
+                await using var src = storage.OpenRead(att.StoredAs);
+                if (src is null) continue;
+                using var ms = new MemoryStream();
+                await src.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+
+                // While the bytes are decrypted and in hand, make the downscaled copy too —
+                // otherwise every picture already in a conversation goes on costing its full
+                // size to draw a thumbnail.
+                if (needsPreview &&
+                    await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(bytes, att.MimeType) is { } small)
+                {
+                    await using var sm = new MemoryStream(small);
+                    await storage.SaveAsync(att.StoredAs + "_sm", sm);
+                }
+
+                if (att.Width is null &&
+                    await Outcome.Infrastructure.Media.ImageProbe.MeasureAsync(bytes) is { } dim)
+                    await attachments.SetDimensionsAsync(att.Id, dim.Width, dim.Height);
+                measured++;
+            }
+            if (measured > 0)
+                logger.LogInformation("Space {Slug}: prepared {Count} of {Total} image(s)",
+                    space.Slug, measured, pending.Count);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Space {Slug}: could not backfill image dimensions", space.Slug);
         }
     }
 }

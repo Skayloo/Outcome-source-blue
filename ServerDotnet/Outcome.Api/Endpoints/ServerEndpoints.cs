@@ -16,7 +16,9 @@ public static class ServerEndpoints
     public sealed record JoinServerBody(string Code);
     public sealed record AssignServerRoleBody(long? RoleId);
     public sealed record SetVisibilityBody(bool IsPublic, string? Description);
-    public sealed record RenameServerBody(string Name);
+    /// <summary>Rename and/or set the picture. Icon null = leave it alone, empty = remove it —
+    /// a record cannot tell "absent" from "null", so empty string is how you clear it.</summary>
+    public sealed record RenameServerBody(string Name, string? Icon = null);
     public sealed record SetDomainBody(string? Domain);
 
     private const int MaxServersPerUser = 3;
@@ -128,6 +130,18 @@ public static class ServerEndpoints
             var name = (body.Name ?? string.Empty).Trim();
             if (name.Length is 0 or > 64) throw DomainException.BadRequest("server name must be 1-64 characters");
             if (!await servers.RenameAsync(id, name)) throw DomainException.NotFound("server not found");
+
+            // The column, the DTOs and both clients have carried an icon since the beginning;
+            // nothing could ever write one, so every server has shown two letters of its name.
+            if (body.Icon is { } raw)
+            {
+                var icon = raw.Trim();
+                // Our own uploads only. An arbitrary URL here would be fetched by every client
+                // that renders the server list — a pixel that sees everyone who opens the app.
+                if (icon.Length > 0 && !icon.StartsWith("/api/v1/files/", StringComparison.Ordinal))
+                    throw DomainException.BadRequest("icon must be an uploaded file");
+                await servers.SetIconAsync(id, icon.Length == 0 ? null : icon);
+            }
             return Results.NoContent();
         });
 

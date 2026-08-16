@@ -23,7 +23,13 @@ public sealed class FileUrlSigner(IOptions<JwtAuthOptions> jwt) : IFileUrlSigner
 
     public string Sign(string attachmentId)
     {
-        var exp = DateTimeOffset.UtcNow.Add(Lifetime).ToUnixTimeSeconds();
+        // The expiry is QUANTISED to the UTC day, which is the whole point: a link minted from
+        // the current second is a different URL every time it is issued, and a cache keyed by
+        // URL — every browser's, and the phone's — misses on every one of them. The week above
+        // bought nothing while this line handed out a fresh link per request. Same picture, same
+        // URL, all day; the signature turns over once at midnight.
+        var today = new DateTimeOffset(DateTime.UtcNow.Date, TimeSpan.Zero);
+        var exp = today.Add(Lifetime).ToUnixTimeSeconds();
         return $"/api/v1/files/{attachmentId}?e={exp}&s={Mac(attachmentId, exp)}";
     }
 

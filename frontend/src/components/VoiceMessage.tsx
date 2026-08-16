@@ -47,7 +47,7 @@ export function VoiceMessage({ att, channelId, messageId, sender, own }: {
   return (
     <div className="voice-msg">
       <button className="voice-msg-play" onClick={() => (active ? toggleVoice() : start())} aria-label={playing ? "Pause" : "Play"}>
-        <Icon name={playing ? "pause" : "play"} size={16} />
+        <Icon name={playing ? "pause" : "play"} size={20} />
       </button>
       <div className="voice-msg-wave" onClick={seekTo}>
         {peaks.map((p, i) => {

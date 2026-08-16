@@ -1,5 +1,5 @@
 import { initials } from "@lib/format";
-import { assetUrl } from "@lib/serverHost";
+import { assetUrlSmall } from "@lib/serverHost";
 
 interface AvatarProps {
   username: string;
@@ -31,7 +31,7 @@ export function Avatar({ username, avatar, size = 40, color = "#5865f2", classNa
     <div className={"oc-avatar" + (className ? " " + className : "")} style={style}>
       {avatar ? (
         <img
-          src={assetUrl(avatar)}
+          src={assetUrlSmall(avatar)}
           alt={username}
           width={size}
           height={size}

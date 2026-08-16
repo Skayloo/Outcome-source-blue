@@ -96,6 +96,11 @@ public interface IAttachmentRepository
     Task<Attachment?> GetByIdAsync(string id, CancellationToken ct = default);
     Task<IReadOnlyList<Attachment>> AttachToMessageAsync(IReadOnlyList<string> ids, long messageId, CancellationToken ct = default);
     Task<IReadOnlyList<Attachment>> ListByMessageIdsAsync(IReadOnlyList<long> messageIds, CancellationToken ct = default);
+    /// <summary>Image attachments, oldest first — the backfill's work list. ALL of them, not
+    /// only unmeasured ones: a picture can already have its dimensions and still be missing
+    /// its downscaled copy.</summary>
+    Task<IReadOnlyList<Attachment>> ListImagesAsync(int limit, CancellationToken ct = default);
+    Task SetDimensionsAsync(string id, int width, int height, CancellationToken ct = default);
 }
 
 public interface IReactionRepository

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@lib/icons";
-import { assetUrl } from "@lib/serverHost";
+import { assetUrl, assetUrlSmall } from "@lib/serverHost";
 import { Avatar } from "@components/Avatar";
 import { VoiceMessage } from "@components/VoiceMessage";
 import { EmojiPicker } from "@components/EmojiPicker";
@@ -46,8 +46,13 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
     return () => window.removeEventListener("focus", onFocus);
   }, [channelId]);
 
+  // Read the flag during render, not inside the effect, and depend on it: unlocking E2EE
+  // clears the loaded set to force a refetch, and with [channelId] alone the OPEN channel
+  // never noticed — the history you were looking at stayed as lock placeholders until a
+  // reload. The component already re-renders on this store, so the flag flipping is enough.
+  const channelLoaded = channelId != null && isChannelLoaded(channelId);
   useEffect(() => {
-    if (channelId == null || isChannelLoaded(channelId)) return;
+    if (channelId == null || channelLoaded) return;
     let cancelled = false;
     api.getMessages(channelId, { limit: 50 })
       .then((resp) => {
@@ -60,7 +65,7 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       })
       .catch(() => { /* ignore */ });
     return () => { cancelled = true; };
-  }, [channelId]);
+  }, [channelId, channelLoaded]);
 
   const messages = channelId != null ? getChannelMessages(channelId) : [];
   // A DM is a conversation between two people; either of them may delete anything in it.
@@ -203,20 +208,35 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
         {(() => {
           const imgs = m.attachments.filter((a) => isImage(a.mime));
           if (imgs.length === 0) return null;
+          // The viewer gets the WHOLE album and opens on the one that was clicked, so several
+          // pictures are browsed in place instead of opened and closed one at a time.
+          const album = imgs.map((a) => ({ url: assetUrl(a.url), alt: a.filename, thumb: assetUrlSmall(a.url) }));
           if (imgs.length === 1) {
             const a = imgs[0]!;
             return (
               <div className="msg-photo" key={a.id}>
-                <img src={assetUrl(a.url)} alt={a.filename} loading="lazy"
-                  onClick={() => openLightbox(assetUrl(a.url), a.filename)} />
+                {/* Preview in the list, full size only when it is opened. */}
+                <img src={assetUrlSmall(a.url)} alt={a.filename} loading="lazy"
+                  onClick={() => openLightbox(album, 0)} />
               </div>
             );
           }
+          // The grid is derived from the count, not chosen from a list of cases: a square-ish
+          // arrangement, never wider than three, which holds for two pictures and for ten
+          // without a rule per number. A single leftover on the last row spans it rather than
+          // sitting in one column with a hole beside it.
+          // Three columns only when they divide evenly or leave exactly one over — otherwise
+          // two, which always does. That is what keeps the last row from ending in a hole at
+          // any count, and why there is no case list here. Up to four, two columns keep the
+          // pictures big enough to make out.
+          const cols = imgs.length <= 4 ? 2 : imgs.length % 3 <= 1 ? 3 : 2;
+          const orphan = imgs.length % cols === 1 ? imgs.length - 1 : -1;
           return (
-            <div className={"msg-album n" + Math.min(imgs.length, 4)}>
-              {imgs.map((a) => (
-                <img key={a.id} src={assetUrl(a.url)} alt={a.filename} loading="lazy"
-                  onClick={() => openLightbox(assetUrl(a.url), a.filename)} />
+            <div className="msg-album" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+              {imgs.map((a, i) => (
+                <img key={a.id} src={assetUrlSmall(a.url)} alt={a.filename} loading="lazy"
+                  style={i === orphan ? { gridColumn: `span ${cols}`, aspectRatio: `${cols * 1.15} / 1` } : undefined}
+                  onClick={() => openLightbox(album, i)} />
               ))}
             </div>
           );

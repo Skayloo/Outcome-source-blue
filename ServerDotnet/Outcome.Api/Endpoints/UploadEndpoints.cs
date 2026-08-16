@@ -56,9 +56,36 @@ public static class UploadEndpoints
                     await storage.SaveAsync(id, save, ctx.RequestAborted);
                 }
 
+                // A picture's shape travels with it. Without it a client cannot know how much
+                // room to leave until it has decoded the bytes, so a chat opened from cold
+                // lays every photo out at a guess and reflows when they land — which is
+                // exactly what it looks like: the picture appears wrong, then corrects itself.
+                int? width = null, height = null;
+                if (mime.StartsWith("image/", StringComparison.Ordinal))
+                {
+                    byte[] raw;
+                    await using (var s = file.OpenReadStream())
+                    {
+                        using var ms = new MemoryStream();
+                        await s.CopyToAsync(ms, ctx.RequestAborted);
+                        raw = ms.ToArray();
+                    }
+                    if (await Outcome.Infrastructure.Media.ImageProbe.MeasureAsync(raw, ctx.RequestAborted) is { } dim)
+                        (width, height) = (dim.Width, dim.Height);
+
+                    // A preview alongside the original. Avatars are drawn at thirty points and
+                    // thumbnails at a few hundred, and both were costing whatever the camera
+                    // produced — six megabytes to fill a square the size of a fingernail.
+                    if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(raw, mime, ct: ctx.RequestAborted) is { } small)
+                    {
+                        await using var sm = new MemoryStream(small);
+                        await storage.SaveAsync(PreviewKey(id), sm, ctx.RequestAborted);
+                    }
+                }
+
                 try
                 {
-                    await mediator.Send(new CreateAttachmentCommand(id, file.FileName, id, mime, file.Length, null, null), ctx.RequestAborted);
+                    await mediator.Send(new CreateAttachmentCommand(id, file.FileName, id, mime, file.Length, width, height), ctx.RequestAborted);
                 }
                 catch
                 {
@@ -150,13 +177,23 @@ public static class UploadEndpoints
             // so it doubles as a strong ETag. A browser reload revalidates with If-None-Match even
             // for an immutable resource — without a validator the server had to re-send the whole
             // file every time; now it answers 304 and the bytes stay in the browser's cache.
-            var etag = $"\"{id}\"";
+            var etag = ctx.Request.Query["sz"] == "sm" ? $"\"{id}-sm\"" : $"\"{id}\"";
             ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
             ctx.Response.Headers.ETag = etag;
             if (ctx.Request.Headers.IfNoneMatch.Count > 0 && ctx.Request.Headers.IfNoneMatch.ToString() == etag)
                 return Results.StatusCode(StatusCodes.Status304NotModified);
 
-            var stream = storage.OpenRead(att.StoredAs);
+            // ?sz=sm asks for the downscaled copy. Missing (anything uploaded before previews
+            // existed, or a picture ffmpeg would not take) simply falls through to the original,
+            // which is exactly the behaviour everything had until now.
+            Stream? stream = null;
+            var servingPreview = false;
+            if (ctx.Request.Query["sz"] == "sm")
+            {
+                stream = storage.OpenRead(PreviewKey(att.StoredAs));
+                servingPreview = stream is not null;
+            }
+            stream ??= storage.OpenRead(att.StoredAs);
             if (stream is null) return Results.NotFound();
 
             // Never let an upload decide it is a document. The stored MIME type comes from the
@@ -172,10 +209,18 @@ public static class UploadEndpoints
             ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
             ctx.Response.Headers.ContentDisposition =
                 ContentDisposition(inline ? "inline" : "attachment", att.Filename);
-            return Results.Stream(stream, inline ? att.MimeType : "application/octet-stream",
+            // A preview is JPEG unless the original could carry transparency, in which case it
+            // stayed PNG — and with nosniff set the browser will not rescue a wrong label.
+            var contentType = servingPreview
+                ? (Outcome.Infrastructure.Media.ImageProbe.KeepsAlpha(att.MimeType) ? "image/png" : "image/jpeg")
+                : att.MimeType;
+            return Results.Stream(stream, inline ? contentType : "application/octet-stream",
                 enableRangeProcessing: true);
         });
     }
+
+    /// <summary>Where a picture's downscaled copy lives, next to the original.</summary>
+    private static string PreviewKey(string id) => id + "_sm";
 
     /// <summary>
     /// The only types the client renders in place, and therefore the only ones served with their

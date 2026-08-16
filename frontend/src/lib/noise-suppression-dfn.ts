@@ -153,9 +153,14 @@ const SPEECH_LIMIT_DB = 6;
  * Speech runs 20–35 dB over the room it is spoken in, whatever the absolute level, so these
  * are margins over a tracked floor rather than dBFS values.
  */
-const OPEN_MARGIN_DB = 12;
+// Raised from 12/6. At six, a steady room only a few dB above its own floor kept the gate
+// OPEN — and an open gate means the limit sits at SPEECH_LIMIT_DB, so the fan came through
+// untouched while the model was allowed to cut almost nothing. Speech runs 20–35 dB over the
+// room, so fourteen is still well clear of it, and closing at nine leaves the floor free to
+// re-learn (it only falls quickly while the gate is shut).
+const OPEN_MARGIN_DB = 14;
 /** Lower than the open margin: the gap is what stops the gate chattering on a steady room. */
-const CLOSE_MARGIN_DB = 6;
+const CLOSE_MARGIN_DB = 9;
 /** Keep the gate open this long after the level drops, so word gaps are not treated as silence. */
 const HOLD_MS = 250;
 const POLL_MS = 40;

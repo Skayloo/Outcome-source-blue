@@ -12,6 +12,7 @@ import { membersStore } from "@stores/members.store";
 import { channelsStore } from "@stores/channels.store";
 import { serversStore } from "@stores/servers.store";
 import { setTransientError } from "@stores/ui.store";
+import { assetUrl } from "@lib/serverHost";
 import { loadServers, switchServer } from "@lib/session";
 import { api } from "@lib/services";
 import { roleColor } from "@lib/format";
@@ -79,6 +80,17 @@ function OverviewTab({ serverId, canDelete, onClose }: { serverId: number; canDe
     catch (e) { setTransientError(e instanceof Error ? e.message : t("srvset.saveFailed")); }
     finally { setBusy(false); }
   }
+  /** Upload a picture and hang it on the server. Empty string removes it. */
+  async function saveIcon(file: File | null) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const url = file ? (await api.uploadFile(file)).url : "";
+      await api.renameServer(serverId, (server?.name ?? name).trim(), url);
+      await loadServers();
+    } catch (e) { setTransientError(e instanceof Error ? e.message : t("srvset.saveFailed")); }
+    finally { setBusy(false); }
+  }
   async function saveVisibility() {
     setBusy(true);
     try { await api.setServerVisibility(serverId, isPublic, desc); }
@@ -100,6 +112,28 @@ function OverviewTab({ serverId, canDelete, onClose }: { serverId: number; canDe
   return (
     <div className="srvset-pane">
       <h2 className="srvset-h2">{t("srvset.overview")}</h2>
+      <div className="form-group">
+        <label className="form-label">{t("srvset.serverIcon")}</label>
+        <div className="srvset-row" style={{ alignItems: "center" }}>
+          {server?.icon
+            ? <img src={assetUrl(server.icon)} alt="" width={64} height={64}
+                style={{ borderRadius: 16, objectFit: "cover", flexShrink: 0 }} />
+            : <div style={{
+                width: 64, height: 64, borderRadius: 16, flexShrink: 0,
+                display: "grid", placeItems: "center",
+                background: "var(--bg-secondary)", color: "var(--text-muted)", fontWeight: 700,
+              }}>{(server?.name ?? "?").slice(0, 2).toUpperCase()}</div>}
+          <label className="btn-primary" style={{ width: "auto", cursor: "pointer" }}>
+            {t("srvset.iconUpload")}
+            <input type="file" accept="image/*" hidden disabled={busy}
+              onChange={(e) => { const f = e.target.files?.[0] ?? null; e.target.value = ""; void saveIcon(f); }} />
+          </label>
+          {server?.icon && (
+            <button className="ac-btn" style={{ width: "auto" }} disabled={busy}
+              onClick={() => void saveIcon(null)}>{t("srvset.iconRemove")}</button>
+          )}
+        </div>
+      </div>
       <div className="form-group">
         <label className="form-label">{t("srvset.serverName")}</label>
         <div className="srvset-row">
