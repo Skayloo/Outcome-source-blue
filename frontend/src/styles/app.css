@@ -552,11 +552,27 @@
 /* ── Drag-and-drop upload + progress ── */
 .message-input-wrap { position: relative; }
 .message-input-wrap.drag-over { outline: 2px dashed var(--accent); outline-offset: -6px; border-radius: 8px; }
+/* The whole window is the target, so the hint belongs over the whole window — a banner on a
+   60px strip is not visible feedback for a file dragged across the conversation. The room
+   goes dark and one card says where the thing is going. */
 .drop-hint {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,.45); color: var(--header-primary); font-weight: 600; font-size: 15px;
-  pointer-events: none; z-index: 5; border-radius: 8px;
+  position: fixed; inset: 0; z-index: 1200;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .6);
+  pointer-events: none;
 }
+.drop-card {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  width: min(560px, 68vw); padding: 16px;
+  background: var(--accent); color: #fff;
+  border-radius: 14px; box-shadow: 0 24px 64px rgba(0, 0, 0, .45);
+  /* The dashed edge sits INSIDE the card, the way a drop target is drawn everywhere. */
+  outline: 2px dashed rgba(255, 255, 255, .75); outline-offset: -14px;
+  text-align: center;
+}
+.drop-card .icon { margin-top: 14px; opacity: .95; }
+.drop-title { font-size: 22px; font-weight: 700; line-height: 1.2; padding: 0 18px; }
+.drop-sub { font-size: 13px; opacity: .85; padding: 0 18px 14px; }
 .att-progress {
   display: inline-block; width: 80px; height: 4px; margin: 0 6px;
   background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; vertical-align: middle;
@@ -1539,6 +1555,28 @@
   flex-wrap: wrap;
 }
 .attachment-preview-bar.visible { display: flex; }
+/* Attach menu: photo or file. Anchored to the button rather than centred, so it reads as
+   belonging to it — and the backdrop is what closes it, including on a click in the text. */
+.attach-wrap { position: relative; display: inline-flex; }
+.attach-backdrop { position: fixed; inset: 0; z-index: 40; }
+.attach-menu {
+  position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 41;
+  min-width: 210px; padding: 6px;
+  background: var(--bg-floating, var(--bg-tertiary));
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, .45);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.attach-menu button {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border: none; border-radius: 6px;
+  background: none; color: var(--text-normal); font: inherit; font-size: 14px;
+  text-align: left; cursor: pointer;
+  transition: background .12s ease-out;
+}
+.attach-menu button:hover { background: var(--bg-modifier-hover); }
+.attach-menu button:active { transform: scale(.985); }
+
 /* A chip for anything without a picture, a tile for anything with one. */
 .attachment-preview {
   position: relative; display: flex; align-items: center; gap: 6px;

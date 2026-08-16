@@ -685,9 +685,16 @@ export function createApiClient(
     },
 
     /** Upload a file reporting 0-100 progress via XHR (fetch can't report upload progress). */
+    /**
+     * @param asFile Send it untouched. Without this a picture is stored at screen size —
+     *   the copy everyone actually looks at — and the upload itself is not kept, which is the
+     *   difference between a bucket that grows with the conversation and one that grows with
+     *   the camera. Set it when the sender chose "file" rather than "photo".
+     */
     uploadFileWithProgress(
       file: File,
       onProgress: (pct: number) => void,
+      asFile = false,
       signal?: AbortSignal,
     ): Promise<UploadResponse> {
       return new Promise<UploadResponse>((resolve, reject) => {
@@ -714,6 +721,7 @@ export function createApiClient(
         if (signal) signal.addEventListener("abort", () => xhr.abort());
         const fd = new FormData();
         fd.append("file", file);
+        if (asFile) fd.append("as_file", "1");
         xhr.send(fd);
       });
     },

@@ -45,6 +45,10 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
   const [mentionIdx, setMentionIdx] = useState(0);
   const mentionMembers = useStoreState(membersStore);
   const fileRef = useRef<HTMLInputElement>(null);
+  const docRef = useRef<HTMLInputElement>(null);
+  // Photo or file, the way the phone asks. A picture sent as a PHOTO is stored at screen size
+  // and the upload is not kept; sent as a FILE it is kept exactly, at whatever it weighs.
+  const [attachOpen, setAttachOpen] = useState(false);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
   const keySeq = useRef(0);
@@ -64,6 +68,40 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
     }
   }, [composer.editing?.id]);
 
+  // Dropping a file anywhere in the window attaches it, not just on the composer strip.
+  // Aiming for a 60px-tall box at the bottom of the screen is not how anyone drags a photo
+  // into a chat — they drop it on the conversation, which used to do nothing at all.
+  //
+  // Above the early return below, like the hook after it, and calling through a ref because
+  // uploadFiles is declared past that return. preventDefault on dragover is what stops the
+  // browser from simply navigating to the file.
+  const uploadRef = useRef<(f: FileList | File[], asFile?: boolean) => void>(() => {});
+  useEffect(() => {
+    const carriesFiles = (e: globalThis.DragEvent) =>
+      Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    const over = (e: globalThis.DragEvent) => {
+      if (!carriesFiles(e)) return;
+      e.preventDefault();
+      setDragOver(true);
+    };
+    // relatedTarget is null exactly when the pointer leaves the window itself.
+    const leave = (e: globalThis.DragEvent) => { if (e.relatedTarget === null) setDragOver(false); };
+    const drop = (e: globalThis.DragEvent) => {
+      if (!carriesFiles(e)) return;
+      e.preventDefault();
+      setDragOver(false);
+      if (e.dataTransfer?.files?.length) uploadRef.current(e.dataTransfer.files);
+    };
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, []);
+
   // Above the early return below on purpose: a hook placed after it is skipped on a
   // voice channel, and a render with a different hook count takes the whole tree down.
   // The grown height is inline style, and every path that empties the composer — send,
@@ -75,7 +113,8 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
 
   if (!ch || ch.type === "voice") return <div className="message-input-wrap" />;
 
-  function uploadFiles(files: FileList | File[]): void {
+  /** asFile: keep the upload byte for byte instead of storing a screen-sized copy of it. */
+  function uploadFiles(files: FileList | File[], asFile = false): void {
     for (const f of Array.from(files)) {
       if (f.size > MAX_UPLOAD_BYTES) {
         setTransientError(t("chat.fileTooLarge", { name: f.name }));
@@ -86,7 +125,7 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
       setPending((p) => [...p, { key, filename: f.name, progress: 0, serverId: null, preview }]);
       api.uploadFileWithProgress(f, (pct) => {
         setPending((p) => p.map((x) => (x.key === key ? { ...x, progress: pct } : x)));
-      })
+      }, asFile)
         .then((r) => {
           setPending((p) => p.map((x) => (x.key === key ? { ...x, progress: 100, serverId: r.id } : x)));
         })
@@ -100,6 +139,8 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
         });
     }
   }
+
+  uploadRef.current = uploadFiles;
 
   function submit() {
     const content = text.trim();
@@ -236,7 +277,7 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
   }
 
   function onFile(e: ChangeEvent<HTMLInputElement>) {
-    if (e.target.files) uploadFiles(e.target.files);
+    if (e.target.files) uploadFiles(e.target.files, e.target === docRef.current);
     e.target.value = "";
   }
 
@@ -308,7 +349,20 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
     >
-      {dragOver && <div className="drop-hint">{t("chat.dropToUpload")}</div>}
+      {/* Discord's shape, because it is the one that reads at a glance: the room goes dark and
+          a single card says where the thing is going. A hint tucked into the composer strip is
+          invisible while your eyes are on the file under the cursor. */}
+      {dragOver && (
+        <div className="drop-hint">
+          <div className="drop-card">
+            <Icon name="upload" size={44} />
+            <div className="drop-title">
+              {t("chat.dropToTarget", { name: ch.type === "dm" ? `@${ch.name}` : `#${ch.name}` })}
+            </div>
+            <div className="drop-sub">{t("chat.dropToUpload")}</div>
+          </div>
+        </div>
+      )}
       {composer.replyTo && (
         <div className="reply-bar visible">
           <Icon name="reply" size={17} />
@@ -367,8 +421,25 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
         </div>
       ) : (
       <div className="message-input-box">
-        <button className="input-btn" title={t("chat.attachFile")} onClick={() => fileRef.current?.click()}><Icon name="file-text" size={20} /></button>
-        <input ref={fileRef} type="file" multiple hidden onChange={onFile} />
+        <div className="attach-wrap">
+          <button className="input-btn" title={t("chat.attachFile")}
+            onClick={() => setAttachOpen((v) => !v)}><Icon name="file-text" size={20} /></button>
+          {attachOpen && (
+            <>
+              <div className="attach-backdrop" onClick={() => setAttachOpen(false)} />
+              <div className="attach-menu">
+                <button onClick={() => { setAttachOpen(false); fileRef.current?.click(); }}>
+                  <Icon name="image" size={16} /> {t("chat.attachPhoto")}
+                </button>
+                <button onClick={() => { setAttachOpen(false); docRef.current?.click(); }}>
+                  <Icon name="file-text" size={16} /> {t("chat.attachAsFile")}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={onFile} />
+        <input ref={docRef} type="file" multiple hidden onChange={onFile} />
         <textarea
           ref={taRef}
           className="msg-textarea"

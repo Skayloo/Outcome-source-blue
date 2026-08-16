@@ -23,7 +23,6 @@ const CONTACT = "bikachi84@gmail.com";
  * are end-to-end encrypted" is a promise the blue software does not keep. A policy that
  * describes an older or richer version of the product is worse than none.
  */
-const E2EE = __OUTCOME_EDITION__ === "red";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -77,19 +76,12 @@ export function PrivacyPage() {
             needs in order to work, and nothing beyond it. There is no advertising, no analytics
             SDK, no third-party tracker and no profiling anywhere in the product.
           </p>
-          {E2EE ? (
-            <p>
-              Direct messages and one-to-one calls are end-to-end encrypted on your devices. The
-              keys never leave them, so no server — ours included — can read that content.
-            </p>
-          ) : (
-            <p>
+          <p>
               This installation does not use end-to-end encryption, and does not encrypt
               anything at rest. Traffic is encrypted in transit, but messages and files are
               stored in readable form and are available to whoever operates this server. What
               that protects you from, and what it does not, is set out below.
             </p>
-          )}
           <p>We do not sell personal data, and we never have.</p>
         </Section>
 
@@ -127,22 +119,14 @@ export function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title={E2EE ? "End-to-end encryption, and its limits" : "Encryption, and its limits"}>
-          {E2EE ? (
-            <p>
-              <b>Direct messages and one-to-one calls are end-to-end encrypted.</b> Keys are
-              generated on your device and never sent to us. What reaches the server is
-              ciphertext, and we have no way to turn it back into text or audio.
-            </p>
-          ) : (
-            <p>
+        <Section title="Encryption, and its limits">
+          <p>
               <b>Nothing here is end-to-end encrypted.</b> This build of Outcome does not
               contain the end-to-end encryption code at all — not for direct messages, not for
               calls. Your messages are stored on this server in readable form and are available
               to whoever operates it. If you need content the operator cannot read, this is not
               the software to rely on for it.
             </p>
-          )}
           <p>
             <b>Messages in server channels are not end-to-end encrypted.</b> A channel is a
             shared room whose history newcomers are meant to be able to read, and per-device keys
@@ -150,28 +134,18 @@ export function PrivacyPage() {
             whoever operates it. Treat a channel the way you would any group chat on a hosted
             service.
           </p>
-          {E2EE ? (
-            <p>
-              Everything is encrypted in transit with TLS either way. The algorithms are standard
-              and public — X25519 key agreement with XSalsa20-Poly1305, via libsodium — with
-              nothing proprietary and no key escrow.
-            </p>
-          ) : (
-            <p>
+          <p>
               Everything is encrypted in transit with TLS. That protects your data from
               someone intercepting the network — not from anyone who reaches the server's
               disks, and not from the operator of the server itself.
             </p>
-          )}
         </Section>
 
         <Section title="Files you send">
           <p>
             Attachments are held in object storage and served only to people with access to
             the conversation they were sent in.
-            {E2EE
-              ? " They are encrypted at rest with AES-256-GCM, and a file sent in a direct message is additionally encrypted end to end before it leaves your device."
-              : " They are stored as uploaded — this build does not encrypt them at rest — so whoever operates the server can open them."}
+            " They are stored as uploaded — this build does not encrypt them at rest — so whoever operates the server can open them."
           </p>
         </Section>
 
@@ -190,9 +164,7 @@ export function PrivacyPage() {
         <Section title="Push notifications">
           <p>
             To deliver a notification we hand Apple a device token and the notification payload.
-            {E2EE
-              ? " For a direct message that payload is the same ciphertext the server holds — your phone decrypts it locally in a notification extension, which is why you can read the message on the lock screen while neither we nor Apple can."
-              : " If the preview is on, that payload contains the message text, so it passes through Apple in readable form."}
+            " If the preview is on, that payload contains the message text, so it passes through Apple in readable form."
           </p>
           <p>
             You can switch the preview off in settings, leaving notifications that say only that
@@ -223,7 +195,7 @@ export function PrivacyPage() {
           <p>
             We disclose data to authorities only where a valid legal demand compels us, and then
             only what we actually hold
-            {E2EE ? " — which, for direct messages and calls, is ciphertext we cannot decrypt." : "."}
+            "."
           </p>
         </Section>
 
@@ -276,7 +248,7 @@ export function PrivacyPage() {
         <Section title="Security">
           <p>
             Passwords are stored hashed. Transport is TLS throughout.
-            {E2EE ? " Files are encrypted at rest, and direct messages and calls are encrypted end to end." : " Nothing is encrypted at rest."} The
+            " Nothing is encrypted at rest." The
             administrative interface is reachable only from the operator's own network.
           </p>
           <p>

@@ -51,8 +51,20 @@ public static class UploadEndpoints
                     var read = await sniff.ReadAsync(head.AsMemory(0, 512), ctx.RequestAborted);
                     mime = MimeSniffer.Sniff(head.AsSpan(0, read), file.ContentType);
                 }
-                await using (var save = file.OpenReadStream())
+                // "Send as file" keeps the upload byte for byte. Anything else is a PICTURE:
+                // it is stored at screen size, because a photo nobody will ever view at full
+                // resolution costs thirty times its own worth in disk. The distinction is the
+                // sender's, made in the composer, and it is the only thing that decides this.
+                var asFile = form["as_file"].ToString() is "1" or "true";
+                var isImage = !asFile && mime.StartsWith("image/", StringComparison.Ordinal);
+                var storedName = file.FileName;
+                var storedSize = file.Length;
+
+                // Anything that is not a picture is stored exactly as it arrived, streamed —
+                // a hundred-megabyte video must never be pulled into memory to be filed.
+                if (!isImage)
                 {
+                    await using var save = file.OpenReadStream();
                     await storage.SaveAsync(id, save, ctx.RequestAborted);
                 }
 
@@ -61,8 +73,11 @@ public static class UploadEndpoints
                 // lays every photo out at a guess and reflows when they land — which is
                 // exactly what it looks like: the picture appears wrong, then corrects itself.
                 int? width = null, height = null;
-                if (mime.StartsWith("image/", StringComparison.Ordinal))
+                if (asFile && mime.StartsWith("image/", StringComparison.Ordinal))
                 {
+                    // Kept whole, but it still draws in the chat, so it still needs a shape and
+                    // the two copies — otherwise the one path that preserves quality is also the
+                    // one that makes every tile cost megabytes.
                     byte[] raw;
                     await using (var s = file.OpenReadStream())
                     {
@@ -72,32 +87,68 @@ public static class UploadEndpoints
                     }
                     if (await Outcome.Infrastructure.Media.ImageProbe.MeasureAsync(raw, ctx.RequestAborted) is { } dim)
                         (width, height) = (dim.Width, dim.Height);
-
-                    // A preview alongside the original. Avatars are drawn at thirty points and
-                    // thumbnails at a few hundred, and both were costing whatever the camera
-                    // produced — six megabytes to fill a square the size of a fingernail.
                     if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(raw, mime, ct: ctx.RequestAborted) is { } small)
                     {
                         await using var sm = new MemoryStream(small);
                         await storage.SaveAsync(PreviewKey(id), sm, ctx.RequestAborted);
                     }
-
-                    // …and a SCREEN-sized one. The thumbnail is far too coarse to open, so the
-                    // viewer was fetching the original — six megabytes of camera output to fill a
-                    // window that cannot show a tenth of it, which is a wait measured in tens of
-                    // seconds on anything but a fast line. 1600px is more than any display puts on
-                    // a photo here, and costs a few hundred kilobytes. The original stays one
-                    // click away for whoever actually wants it.
                     if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(raw, mime, MediumDim, ctx.RequestAborted) is { } medium)
                     {
                         await using var md = new MemoryStream(medium);
                         await storage.SaveAsync(MediumKey(id), md, ctx.RequestAborted);
                     }
                 }
+                else if (isImage)
+                {
+                    byte[] raw;
+                    await using (var s = file.OpenReadStream())
+                    {
+                        using var ms = new MemoryStream();
+                        await s.CopyToAsync(ms, ctx.RequestAborted);
+                        raw = ms.ToArray();
+                    }
+
+                    // The screen-sized copy is stored INSTEAD of the upload, not beside it.
+                    // Keeping both is what fills a disk: on this install the originals were
+                    // 131 MB of a 135 MB bucket, and not one of them was ever served — the
+                    // viewer opens the copy and the thumbnail draws the tile. A picture already
+                    // smaller than the box is left exactly as it came.
+                    //
+                    // This is a one-way door: the upload is not written anywhere, so whatever
+                    // detail the resize drops is gone. 1600px is above what any screen here
+                    // shows, and the alternative is a bucket that grows thirty times faster
+                    // than the conversation in it.
+                    var stored = await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(
+                        raw, mime, MediumDim, ctx.RequestAborted) ?? raw;
+                    if (!ReferenceEquals(stored, raw))
+                    {
+                        // Re-encoded: the recorded type and the name must follow the bytes, or a
+                        // download arrives labelled png and opens as nothing.
+                        mime = stored.Length > 3 && stored[0] == 0x89 && stored[1] == 0x50 ? "image/png" : "image/jpeg";
+                        storedName = Path.ChangeExtension(file.FileName, mime == "image/png" ? ".png" : ".jpg");
+                    }
+                    storedSize = stored.Length;
+                    await using (var body = new MemoryStream(stored))
+                        await storage.SaveAsync(id, body, ctx.RequestAborted);
+
+                    // Shape of what is SERVED, not of what was sent, or the layout reserves the
+                    // wrong box for every picture.
+                    if (await Outcome.Infrastructure.Media.ImageProbe.MeasureAsync(stored, ctx.RequestAborted) is { } dim)
+                        (width, height) = (dim.Width, dim.Height);
+
+                    // A preview alongside the original. Avatars are drawn at thirty points and
+                    // thumbnails at a few hundred, and both were costing whatever the camera
+                    // produced — six megabytes to fill a square the size of a fingernail.
+                    if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(stored, mime, ct: ctx.RequestAborted) is { } small)
+                    {
+                        await using var sm = new MemoryStream(small);
+                        await storage.SaveAsync(PreviewKey(id), sm, ctx.RequestAborted);
+                    }
+                }
 
                 try
                 {
-                    await mediator.Send(new CreateAttachmentCommand(id, file.FileName, id, mime, file.Length, width, height), ctx.RequestAborted);
+                    await mediator.Send(new CreateAttachmentCommand(id, storedName, id, mime, storedSize, width, height), ctx.RequestAborted);
                 }
                 catch
                 {
@@ -105,7 +156,7 @@ public static class UploadEndpoints
                     throw;
                 }
 
-                return new UploadResultDto(id, file.FileName, file.Length, mime, fileUrls.Sign(id), null, null);
+                return new UploadResultDto(id, storedName, storedSize, mime, fileUrls.Sign(id), null, null);
             }).DisableAntiforgery();
 
         // POST /api/v1/uploads/voice — a recorded voice message. The raw clip (webm/ogg/mp4,

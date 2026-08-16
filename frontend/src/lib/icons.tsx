@@ -13,9 +13,10 @@ export type IconName =
   | "arrow-right" | "hash" | "triangle-alert" | "user" | "palette" | "bell" | "bell-off"
   | "keyboard" | "scroll-text" | "image" | "signal" | "log-out" | "zap"
   | "plus" | "user-plus" | "shield" | "message-circle" | "bug" | "globe"
-  | "maximize" | "minimize";
+  | "maximize" | "minimize" | "upload";
 
 const ICON_PATHS: Record<IconName, string> = {
+  upload: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/>`,
   globe: `<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>`,
   mic: `<path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>`,
   "mic-off": `<line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/>`,
