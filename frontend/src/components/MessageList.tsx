@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "@lib/icons";
-import { assetUrl, assetUrlSmall } from "@lib/serverHost";
+import { assetUrl, assetUrlSmall, assetUrlMedium } from "@lib/serverHost";
 import { Avatar } from "@components/Avatar";
 import { VoiceMessage } from "@components/VoiceMessage";
 import { EmojiPicker } from "@components/EmojiPicker";
@@ -210,7 +210,10 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           if (imgs.length === 0) return null;
           // The viewer gets the WHOLE album and opens on the one that was clicked, so several
           // pictures are browsed in place instead of opened and closed one at a time.
-          const album = imgs.map((a) => ({ url: assetUrl(a.url), alt: a.filename, thumb: assetUrlSmall(a.url) }));
+          const album = imgs.map((a) => ({
+            url: assetUrlMedium(a.url)!, alt: a.filename,
+            thumb: assetUrlSmall(a.url), full: assetUrl(a.url),
+          }));
           if (imgs.length === 1) {
             const a = imgs[0]!;
             return (

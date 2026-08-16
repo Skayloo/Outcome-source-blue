@@ -81,6 +81,18 @@ public static class UploadEndpoints
                         await using var sm = new MemoryStream(small);
                         await storage.SaveAsync(PreviewKey(id), sm, ctx.RequestAborted);
                     }
+
+                    // …and a SCREEN-sized one. The thumbnail is far too coarse to open, so the
+                    // viewer was fetching the original — six megabytes of camera output to fill a
+                    // window that cannot show a tenth of it, which is a wait measured in tens of
+                    // seconds on anything but a fast line. 1600px is more than any display puts on
+                    // a photo here, and costs a few hundred kilobytes. The original stays one
+                    // click away for whoever actually wants it.
+                    if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(raw, mime, MediumDim, ctx.RequestAborted) is { } medium)
+                    {
+                        await using var md = new MemoryStream(medium);
+                        await storage.SaveAsync(MediumKey(id), md, ctx.RequestAborted);
+                    }
                 }
 
                 try
@@ -177,7 +189,8 @@ public static class UploadEndpoints
             // so it doubles as a strong ETag. A browser reload revalidates with If-None-Match even
             // for an immutable resource — without a validator the server had to re-send the whole
             // file every time; now it answers 304 and the bytes stay in the browser's cache.
-            var etag = ctx.Request.Query["sz"] == "sm" ? $"\"{id}-sm\"" : $"\"{id}\"";
+            var size = ctx.Request.Query["sz"].ToString();
+            var etag = size is "sm" or "md" ? $"\"{id}-{size}\"" : $"\"{id}\"";
             ctx.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
             ctx.Response.Headers.ETag = etag;
             if (ctx.Request.Headers.IfNoneMatch.Count > 0 && ctx.Request.Headers.IfNoneMatch.ToString() == etag)
@@ -188,9 +201,9 @@ public static class UploadEndpoints
             // which is exactly the behaviour everything had until now.
             Stream? stream = null;
             var servingPreview = false;
-            if (ctx.Request.Query["sz"] == "sm")
+            if (size is "sm" or "md")
             {
-                stream = storage.OpenRead(PreviewKey(att.StoredAs));
+                stream = storage.OpenRead(size == "sm" ? PreviewKey(att.StoredAs) : MediumKey(att.StoredAs));
                 servingPreview = stream is not null;
             }
             stream ??= storage.OpenRead(att.StoredAs);
@@ -209,18 +222,38 @@ public static class UploadEndpoints
             ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
             ctx.Response.Headers.ContentDisposition =
                 ContentDisposition(inline ? "inline" : "attachment", att.Filename);
-            // A preview is JPEG unless the original could carry transparency, in which case it
-            // stayed PNG — and with nosniff set the browser will not rescue a wrong label.
-            var contentType = servingPreview
-                ? (Outcome.Infrastructure.Media.ImageProbe.KeepsAlpha(att.MimeType) ? "image/png" : "image/jpeg")
-                : att.MimeType;
+            // A generated copy is JPEG or PNG depending on whether the picture actually had
+            // transparency, which the original's MIME type does not tell you — a screenshot is a
+            // PNG with no alpha and comes back as JPEG. Read it off the bytes instead: with
+            // nosniff set a wrong label is not a cosmetic mistake, the browser renders nothing.
+            var contentType = servingPreview ? SniffImage(stream) : att.MimeType;
             return Results.Stream(stream, inline ? contentType : "application/octet-stream",
                 enableRangeProcessing: true);
         });
     }
 
+    /// <summary>The type of a generated copy, from its magic bytes. Falls back to JPEG, which
+    /// is what everything but a transparent picture is written as.</summary>
+    private static string SniffImage(Stream s)
+    {
+        if (!s.CanSeek) return "image/jpeg";
+        Span<byte> head = stackalloc byte[4];
+        var n = s.Read(head);
+        s.Position = 0;
+        return n >= 4 && head[0] == 0x89 && head[1] == 0x50 && head[2] == 0x4E && head[3] == 0x47
+            ? "image/png"
+            : "image/jpeg";
+    }
+
     /// <summary>Where a picture's downscaled copy lives, next to the original.</summary>
     private static string PreviewKey(string id) => id + "_sm";
+
+    /// <summary>Where a picture's screen-sized copy lives. Longest side <see cref="MediumDim"/>.</summary>
+    private static string MediumKey(string id) => id + "_md";
+
+    /// <summary>Longest side of the copy the viewer opens. Above any display this runs on, and
+    /// roughly a twentieth of what a phone camera writes.</summary>
+    private const int MediumDim = 1600;
 
     /// <summary>
     /// The only types the client renders in place, and therefore the only ones served with their

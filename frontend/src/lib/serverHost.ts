@@ -55,9 +55,24 @@ export function assetUrl(path: string | null | undefined): string | undefined {
  * anything without one falls back to the original, so the URL is always safe to use.
  */
 export function assetUrlSmall(path: string | null | undefined): string | undefined {
+  return sized(path, "sm");
+}
+
+/**
+ * The same file at screen size — what the viewer opens. The thumbnail is far too coarse for
+ * that and the original is a camera's full output: several megabytes to fill a window that
+ * cannot show a tenth of them, which on an ordinary line is a wait of tens of seconds. This
+ * is the copy worth waiting for; the original stays behind "open original" for whoever wants
+ * it. Falls back to the original when no such copy exists.
+ */
+export function assetUrlMedium(path: string | null | undefined): string | undefined {
+  return sized(path, "md");
+}
+
+function sized(path: string | null | undefined, sz: "sm" | "md"): string | undefined {
   const url = assetUrl(path);
   if (!url) return undefined;
-  return url + (url.includes("?") ? "&" : "?") + "sz=sm";
+  return url + (url.includes("?") ? "&" : "?") + "sz=" + sz;
 }
 
 /** The host last used to sign in — prefills the login screen's server field. */

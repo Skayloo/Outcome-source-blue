@@ -95,7 +95,7 @@ export function ImageLightbox() {
 
       <a
         className="lightbox-open"
-        href={current.url}
+        href={current.full ?? current.url}
         target="_blank"
         rel="noopener noreferrer"
         onClick={stop}

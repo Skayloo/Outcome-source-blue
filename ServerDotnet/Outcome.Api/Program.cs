@@ -430,9 +430,10 @@ static async Task BackfillImageDimensionsAsync(WebApplication app, ILogger logge
             {
                 // Decide BEFORE downloading: once everything is done this is one cheap
                 // existence check per picture and no bytes move at all.
-                bool needsPreview;
+                bool needsPreview, needsMedium;
                 await using (var probe = storage.OpenRead(att.StoredAs + "_sm")) needsPreview = probe is null;
-                if (att.Width is not null && !needsPreview) continue;
+                await using (var probe = storage.OpenRead(att.StoredAs + "_md")) needsMedium = probe is null;
+                if (att.Width is not null && !needsPreview && !needsMedium) continue;
 
                 await using var src = storage.OpenRead(att.StoredAs);
                 if (src is null) continue;
@@ -448,6 +449,14 @@ static async Task BackfillImageDimensionsAsync(WebApplication app, ILogger logge
                 {
                     await using var sm = new MemoryStream(small);
                     await storage.SaveAsync(att.StoredAs + "_sm", sm);
+                }
+
+                // The screen-sized copy the viewer opens, for everything uploaded before it existed.
+                if (needsMedium &&
+                    await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(bytes, att.MimeType, 1600) is { } medium)
+                {
+                    await using var md = new MemoryStream(medium);
+                    await storage.SaveAsync(att.StoredAs + "_md", md);
                 }
 
                 if (att.Width is null &&

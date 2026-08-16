@@ -5,9 +5,12 @@ export interface LightboxItem {
   readonly url: string;
   readonly alt: string;
   /** The downscaled copy, already in the browser's cache because the album drew it. Shown for
-   *  the moment the full-size one takes to arrive — without it the viewer keeps painting the
+   *  the moment the screen-sized one takes to arrive — without it the viewer keeps painting the
    *  PREVIOUS picture until the next decodes, which reads as two photos being the same. */
   readonly thumb?: string;
+  /** The untouched upload, for "open original". What is DISPLAYED is `url`, which is the
+   *  screen-sized copy: the original is several megabytes the window cannot use. */
+  readonly full?: string;
 }
 
 interface LightboxState {

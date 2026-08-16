@@ -61,17 +61,57 @@ public static class ImageProbe
         || mime.Equals("image/webp", StringComparison.OrdinalIgnoreCase)
         || mime.Equals("image/gif", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Pixel formats that carry an alpha channel. pal8 is in on purpose: a palette
+    /// entry can be transparent and ffprobe will not say whether one is, so it is treated as
+    /// though it were — the cost is a larger copy, and the alternative is a black background
+    /// where something was see-through.</summary>
+    private static readonly HashSet<string> AlphaFormats = new(StringComparer.Ordinal)
+    {
+        "rgba", "bgra", "argb", "abgr", "rgba64be", "rgba64le", "bgra64be", "bgra64le",
+        "ya8", "ya16be", "ya16le", "yuva420p", "yuva422p", "yuva444p", "gbrap", "pal8",
+    };
+
+    /// <summary>Whether these bytes ACTUALLY have transparency, rather than merely being in a
+    /// format that could. The difference is the whole size of the copy: a screenshot is a PNG
+    /// and has no alpha, and keeping it PNG because of its type turned a six-megabyte upload
+    /// into a four-megabyte "downscale" — a saving of nothing, for the picture people actually
+    /// wait on. Null when ffprobe cannot say, which is read as "assume it does".</summary>
+    private static async Task<bool> HasAlphaAsync(string path, CancellationToken ct)
+    {
+        try
+        {
+            using var p = Start($"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{path}\"");
+            if (p is null) return true;
+            var fmt = (await p.StandardOutput.ReadToEndAsync(ct)).Trim();
+            await p.WaitForExitAsync(ct);
+            return p.ExitCode != 0 || fmt.Length == 0 || AlphaFormats.Contains(fmt);
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
     public static async Task<byte[]?> PreviewAsync(byte[] bytes, string mime, int maxDim = 512, CancellationToken ct = default)
     {
         var src = Path.Combine(Path.GetTempPath(), $"pv_{Guid.NewGuid():N}");
-        var dst = src + (KeepsAlpha(mime) ? ".png" : ".jpg");
+        string dst;
         try
         {
             await File.WriteAllBytesAsync(src, bytes, ct);
+            // Format by what the pixels ARE, not by what the container allows.
+            dst = src + (KeepsAlpha(mime) && await HasAlphaAsync(src, ct) ? ".png" : ".jpg");
             // decrease=only shrink: a picture already smaller than the box is left alone rather
             // than blown up into a bigger file than the original.
+            // Quality by what the copy is FOR. A thumbnail is drawn at a few hundred pixels and
+            // nobody inspects it, so it can be squeezed hard. The copy the viewer opens is the
+            // picture as far as anyone looking at it is concerned — squeeze that and you have
+            // not saved a wait, you have made the photo worse. q2 is visually indistinguishable
+            // from the original at this size and still an order of magnitude smaller than what
+            // a phone camera writes.
+            var q = maxDim >= 1024 ? 2 : 6;
             using var p = Start(
-                $"-v error -y -i \"{src}\" -vf \"scale='min({maxDim},iw)':'min({maxDim},ih)':force_original_aspect_ratio=decrease\" -q:v 6 \"{dst}\"",
+                $"-v error -y -i \"{src}\" -vf \"scale='min({maxDim},iw)':'min({maxDim},ih)':force_original_aspect_ratio=decrease\" -q:v {q} \"{dst}\"",
                 exe: "ffmpeg");
             if (p is null) return null;
             await p.WaitForExitAsync(ct);
@@ -86,7 +126,7 @@ public static class ImageProbe
         }
         finally
         {
-            foreach (var f in new[] { src, dst })
+            foreach (var f in new[] { src, src + ".png", src + ".jpg" })
                 try { if (File.Exists(f)) File.Delete(f); } catch { /* best effort */ }
         }
     }
