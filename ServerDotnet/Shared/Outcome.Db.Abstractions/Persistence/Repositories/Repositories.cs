@@ -14,6 +14,9 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
     public Task<User?> GetByIdAsync(long id, CancellationToken ct = default) =>
         db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id, ct);
 
+    public async Task<IReadOnlyList<User>> ListByIdsAsync(IReadOnlyCollection<long> ids, CancellationToken ct = default) =>
+        ids.Count == 0 ? [] : await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).ToListAsync(ct);
+
     public Task<User?> GetByUsernameAsync(string username, CancellationToken ct = default) =>
         db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserName!.ToLower() == username.ToLower(), ct);
 

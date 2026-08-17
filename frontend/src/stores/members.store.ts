@@ -29,7 +29,7 @@ const INITIAL_STATE: MembersState = {
   typingUsers: new Map(),
 };
 
-export const membersStore = createStore<MembersState>(INITIAL_STATE);
+export const membersStore = createStore<MembersState>(INITIAL_STATE, true);
 
 /** Track active typing timeouts so they can be cleared. */
 const typingTimers = new Map<string, ReturnType<typeof setTimeout>>();

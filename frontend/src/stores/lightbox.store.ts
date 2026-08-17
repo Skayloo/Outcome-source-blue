@@ -18,7 +18,7 @@ interface LightboxState {
   readonly index: number;
 }
 
-export const lightboxStore = createStore<LightboxState>({ items: [], index: 0 });
+export const lightboxStore = createStore<LightboxState>({ items: [], index: 0 }, true);
 
 /** One picture, or a whole album opened at the one that was clicked. */
 export function openLightbox(url: string, alt?: string): void;

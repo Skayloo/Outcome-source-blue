@@ -14,7 +14,7 @@ const INITIAL_STATE: RolesState = {
   roles: [],
 };
 
-export const rolesStore = createStore<RolesState>(INITIAL_STATE);
+export const rolesStore = createStore<RolesState>(INITIAL_STATE, true);
 
 /** Bulk set roles from the ready payload. */
 export function setRoles(roles: readonly ReadyRole[]): void {

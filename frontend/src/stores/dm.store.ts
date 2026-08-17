@@ -29,7 +29,7 @@ export interface DmState {
 
 const INITIAL: DmState = { channels: [] };
 
-export const dmStore = createStore<DmState>(INITIAL);
+export const dmStore = createStore<DmState>(INITIAL, true);
 
 /** Bulk-set DM channels from ready payload. */
 export function setDmChannels(channels: readonly DmChannel[]): void {

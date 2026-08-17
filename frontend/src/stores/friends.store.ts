@@ -14,7 +14,7 @@ export interface FriendsState {
 
 const INITIAL: FriendsState = { friends: [], incoming: [], outgoing: [], loaded: false };
 
-export const friendsStore = createStore<FriendsState>(INITIAL);
+export const friendsStore = createStore<FriendsState>(INITIAL, true);
 
 export function setFriendsList(r: FriendsListResponse): void {
   friendsStore.setState(() => ({

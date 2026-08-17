@@ -848,7 +848,8 @@ export interface BlockedUserDto {
   readonly created_at: string;
 }
 
-export type ReportStatus = "open" | "resolved" | "dismissed";
+/** `closed` is terminal: set by acting on the report, never by hand. */
+export type ReportStatus = "open" | "resolved" | "dismissed" | "closed";
 
 /** A reported message in the admin moderation inbox. `content` is the report-time snapshot. */
 export interface MessageReportDto {

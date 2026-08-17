@@ -74,19 +74,6 @@
 .sidebar-divider { height: 1px; background: var(--border-glow, var(--border)); margin: 8px 12px; }
 
 /* ── Channel Sidebar ── */
-.channel-sidebar {
-  width: 260px; background: var(--bg-secondary);
-  display: flex; flex-direction: column; flex-shrink: 0;
-  overflow: hidden;
-}
-.channel-sidebar-header {
-  height: 48px; padding: 0 16px;
-  display: flex; align-items: center; justify-content: space-between;
-  border-bottom: none; box-shadow: var(--elevation-low); cursor: pointer; flex-shrink: 0;
-  transition: background 0.1s ease;
-}
-.channel-sidebar-header:hover { background: var(--bg-hover); }
-.channel-sidebar-header h2 { font-size: 15px; font-weight: 700; color: var(--header-primary); }
 .channel-list { flex: 1; overflow-y: auto; padding: 8px 0; }
 
 .category {
@@ -2734,7 +2721,6 @@
 /* Channel sidebar */
 .compact-mode .channel-item { padding: 3px 8px; }
 .compact-mode .channel-item .ch-name { font-size: 13px; }
-.compact-mode .channel-sidebar-header { height: 40px; }
 .compact-mode .category { padding: 10px 8px 2px 16px; }
 /* Chat header */
 .compact-mode .chat-header { height: 38px; }
@@ -3064,7 +3050,6 @@
 @media (max-width: 800px) {
   /* Legacy pre-navigator layout only; the unified sidebar's mobile behaviour lives in
      responsive.css (the whole .navigator becomes the drawer at 768px). */
-  .channel-sidebar { width: 0; overflow: hidden; }
 }
 
 
@@ -3617,9 +3602,26 @@
 
 /* ── Unified Navigator (spaces strip + channels/DMs in one column) ────────── */
 .navigator {
-  width: 268px; flex-shrink: 0; display: flex; flex-direction: column;
+  /* Dragged by its right edge, like every desktop messenger — the width lives in a variable
+     the app sets from what was dragged last. The default is wide enough for a conversation
+     row to say something; the chat gives up nothing, its column was never using the space. */
+  width: var(--nav-width, 300px); flex-shrink: 0; display: flex; flex-direction: column;
   background: var(--bg-secondary); border-right: 1px solid var(--border); min-height: 0;
+  position: relative;
 }
+/* The grab strip sits ON the border and is wider than it looks — a 1px target is a target
+   you miss. It highlights on hover so the edge announces itself as draggable. */
+.nav-resizer {
+  position: absolute; top: 0; right: -3px; bottom: 0; width: 7px; z-index: 20;
+  cursor: col-resize; touch-action: none;
+}
+.nav-resizer::after {
+  content: ""; position: absolute; inset: 0 3px;
+  background: transparent; transition: background var(--dur-fast) var(--ease-out);
+}
+.nav-resizer:hover::after, .nav-resizer.dragging::after { background: var(--accent); }
+/* While dragging, nothing else should be selecting text or catching the pointer. */
+body.nav-resizing { cursor: col-resize; user-select: none; }
 /* Server rail becomes a wrapping "spaces" grid at the top of the navigator: every
    space stays glanceable and reachable no matter how many you belong to (join is
    unlimited). It grows down to a capped height, then scrolls — with a visible thin
@@ -3705,32 +3707,32 @@
 
 /* Conversation rows — richer than the old flat DM item. */
 .inbox-item {
-  display: flex; align-items: center; gap: 11px; padding: 9px 10px; border-radius: 12px;
+  display: flex; align-items: center; gap: 12px; padding: 10px 10px; border-radius: 12px;
   cursor: pointer; position: relative;
   transition: background var(--dur-fast) var(--ease-out);
 }
 .inbox-item:hover { background: var(--bg-hover, var(--bg-active)); }
 .inbox-item .dm-avatar { position: relative; flex-shrink: 0; }
 .inbox-item .dm-status {
-  position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px;
-  border-radius: 50%; border: 2px solid var(--bg-secondary); box-sizing: content-box;
+  position: absolute; right: -1px; bottom: -1px; width: 13px; height: 13px;
+  border-radius: 50%; border: 2.5px solid var(--bg-secondary); box-sizing: content-box;
 }
 .inbox-ch-icon {
-  width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+  width: 46px; height: 46px; border-radius: 13px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
   background: var(--bg-tertiary); color: var(--text-muted);
 }
 .inbox-text { flex: 1; min-width: 0; }
 .inbox-row1 { display: flex; align-items: baseline; gap: 8px; }
 .inbox-name {
-  font-size: 14px; font-weight: 600; color: var(--text-normal);
+  font-size: 15px; font-weight: 600; color: var(--text-normal);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
 }
 .inbox-time { font-size: 11px; color: var(--text-faint); flex-shrink: 0; font-variant-numeric: tabular-nums; }
 /* Muted-chat bell: a quiet marker next to the name (inbox rows and channel rows). */
 .inbox-muted, .ch-muted { display: inline-flex; align-items: center; color: var(--text-faint); flex-shrink: 0; }
 .inbox-preview {
-  font-size: 12.5px; color: var(--text-muted); margin-top: 1px;
+  font-size: 13px; color: var(--text-muted); margin-top: 2px; line-height: 1.35;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* Unread rows lift: brighter name, an iris dot rail, bolder preview. */

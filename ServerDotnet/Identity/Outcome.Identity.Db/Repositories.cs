@@ -9,6 +9,8 @@ namespace Outcome.Shared.Abstractions.Persistence;
 public interface IUserRepository
 {
     Task<User?> GetByIdAsync(long id, CancellationToken ct = default);
+    /// <summary>Several at once — a page of servers wants its owners without a query each.</summary>
+    Task<IReadOnlyList<User>> ListByIdsAsync(IReadOnlyCollection<long> ids, CancellationToken ct = default);
     Task<User?> GetByUsernameAsync(string username, CancellationToken ct = default);
     Task<bool> ExistsByUsernameAsync(string username, CancellationToken ct = default);
     Task<User?> GetByEmailAsync(string email, CancellationToken ct = default);

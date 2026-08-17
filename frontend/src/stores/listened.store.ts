@@ -12,7 +12,7 @@ export interface ListenedState {
   readonly listenedByOthers: ReadonlySet<string>;
 }
 
-export const listenedStore = createStore<ListenedState>({ listened: new Set(), listenedByOthers: new Set() });
+export const listenedStore = createStore<ListenedState>({ listened: new Set(), listenedByOthers: new Set() }, true);
 
 export function isListened(attachmentId: string): boolean {
   return listenedStore.getState().listened.has(attachmentId);

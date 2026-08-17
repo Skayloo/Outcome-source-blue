@@ -27,7 +27,7 @@ export interface CallState {
 
 const INITIAL: CallState = { incoming: null, outgoing: null, activeChannelId: null };
 
-export const callStore = createStore<CallState>(INITIAL);
+export const callStore = createStore<CallState>(INITIAL, true);
 
 export function setIncomingCall(c: IncomingCall): void {
   callStore.setState((p) => ({ ...p, incoming: c }));

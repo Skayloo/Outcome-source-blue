@@ -9,7 +9,7 @@ interface ComposerState {
 
 const INITIAL: ComposerState = { replyTo: null, editing: null };
 
-export const composerStore = createStore<ComposerState>(INITIAL);
+export const composerStore = createStore<ComposerState>(INITIAL, true);
 
 export function setReply(m: Message | null): void {
   composerStore.setState((p) => ({ ...p, replyTo: m, editing: null }));

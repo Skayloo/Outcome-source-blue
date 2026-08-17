@@ -145,7 +145,7 @@ export function InboxView() {
             {unreadDms.map((d) => (
               <div key={`d${d.channelId}`} className="inbox-item unread" onClick={() => openDm(d.channelId)} onContextMenu={(e) => onDmContextMenu(e, d)}>
                 <div className="dm-avatar">
-                  <Avatar username={d.recipient.username} avatar={d.recipient.avatar} size={38} color="#5865f2" />
+                  <Avatar username={d.recipient.username} avatar={d.recipient.avatar} size={46} color="#5865f2" />
                   <span className="dm-status" style={{ background: d.recipient.status === "online" ? "var(--green, #2ecc71)" : "#747f8d" }} />
                 </div>
                 <div className="inbox-text">
@@ -196,7 +196,7 @@ export function InboxView() {
               onContextMenu={(e) => onDmContextMenu(e, d)}
             >
               <div className="dm-avatar">
-                <Avatar username={d.recipient.username} avatar={d.recipient.avatar} size={38} color="#5865f2" />
+                <Avatar username={d.recipient.username} avatar={d.recipient.avatar} size={46} color="#5865f2" />
                 <span className="dm-status" style={{ background: d.recipient.status === "online" ? "var(--green, #2ecc71)" : "#747f8d" }} />
               </div>
               <div className="inbox-text">

@@ -168,15 +168,22 @@ public static class AdminEndpoints
         });
 
         // ── Cross-server management (instance admin): any server, any channel ─────
-        group.MapGet("/servers", async (int? limit, int? offset, HttpContext ctx, ICurrentUser current, IServerRepository servers) =>
+        group.MapGet("/servers", async (int? limit, int? offset, HttpContext ctx, ICurrentUser current,
+            IServerRepository servers, IUserRepository users) =>
         {
             RequireAdmin(current);
             var page = await servers.ListAllAsync(limit ?? int.MaxValue, offset ?? 0);
             ctx.Response.Headers["X-Total-Count"] = (await servers.CountAllAsync()).ToString();
             var counts = await servers.MemberCountsAsync(page.Select(x => x.Id).ToList());
+            // Who to write to when a complaint lands. An owner id alone means looking the person
+            // up by hand every single time, which is the moment a moderation queue stops moving.
+            var owners = (await users.ListByIdsAsync(page.Select(x => x.OwnerId).Distinct().ToList()))
+                .ToDictionary(u => u.Id);
             return Results.Ok(page.Select(s => new
             {
                 id = s.Id, name = s.Name, owner_id = s.OwnerId, icon = s.Icon,
+                owner_username = owners.TryGetValue(s.OwnerId, out var o) ? o.UserName : null,
+                owner_email = owners.TryGetValue(s.OwnerId, out var o2) ? o2.Email : null,
                 custom_domain = s.CustomDomain,
                 member_count = counts.TryGetValue(s.Id, out var c) ? c : 0,
             }));

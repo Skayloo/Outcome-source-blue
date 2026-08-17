@@ -22,7 +22,7 @@ const INITIAL: VoicePlayerState = {
   durationMs: 0, playing: false, pos: 0,
 };
 
-export const voicePlayerStore = createStore<VoicePlayerState>(INITIAL);
+export const voicePlayerStore = createStore<VoicePlayerState>(INITIAL, true);
 
 export function patchVoicePlayer(patch: Partial<VoicePlayerState>): void {
   voicePlayerStore.setState((s) => ({ ...s, ...patch }));

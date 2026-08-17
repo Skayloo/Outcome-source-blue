@@ -755,6 +755,21 @@ export function createApiClient(
       return request<void>("PATCH", `/admin/reports/${id}/status`, { status }, signal);
     },
 
+    /**
+     * Act on a report. `hide` leaves a tombstone in place, `delete` removes the message
+     * entirely — both END the report, and nothing reopens it. `dismiss` answers the reporter
+     * in a direct message, forwarding the message the answer is about, and marks it resolved.
+     */
+    reportAction(id: number, action: "hide" | "delete" | "dismiss", note?: string, signal?: AbortSignal): Promise<void> {
+      return request<void>("POST", `/admin/reports/${id}/action`, { action, note }, signal);
+    },
+
+    /** Reports about messages in the ACTIVE server — for its own moderators, not the instance
+     *  owner. Direct messages carry no server and never appear here. */
+    listServerReportsPaged(limit: number, offset: number, signal?: AbortSignal): Promise<{ items: MessageReportDto[]; total: number }> {
+      return pagedGet<MessageReportDto>("API", baseUrl(), "/servers/reports", limit, offset, signal);
+    },
+
     /** Every voice channel of the active server with its guest link (null when it has none). */
     getGuestLinks(signal?: AbortSignal): Promise<GuestLinkRow[]> {
       return request<GuestLinkRow[]>("GET", "/servers/guest-links", undefined, signal);
@@ -1030,7 +1045,7 @@ export function createApiClient(
     adminListAllServers(signal?: AbortSignal): Promise<{ id: number; name: string; owner_id: number; icon: string | null }[]> {
       return adminRequest("GET", "/servers", undefined, signal);
     },
-    adminListAllServersPaged(limit: number, offset: number, signal?: AbortSignal): Promise<{ items: { id: number; name: string; owner_id: number; icon: string | null }[]; total: number }> {
+    adminListAllServersPaged(limit: number, offset: number, signal?: AbortSignal): Promise<{ items: { id: number; name: string; owner_id: number; icon: string | null; owner_username: string | null; owner_email: string | null }[]; total: number }> {
       return pagedGet("Admin API", adminBaseUrl(), "/servers", limit, offset, signal);
     },
     adminDeleteServer(serverId: number, signal?: AbortSignal): Promise<void> {

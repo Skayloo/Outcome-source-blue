@@ -99,7 +99,23 @@ function shallowEqual(a: unknown, b: unknown): boolean {
 
 export { shallowEqual };
 
-export function createStore<T>(initialState: T): Store<T> {
+/** Every store holding data that belongs to the signed-in ACCOUNT, so signing out can empty
+ *  them all without a list anyone has to remember to update. */
+const accountStores: { reset(): void }[] = [];
+
+/** Empty everything that belonged to the account being left. Without this, signing in as
+ *  somebody else showed the PREVIOUS person's conversations until the page was reloaded:
+ *  the socket and the token were replaced, but the stores still held their messages. */
+export function resetAccountStores(): void {
+  for (const s of accountStores) s.reset();
+}
+
+/**
+ * @param perAccount Mark a store as holding the signed-in account's own data — messages,
+ *   conversations, members. Left off for state that outlives a session, such as the theme:
+ *   signing out is not a reason to change how the app looks.
+ */
+export function createStore<T>(initialState: T, perAccount = false): Store<T> {
   let state: T = initialState;
   const listeners: Set<(state: T) => void> = new Set();
   let notifyScheduled = false;
@@ -161,5 +177,9 @@ export function createStore<T>(initialState: T): Store<T> {
     }
   }
 
-  return { getState, setState, subscribe, subscribeSelector, select, flush };
+  const store = { getState, setState, subscribe, subscribeSelector, select, flush };
+  if (perAccount) {
+    accountStores.push({ reset: () => setState(() => initialState) });
+  }
+  return store;
 }

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Outcome.Infrastructure.Persistence;
@@ -12,9 +13,11 @@ using Outcome.Infrastructure.Persistence;
 namespace Outcome.Db.Abstractions.Migrations
 {
     [DbContext(typeof(OutcomeDbContext))]
-    partial class OutcomeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260817160037_AddReportServerScope")]
+    partial class AddReportServerScope
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1229,6 +1232,10 @@ namespace Outcome.Db.Abstractions.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("E2eeBackup")
+                        .HasColumnType("text")
+                        .HasColumnName("e2ee_backup");
+
                     b.Property<string>("Email")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
@@ -1275,6 +1282,10 @@ namespace Outcome.Db.Abstractions.Migrations
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("boolean")
                         .HasColumnName("phone_number_confirmed");
+
+                    b.Property<string>("PublicKey")
+                        .HasColumnType("text")
+                        .HasColumnName("public_key");
 
                     b.Property<bool>("PushPreview")
                         .ValueGeneratedOnAdd()

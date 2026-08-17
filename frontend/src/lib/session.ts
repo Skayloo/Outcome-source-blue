@@ -1,3 +1,4 @@
+import { resetAccountStores } from "@lib/store";
 import { api, ws } from "./services";
 import { wireDispatcher, loadDmChannels } from "./dispatcher";
 import { createLogger } from "./logger";
@@ -208,6 +209,10 @@ export function logout(): void {
   api.setConfig({ host: "", token: "" });
   setServerHost("");
   clearAuth();
+  // Everything the account owned — conversations, channels, members, the composer. Without
+  // this, signing in as somebody else showed the PREVIOUS person's chats until the page was
+  // reloaded: the token and the socket were replaced, the stores were not.
+  resetAccountStores();
 }
 
 /**

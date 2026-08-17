@@ -103,7 +103,7 @@ const INITIAL_STATE: MessagesState = {
 // Store instance
 // -----------------------------------------------------------------------------
 
-export const messagesStore = createStore<MessagesState>(INITIAL_STATE);
+export const messagesStore = createStore<MessagesState>(INITIAL_STATE, true);
 
 // -----------------------------------------------------------------------------
 // Actions

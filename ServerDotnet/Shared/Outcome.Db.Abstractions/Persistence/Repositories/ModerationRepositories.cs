@@ -38,6 +38,9 @@ public sealed class BlockRepository(OutcomeDbContext db) : IBlockRepository
 
 public sealed class MessageReportRepository(OutcomeDbContext db) : IMessageReportRepository
 {
+    public Task<MessageReport?> GetByIdAsync(long id, CancellationToken ct = default) =>
+        db.MessageReports.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+
     public async Task<long> CreateAsync(MessageReport report, CancellationToken ct = default)
     {
         db.MessageReports.Add(report);
@@ -45,9 +48,20 @@ public sealed class MessageReportRepository(OutcomeDbContext db) : IMessageRepor
         return report.Id;
     }
 
-    public async Task<IReadOnlyList<MessageReportDto>> ListAllAsync(int limit = int.MaxValue, int offset = 0, CancellationToken ct = default)
+    public Task<IReadOnlyList<MessageReportDto>> ListAllAsync(int limit = int.MaxValue, int offset = 0, CancellationToken ct = default) =>
+        PageAsync(db.MessageReports.AsNoTracking(), limit, offset, ct);
+
+    /// A server's own moderators see complaints about ITS channels and nothing else — least of
+    /// all direct messages, which belong to no server and to nobody but their two participants.
+    public Task<IReadOnlyList<MessageReportDto>> ListForServerAsync(long serverId, int limit = int.MaxValue, int offset = 0, CancellationToken ct = default) =>
+        PageAsync(db.MessageReports.AsNoTracking().Where(r => r.ServerId == serverId), limit, offset, ct);
+
+    public Task<int> CountForServerAsync(long serverId, CancellationToken ct = default) =>
+        db.MessageReports.AsNoTracking().CountAsync(r => r.ServerId == serverId, ct);
+
+    private async Task<IReadOnlyList<MessageReportDto>> PageAsync(IQueryable<MessageReport> q, int limit, int offset, CancellationToken ct)
     {
-        var rows = await db.MessageReports.AsNoTracking()
+        var rows = await q
             .OrderByDescending(r => r.Id)
             .Skip(offset).Take(limit)
             .ToListAsync(ct);

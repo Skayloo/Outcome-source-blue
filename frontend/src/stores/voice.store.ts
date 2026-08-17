@@ -78,7 +78,7 @@ const INITIAL_STATE: VoiceState = {
   audioBlocked: false,
 };
 
-export const voiceStore = createStore<VoiceState>(INITIAL_STATE);
+export const voiceStore = createStore<VoiceState>(INITIAL_STATE, true);
 
 /** Reset voice store to initial state (e.g. on logout). */
 export function resetVoiceStore(): void {

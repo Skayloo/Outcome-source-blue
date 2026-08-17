@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useStoreState } from "@lib/useStore";
 import { uiStore, closeModal, openModal, toggleMemberList } from "@stores/ui.store";
 import { mobileStore, closeDrawer } from "@stores/mobile.store";
@@ -7,6 +7,7 @@ import { voiceStore } from "@stores/voice.store";
 import { initVoice } from "@lib/voice";
 import { ServerRail } from "@components/ServerRail";
 import { Sidebar } from "@components/Sidebar";
+import { NavResizer, readNavWidth } from "@components/NavResizer";
 import { ChatHeader } from "@components/ChatHeader";
 import { VoiceStage } from "@components/VoiceStage";
 import { MessageList } from "@components/MessageList";
@@ -31,6 +32,9 @@ import { PaneDivider } from "@components/PaneDivider";
 import { panesStore, closeSplit } from "@stores/panes.store";
 
 export function MainPage() {
+  // Dragged width of the conversation list, remembered between sessions.
+  const [navWidth, setNavWidth] = useState(readNavWidth);
+
   const ui = useStoreState(uiStore);
   const { drawer } = useStoreState(mobileStore);
   const panes = useStoreState(panesStore);
@@ -79,9 +83,10 @@ export function MainPage() {
 
   return (
     <div className={appClass}>
-      <div className="navigator">
+      <div className="navigator" style={{ ["--nav-width" as string]: `${navWidth}px` }}>
         <ServerRail />
         <Sidebar />
+        <NavResizer onWidth={setNavWidth} />
       </div>
       <div className="panes" style={panes.secondary != null ? { ["--split" as string]: `${panes.ratio}` } : undefined}>
         <div className="chat-area">

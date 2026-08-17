@@ -27,6 +27,8 @@
     border-right: none;
   }
   .app.drawer-sidebar .navigator { transform: translateX(0); }
+  /* The drawer's width is the screen's, not something to drag. */
+  .nav-resizer { display: none; }
   /* Inside the drawer the sidebar is an ordinary flex child again — undo both the old
      off-canvas rules and app.css's legacy `width: 0` collapse. */
   .navigator .unified-sidebar {

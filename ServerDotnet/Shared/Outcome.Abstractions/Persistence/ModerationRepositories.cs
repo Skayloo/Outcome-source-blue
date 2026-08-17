@@ -29,6 +29,12 @@ public interface IMessageReportRepository
 {
     Task<long> CreateAsync(MessageReport report, CancellationToken ct = default);
     Task<IReadOnlyList<MessageReportDto>> ListAllAsync(int limit = int.MaxValue, int offset = 0, CancellationToken ct = default);
+    /// <summary>Complaints about messages in ONE server — what its own moderators may see.
+    /// Direct messages carry no server and never appear here.</summary>
+    Task<IReadOnlyList<MessageReportDto>> ListForServerAsync(long serverId, int limit = int.MaxValue, int offset = 0, CancellationToken ct = default);
+    Task<int> CountForServerAsync(long serverId, CancellationToken ct = default);
     Task<int> CountAsync(CancellationToken ct = default);
     Task<bool> SetStatusAsync(long id, string status, CancellationToken ct = default);
+    /// <summary>The report itself — moderation needs the message it points at.</summary>
+    Task<MessageReport?> GetByIdAsync(long id, CancellationToken ct = default);
 }

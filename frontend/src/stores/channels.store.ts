@@ -36,7 +36,7 @@ const INITIAL_STATE: ChannelsState = {
   roles: [],
 };
 
-export const channelsStore = createStore<ChannelsState>(INITIAL_STATE);
+export const channelsStore = createStore<ChannelsState>(INITIAL_STATE, true);
 
 /**
  * A channel to auto-select once the NEXT scoped READY arrives — used when jumping to a

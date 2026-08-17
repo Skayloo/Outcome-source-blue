@@ -28,7 +28,7 @@ export const panesStore = createStore<PanesState>({
   // and the width they chose is the part actually worth remembering.
   secondary: null,
   ratio: clampRatio(loadPref<number>(RATIO_KEY, 0.5)),
-});
+}, true);
 
 export function clampRatio(r: number): number {
   return Math.min(MAX_RATIO, Math.max(MIN_RATIO, r));

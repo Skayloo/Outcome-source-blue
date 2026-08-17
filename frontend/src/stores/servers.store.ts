@@ -46,7 +46,7 @@ const INITIAL_STATE: ServersState = {
   activeServerId: loadActiveServerId(),
 };
 
-export const serversStore = createStore<ServersState>(INITIAL_STATE);
+export const serversStore = createStore<ServersState>(INITIAL_STATE, true);
 
 /** Replace the full server list. */
 export function setServers(list: readonly ServerDto[]): void {

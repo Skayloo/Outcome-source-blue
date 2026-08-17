@@ -13,7 +13,7 @@ export interface MutesState {
 
 const INITIAL: MutesState = { muted: new Set() };
 
-export const mutesStore = createStore<MutesState>(INITIAL);
+export const mutesStore = createStore<MutesState>(INITIAL, true);
 
 /** Bulk-set from the READY payload. */
 export function setMutedChannels(channelIds: readonly number[]): void {

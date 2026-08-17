@@ -123,6 +123,7 @@ export function AdminUsersPanel() {
         <table className="admin-table">
           <thead>
             <tr>
+              <th>ID</th>
               <th>{t("admin.username")}</th>
               <th>{t("admin.role")}</th>
               <th>{t("admin.status")}</th>
@@ -135,6 +136,7 @@ export function AdminUsersPanel() {
               return (
               <Fragment key={u.id}>
                 <tr>
+                  <td className="mono">{u.id}</td>
                   <td>
                     {u.username}
                     {u.banned && <span className="admin-badge danger" style={{ marginLeft: 8 }}>{t("admin.banned")}</span>}

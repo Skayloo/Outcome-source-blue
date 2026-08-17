@@ -15,7 +15,11 @@ function errMsg(e: unknown, f: string): string { return e instanceof Error ? e.m
 
 const PAGE_SIZE = 25;
 
-interface Srv { id: number; name: string; owner_id: number; icon: string | null }
+interface Srv {
+  id: number; name: string; owner_id: number; icon: string | null;
+  /** Who to write to when a complaint about this server lands. Null if the owner is gone. */
+  owner_username: string | null; owner_email: string | null;
+}
 interface Chan { id: number; name: string; type: string; category: string | null; server_id: number | null }
 
 export function AdminServersPanel() {
@@ -101,6 +105,7 @@ export function AdminServersPanel() {
               <th>ID</th>
               <th>{t("admin.serverName")}</th>
               <th>{t("admin.ownerId")}</th>
+              <th>{t("admin.owner")}</th>
               <th>{t("admin.actions")}</th>
             </tr>
           </thead>
@@ -111,6 +116,10 @@ export function AdminServersPanel() {
                   <td className="mono">{s.id}</td>
                   <td>{s.name}</td>
                   <td className="mono">{s.owner_id}</td>
+                  <td>
+                    {s.owner_username ?? <i>{t("admin.ownerGone")}</i>}
+                    {s.owner_email && <div className="admin-sub mono">{s.owner_email}</div>}
+                  </td>
                   <td className="admin-actions-cell">
                     <button className={"ac-btn" + (openId === s.id ? " on" : "")} disabled={busy} onClick={() => openChannels(s.id)}>{t("admin.channels")}</button>
                     <button className="ac-btn account-delete-btn" disabled={busy} onClick={() => deleteServer(s)}>{t("admin.delete")}</button>
