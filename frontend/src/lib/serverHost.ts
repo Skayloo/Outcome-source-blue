@@ -21,12 +21,33 @@ export function getServerHost(): string {
   return currentHost;
 }
 
+/**
+ * The page's own origin, or "" when the page has no origin that could serve an API.
+ *
+ * The packaged desktop shell loads the SPA over a custom protocol (app://). That is a proper
+ * secure context — getUserMedia works — but it is not an instance: "same-origin" means nothing
+ * there, and a request to app://api/v1/... goes nowhere. Reporting "" instead lets every caller
+ * below fall through to the server the user actually chose.
+ */
+function pageOrigin(): string {
+  return /^https?:$/.test(window.location.protocol) ? window.location.origin : "";
+}
+
 /** Origin (scheme://authority) for a host string; "" → the page's own origin. */
 export function originForHost(host: string): string {
   const h = host.trim();
-  if (!h || h === window.location.host) return window.location.origin;
   if (h.includes("://")) return h.replace(/\/+$/, "");
-  return `https://${h}`;
+  if (h && h !== window.location.host) return `https://${h}`;
+
+  // Same-origin, or nothing specified yet. On the web that is the instance that served the
+  // page. In the desktop shell there is no such instance, so use the last server signed into —
+  // and if there is not one either, return "" so the failure is a visible "no server" rather
+  // than a silent request to a protocol that cannot answer.
+  const page = pageOrigin();
+  if (page) return page;
+  const last = readLastHost().trim();
+  if (!last) return "";
+  return last.includes("://") ? last.replace(/\/+$/, "") : `https://${last}`;
 }
 
 /** Origin of the ACTIVE instance. */

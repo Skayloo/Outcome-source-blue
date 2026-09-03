@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using MediatR;
 using Microsoft.AspNetCore.Identity;
@@ -8,6 +8,7 @@ using Outcome.Shared.Abstractions.Security;
 using Outcome.Domain.Entities;
 using Outcome.Domain.Errors;
 using Outcome.Domain.Permissions;
+using Outcome.Shared.Legal;
 
 namespace Outcome.Application.Auth;
 
@@ -65,6 +66,10 @@ public sealed class VerifyRegistrationHandler(
             RoleId = DefaultRole.Member,
             Status = "offline",
             EmailConfirmed = true, // literally what this flow just proved
+            // The consent was given on the form that started this flow, minutes ago; the
+            // pending registration carries the version from there rather than re-stamping now.
+            ConsentAt = DateTime.UtcNow,
+            ConsentVersion = string.IsNullOrWhiteSpace(pending.ConsentVersion) ? PdnConsent.Version : pending.ConsentVersion,
             PasswordHash = pending.PasswordHash,
         };
         var created = await userManager.CreateAsync(newUser);

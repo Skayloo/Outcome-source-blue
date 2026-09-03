@@ -13,7 +13,8 @@ import { api } from "@lib/services";
 const PRIMARY_KEYS = ["server_name", "motd"] as const;
 // Boolean switches that get dedicated Toggle rows. This panel writes "1"/"0", but it is not the
 // only writer, and the server reads "true"/"false" just as happily — see AuthRules.ParseBoolean.
-const REGISTRATION_KEYS = ["registration_open", "registration_invite_only", "registration_email_verify"] as const;
+const REGISTRATION_KEYS = ["registration_open", "registration_invite_only", "registration_email_verify",
+  "registration_pdn_consent"] as const;
 
 /**
  * Read a stored setting the way the SERVER reads it. Comparing `value === "1"` looked equivalent
@@ -203,6 +204,14 @@ export function ServerSettingsPanel() {
             <Toggle
               on={isOn(draft["registration_email_verify"], false)}
               onChange={(v) => setField("registration_email_verify", v ? "1" : "0")}
+            />
+          </Row>
+          {/* OFF by default: the obligation belongs to whoever operates the space, and this
+              server ships to people who operate their own. ON for outcome.ru. */}
+          <Row label={t("admin.regPdnConsent")} desc={t("admin.regPdnConsentDesc")}>
+            <Toggle
+              on={isOn(draft["registration_pdn_consent"], false)}
+              onChange={(v) => setField("registration_pdn_consent", v ? "1" : "0")}
             />
           </Row>
 

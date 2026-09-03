@@ -17,6 +17,12 @@ public sealed class EditMessageHandler(
         if (content.Length == 0) throw DomainException.BadRequest("content cannot be empty");
         if (content.Length > 4000) throw DomainException.BadRequest("message too long");
 
+        // The same filter as CreateMessageHandler, and for the obvious reason: a filter that
+        // only looks at the first version of a message is bypassed by sending something bland
+        // and then editing it. Both doors or neither.
+        if (ContentFilter.FirstProhibited(content) is { } hit)
+            throw DomainException.ContentBlocked($"this message was blocked by the content filter ({hit})");
+
         // Opaque error throughout to prevent message-id enumeration (IDOR).
         var msg = await messages.GetByIdAsync(cmd.MessageId, ct) ?? throw Cannot();
         var channel = await channels.GetByIdAsync(msg.ChannelId, ct) ?? throw Cannot();

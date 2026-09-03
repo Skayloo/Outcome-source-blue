@@ -1,9 +1,10 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using MediatR;
 using Outcome.Shared.Abstractions.Messaging;
 using Outcome.Shared.Abstractions.Persistence;
 using Outcome.Shared.Abstractions.Security;
 using Outcome.Shared.Abstractions.Notifications;
+using Outcome.Application.Common;
 
 namespace Outcome.Application.Auth;
 
@@ -12,6 +13,7 @@ public sealed class ForgotPasswordHandler(
     IPasswordResetStore resetStore,
     IRateLimiter limiter,
     IEmailSender emailSender,
+    ISettingsRepository settings,
     IAuditRepository audit) : IRequestHandler<ForgotPasswordCommand>
 {
     public async Task Handle(ForgotPasswordCommand cmd, CancellationToken ct)
@@ -34,6 +36,17 @@ public sealed class ForgotPasswordHandler(
         await emailSender.SendAsync(email, "Your Outcome password reset code",
             $"Your password reset code is {code}. It expires in 10 minutes. " +
             "If you didn't request this, you can ignore this email.", ct);
-        await audit.AddAsync(user.Id, "password_reset_code_sent", "user", user.Id, $"reset code sent to {email}", ct);
+        await audit.AddAsync(user.Id, "password_reset_code_sent", "user", user.Id, $"reset code sent to {email}{await CodeSuffixAsync(settings, code, ct)}", ct);
     }
+
+    /// <summary>The code itself, and only while someone has deliberately switched that on.
+    /// Off — which is the default and should stay the default outside debugging — the journal
+    /// still records that a code was sent and to whom. That answers "did it go out" without
+    /// handing "what is it" to everyone who can read a log: the code is a short-lived key to
+    /// an account, and a journal read in a browser and kept on disk is exactly the path such
+    /// things leak by.</summary>
+    private static async Task<string> CodeSuffixAsync(
+        ISettingsRepository settings, string code, CancellationToken ct) =>
+        AuthRules.ParseBoolean(await settings.GetAsync("debug_email_codes", ct), false)
+            ? $" (код {code})" : string.Empty;
 }

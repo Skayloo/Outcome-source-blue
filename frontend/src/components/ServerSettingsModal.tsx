@@ -20,18 +20,25 @@ import { t } from "@lib/i18n";
 import { Icon } from "@lib/icons";
 import { Avatar } from "@components/Avatar";
 import { InviteManager } from "@components/admin/InviteManager";
+import { AdminReportsPanel } from "@components/admin/AdminReportsPanel";
 
-type Tab = "overview" | "channels" | "members" | "invites";
+type Tab = "overview" | "channels" | "members" | "invites" | "reports";
 const TABS: { id: Tab; icon: string; label: () => string }[] = [
   { id: "overview", icon: "settings", label: () => t("srvset.overview") },
   { id: "channels", icon: "hash", label: () => t("srvset.channels") },
   { id: "members", icon: "users", label: () => t("srvset.members") },
   { id: "invites", icon: "user-plus", label: () => t("srvset.invites") },
 ];
+// Complaints about THIS server's channels. Shown only to whoever may act on them, because a
+// queue you can read and not answer is worse than not having one.
+const REPORTS_TAB = { id: "reports" as Tab, icon: "flag", label: () => t("srvset.reports") };
 
-export function ServerSettingsModal({ serverId, canDelete, onClose }: { serverId: number; canDelete: boolean; onClose: () => void }) {
+export function ServerSettingsModal({ serverId, canDelete, canModerate, onClose }: { serverId: number; canDelete: boolean; canModerate: boolean; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>("overview");
-  const server = serversStore.select((s) => s.servers).find((s) => s.id === serverId);
+  // SUBSCRIBED, not sampled. `select` reads once: uploading an icon refreshed the store and
+  // the rail redrew, while the panel doing the uploading went on showing the old one — the one
+  // place where seeing the change matters most.
+  const server = useStoreState(serversStore).servers.find((s) => s.id === serverId);
 
   return (
     <ModalPortal>
@@ -39,7 +46,7 @@ export function ServerSettingsModal({ serverId, canDelete, onClose }: { serverId
         <div className="srvset-modal" onClick={(e) => e.stopPropagation()}>
           <aside className="srvset-nav">
             <div className="srvset-nav-title">{server?.name ?? t("srvset.title")}</div>
-            {TABS.map((it) => (
+            {[...TABS, ...(canModerate ? [REPORTS_TAB] : [])].map((it) => (
               <button key={it.id} className={"srvset-nav-item" + (tab === it.id ? " active" : "")} onClick={() => setTab(it.id)}>
                 <Icon name={it.icon as never} size={16} /> <span>{it.label()}</span>
               </button>
@@ -51,6 +58,7 @@ export function ServerSettingsModal({ serverId, canDelete, onClose }: { serverId
             {tab === "channels" && <ChannelsTab />}
             {tab === "members" && <MembersTab serverId={serverId} />}
             {tab === "invites" && <div className="srvset-pane"><InviteManager /></div>}
+            {tab === "reports" && <div className="srvset-pane"><AdminReportsPanel scope="server" /></div>}
           </div>
         </div>
       </div>
@@ -59,7 +67,10 @@ export function ServerSettingsModal({ serverId, canDelete, onClose }: { serverId
 }
 
 function OverviewTab({ serverId, canDelete, onClose }: { serverId: number; canDelete: boolean; onClose: () => void }) {
-  const server = serversStore.select((s) => s.servers).find((s) => s.id === serverId);
+  // SUBSCRIBED, not sampled. `select` reads once: uploading an icon refreshed the store and
+  // the rail redrew, while the panel doing the uploading went on showing the old one — the one
+  // place where seeing the change matters most.
+  const server = useStoreState(serversStore).servers.find((s) => s.id === serverId);
   const [name, setName] = useState(server?.name ?? "");
   const [isPublic, setIsPublic] = useState(false);
   const [desc, setDesc] = useState("");

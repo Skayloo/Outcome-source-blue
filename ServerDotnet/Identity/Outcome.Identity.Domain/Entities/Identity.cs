@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations.Schema;
+﻿using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.AspNetCore.Identity;
 
 namespace Outcome.Domain.Entities;
@@ -32,6 +32,18 @@ public sealed class User : IdentityUser<long>
     public DateTime? DeletedAt { get; set; }
     public string? BanReason { get; set; }
     public DateTime? BanExpires { get; set; }
+
+    /// <summary>When this account's owner accepted the personal-data consent, and WHICH text
+    /// they accepted. Both halves matter: a stored "true" proves nothing a year later, when the
+    /// document has been reworded twice and nobody can say which version was on screen.
+    ///
+    /// The version travels from the client rather than being stamped server-side, because the
+    /// client is what actually displayed it — an older build showing an older text should be
+    /// recorded honestly as that older text. Absent (an app predating this field), the server's
+    /// current version is recorded instead, which is the truthful reading of "whatever was
+    /// published at the time".</summary>
+    public DateTime? ConsentAt { get; set; }
+    public string? ConsentVersion { get; set; }
 
     /// <summary>C#-side alias for Identity's <see cref="IdentityUser{TKey}.UserName"/>. Not mapped —
     /// EF LINQ must use <c>UserName</c>; materialized C# code may use this.</summary>

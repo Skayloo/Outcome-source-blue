@@ -28,7 +28,8 @@ internal static class WsFrames
     private static string NormalizeCode(string code) => code switch
     {
         "BANNED" or "FORBIDDEN" or "NOT_FOUND" or "RATE_LIMITED" or "INVALID_INPUT"
-            or "SERVER_ERROR" or "CHANNEL_FULL" or "VOICE_ERROR" or "VIDEO_LIMIT" => code,
+            or "SERVER_ERROR" or "CHANNEL_FULL" or "VOICE_ERROR" or "VIDEO_LIMIT"
+            or "CONTENT_BLOCKED" => code,
         "BAD_REQUEST" or "CONFLICT" or "INVALID_CREDENTIALS" => "INVALID_INPUT",
         "ALREADY_JOINED" => "VOICE_ERROR",
         "UNAUTHORIZED" => "FORBIDDEN",

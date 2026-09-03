@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Section, Row, Select, Slider, ToggleRow, type Opt } from "@components/settings/controls";
 import { prefetchDeepFilter } from "@lib/noise-suppression-dfn";
+import { vadThreshold } from "@lib/audioPipeline";
 import { loadPref, savePref } from "@components/settings/helpers";
 import { t } from "@lib/i18n";
 import {
@@ -272,7 +273,11 @@ function SensitivityMeter() {
   const levelRef = useRef<HTMLDivElement | null>(null);
   const thresholdRef = useRef<HTMLDivElement | null>(null);
   // Keep the latest sensitivity readable inside the rAF loop without re-subscribing.
-  const sensitivityRef = useRef<number>(loadPref<number>("voiceSensitivity", 95));
+  // 98, not 95 and not 100. At 95 the gate shut at 0.005 RMS (about -46 dBFS), which is the
+  // noise floor of a quiet room — it was closing on people mid-pause. At 100 it does not run at
+  // all (see audioPipeline), so a noisy room transmits its floor for the whole call. 98 puts
+  // the line at 0.002, roughly -54 dBFS: true silence still closes it, speech never will.
+  const sensitivityRef = useRef<number>(loadPref<number>("voiceSensitivity", 98));
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -313,7 +318,11 @@ function SensitivityMeter() {
           const level = levelRef.current;
           if (level !== null) {
             level.style.width = `${visual * 100}%`;
-            const threshold = ((100 - sensitivityRef.current) / 100) * 0.15;
+            // The same function the gate uses. This was its own copy of the formula with a
+            // different constant, so the meter drew the line half again as high as the gate
+            // really opened: you could set the slider until the room sat below the line,
+            // see it stay dim, and transmit it anyway.
+            const threshold = vadThreshold(sensitivityRef.current);
             // green above threshold (voice detected) / dim below
             level.style.background = rms >= threshold ? "#43b581" : "#faa61a";
           }

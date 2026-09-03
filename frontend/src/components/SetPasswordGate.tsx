@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "@lib/services";
+import { PDN_CONSENT_VERSION, PDN_CONSENT_URL, PDN_POLICY_URL, pdnConsentApplies } from "@lib/pdnConsent";
+import { readLastHost } from "@lib/serverHost";
 import { BootSplash } from "@components/BootSplash";
 import { t } from "@lib/i18n";
+import { createLogger } from "@lib/logger";
+
+const log = createLogger("set-password");
 
 /**
  * Signing in through a provider used to leave the account without a password of its own —
@@ -14,11 +19,16 @@ type Mode = "none" | "set";
 
 export function SetPasswordGate({ children }: { children: React.ReactNode }) {
   const [mode, setMode] = useState<Mode | null>(null);
+  // Personal-data consent, asked HERE for provider-created accounts: they exist before anyone
+  // was asked anything, and clicking a provider button is not agreement to our processing.
+  const [consent, setConsent] = useState(false);
+  // Same rule as the sign-up form: whether to ask at all is a question about the host, not
+  // about the build.
+  const askConsent = pdnConsentApplies(readLastHost());
   const [pw, setPw] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     const c = new AbortController();
     void api.getMe(c.signal)
@@ -37,12 +47,22 @@ export function SetPasswordGate({ children }: { children: React.ReactNode }) {
     e?.preventDefault();
     if (pw.length < 8) { setError(t("setPassword.tooShort")); return; }
     if (pw !== confirm) { setError(t("setPassword.mismatch")); return; }
+    if (mode === "set" && askConsent && !consent) return; // the button is disabled too
     setError(null);
     setBusy(true);
     // The current password is ignored by the server when there is none to prove — see
     // ChangePasswordHandler. Sent empty rather than faked.
     void api.changePassword("", pw)
-      .then(() => setMode("none"))
+      .then(async () => {
+        // After the password, so a failure here cannot leave the account unusable — and
+        // best-effort, because the tick was given whether or not the write lands. The server
+        // ignores a repeat, so a retry on the next sign-in costs nothing.
+        if (askConsent) {
+          try { await api.recordConsent(PDN_CONSENT_VERSION); }
+          catch (err) { log.warn("could not record the personal-data consent", err); }
+        }
+        setMode("none");
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : t("setPassword.failed")))
       .finally(() => setBusy(false));
   };
@@ -77,8 +97,30 @@ export function SetPasswordGate({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </div>
+            {/* The consent, and only the consent — separate from every other document, which is
+                what 156-ФЗ requires. The policy sits under it as information, not as something
+                being accepted. */}
+            {askConsent && (<>
+            <label className="form-consent">
+              <input type="checkbox" checked={consent}
+                onChange={(ev) => setConsent(ev.target.checked)} />
+              <span>
+                {t("auth.consentBefore")}{" "}
+                <a href={PDN_CONSENT_URL} target="_blank" rel="noopener">
+                  {t("auth.consentLink")}
+                </a>
+                {t("auth.consentAfter")}
+              </span>
+            </label>
+            <div className="form-hint" style={{ marginBottom: 14 }}>
+              {t("auth.consentPolicy")}{" "}
+              <a href={PDN_POLICY_URL} target="_blank" rel="noopener">
+                {t("auth.consentPolicyLink")}
+              </a>
+            </div>
+            </>)}
             <button className="btn-primary" type="submit"
-              disabled={busy || pw.length < 8 || pw !== confirm}>
+              disabled={busy || pw.length < 8 || pw !== confirm || (askConsent && !consent)}>
               {busy ? t("setPassword.saving") : t("setPassword.save")}
             </button>
           </form>

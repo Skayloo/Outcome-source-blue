@@ -66,6 +66,13 @@ public sealed class CreateMessageHandler(
         var content = TextSanitizer.StripHtml(cmd.Content);
         if (content.Length == 0 && cmd.Attachments.Count == 0)
             throw DomainException.BadRequest("message content cannot be empty");
+
+        // The content filter guideline 1.2 requires, and terms.html promises. It sees plaintext
+        // only: a DM on a red server arrives as ciphertext, so what comes through here for one
+        // is an opaque blob the filter folds to nothing and passes. That is not a hole to plug
+        // — it is the point of the encryption — and reporting covers what the server cannot read.
+        if (ContentFilter.FirstProhibited(content) is { } hit)
+            throw DomainException.ContentBlocked($"this message was blocked by the content filter ({hit})");
         if (content.Length > MaxMessageLength)
             throw DomainException.BadRequest($"message content exceeds maximum length of {MaxMessageLength} characters");
 
@@ -80,7 +87,7 @@ public sealed class CreateMessageHandler(
         var (id, timestamp) = await messages.CreateAsync(cmd.ChannelId, cmd.UserId, content, cmd.ReplyTo, forwardedFrom, ct);
 
         var linked = cmd.Attachments.Count > 0
-            ? await attachments.AttachToMessageAsync(cmd.Attachments, id, ct)
+            ? await attachments.AttachToMessageAsync(cmd.Attachments, id, cmd.UserId, ct)
             : (IReadOnlyList<Domain.Entities.Attachment>)Array.Empty<Domain.Entities.Attachment>();
         var attachmentDtos = linked
             .Select(a => new AttachmentDto(a.Id, a.Filename, a.Size, a.MimeType, fileUrls.Sign(a.Id), a.Width, a.Height, a.DurationMs, a.Waveform))

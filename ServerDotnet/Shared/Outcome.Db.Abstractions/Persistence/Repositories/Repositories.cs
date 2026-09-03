@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Outcome.Shared.Abstractions.Persistence;
 using Outcome.Application.Admin;
 using Outcome.Application.Friends;
@@ -40,6 +40,15 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
 
     public Task UpdateTotpSecretAsync(long id, string? secret, CancellationToken ct = default) =>
         db.Users.Where(u => u.Id == id).ExecuteUpdateAsync(s => s.SetProperty(u => u.TotpSecret, secret), ct);
+
+    // The `ConsentAt == null` filter is the write-once rule, enforced in the UPDATE itself
+    // rather than by reading first and writing after: two devices finishing the same sign-up at
+    // once would both see null and the later one would win, quietly moving the date.
+    public Task RecordConsentAsync(long id, string version, CancellationToken ct = default) =>
+        db.Users.Where(u => u.Id == id && u.ConsentAt == null)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(u => u.ConsentAt, DateTime.UtcNow)
+                .SetProperty(u => u.ConsentVersion, version), ct);
 
     public Task UpdateStatusAsync(long id, string status, CancellationToken ct = default) =>
         db.Users.Where(u => u.Id == id).ExecuteUpdateAsync(s => s.SetProperty(u => u.Status, status), ct);
@@ -446,7 +455,8 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
         db.Attachments.Where(a => a.Id == id)
             .ExecuteUpdateAsync(s => s.SetProperty(a => a.Width, width).SetProperty(a => a.Height, height), ct);
 
-    public async Task<IReadOnlyList<Attachment>> AttachToMessageAsync(IReadOnlyList<string> ids, long messageId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<Attachment>> AttachToMessageAsync(
+        IReadOnlyList<string> ids, long messageId, long senderId, CancellationToken ct = default)
     {
         if (ids.Count == 0) return Array.Empty<Attachment>();
         var atts = await db.Attachments.Where(a => ids.Contains(a.Id)).ToListAsync(ct);
@@ -460,7 +470,11 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
             if (a is null) continue;
             if (a.MessageId is null)
             {
-                // Fresh upload — claim it.
+                // Fresh upload — claim it, but only the person who uploaded it may. An id is all
+                // this took, and an id is not a secret: it rides in every signed URL the file was
+                // ever served from. Rows predating the uploader column have no owner to check, so
+                // they keep the old behaviour rather than becoming unattachable.
+                if (a.UploaderId is { } owner && owner != senderId) continue;
                 a.MessageId = messageId;
                 a.Position = position;
                 result.Add(a);
@@ -471,6 +485,7 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
                 // Message deletion never removes storage, so the shared file is safe.
                 var clone = new Attachment
                 {
+                    UploaderId = senderId,
                     Id = Guid.NewGuid().ToString(),
                     MessageId = messageId,
                     Filename = a.Filename,

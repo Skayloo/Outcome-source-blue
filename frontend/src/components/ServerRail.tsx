@@ -18,8 +18,16 @@ import { ExploreModal } from "@components/ExploreModal";
 import { BugReportModal } from "@components/BugReportModal";
 import { initials } from "@lib/format";
 import { t } from "@lib/i18n";
+import { assetUrlSmall } from "@lib/serverHost";
 
-/** The seeded primary server uses the brand mark instead of initials. */
+/** Icons that failed to load, by server id. A stored icon can outlive the file it points at —
+ *  the object is deleted, the bucket is migrated, a link expires — and an <img> that 404s draws
+ *  an empty box. Remembering the failure lets the row fall back to what it would have shown if
+ *  the icon had never been set. */
+type FailedIcons = ReadonlySet<number>;
+
+/** The server every space is seeded with. Each space numbers its own servers from 1, so this
+ *  is "the first server here", not "the first server on the main instance". */
 const PRIMARY_SERVER_ID = 1;
 
 /**
@@ -33,6 +41,8 @@ export function ServerRail() {
   const dm = useStoreState(dmStore);
   const friends = useStoreState(friendsStore);
   const voice = useStoreState(voiceStore);
+  // Icons whose file no longer resolves — see FailedIcons above.
+  const [brokenIcons, setBrokenIcons] = useState<FailedIcons>(() => new Set<number>());
   const [showCreate, setShowCreate] = useState(false);
   const [showExplore, setShowExplore] = useState(false);
   const [showBug, setShowBug] = useState(false);
@@ -96,9 +106,17 @@ export function ServerRail() {
             title={server.name}
             onClick={() => goServer(server.id)}
           >
-            {server.id === PRIMARY_SERVER_ID
-              ? <span className="rail-logo-wrap"><Logo width={26} /></span>
-              : initials(server.name)}
+            {/* The picture first, whichever server this is. The brand mark and the initials are
+                both FALLBACKS for a server with no picture — the primary one used to be checked
+                before the picture and so wore the Outcome ring no matter what had been uploaded
+                to it. On a tenant's space that was doubly wrong: their own first server showed
+                our mark. The thumbnail, not the original: this is 48 pixels wide. */}
+            {server.icon && !brokenIcons.has(server.id)
+              ? <img className="rail-icon" src={assetUrlSmall(server.icon)} alt=""
+                  onError={() => setBrokenIcons((prev) => new Set(prev).add(server.id))} />
+              : server.id === PRIMARY_SERVER_ID
+                ? <span className="rail-logo-wrap"><Logo width={26} /></span>
+                : initials(server.name)}
             {voice.connectedServerId === server.id && (
               <span className="rail-voice-dot" title={t("voice.voiceConnected")} />
             )}

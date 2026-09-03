@@ -66,9 +66,12 @@ public static class AdminEndpoints
         // Paged when limit/offset are passed; the body stays a plain array either way and the
         // unpaged total rides the X-Total-Count header (keeps the mobile admin, which never
         // pages, on the exact same contract).
+        // Every account in the SPACE, so the gate is the space's, not a server's. The handler asks
+        // for ManageServer, which is a permission a per-server role can carry — belt and braces
+        // after that bit turned out to be reachable by anyone who created a server of their own.
         group.MapGet("/users", async (int? limit, int? offset, string? q, HttpContext ctx, ICurrentUser current, ISender mediator) =>
         {
-            if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
+            RequireAdmin(current);
             var page = await mediator.Send(new ListAdminUsersQuery(current.Permissions, limit ?? int.MaxValue, offset ?? 0, q));
             ctx.Response.Headers["X-Total-Count"] = page.Total.ToString();
             return page.Items;

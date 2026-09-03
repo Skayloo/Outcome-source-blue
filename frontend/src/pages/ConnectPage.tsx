@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "@lib/services";
 import { wirePostAuth } from "@lib/session";
+import { PDN_CONSENT_VERSION, PDN_CONSENT_URL, PDN_POLICY_URL, pdnConsentApplies } from "@lib/pdnConsent";
 import { ApiClientError } from "@lib/api";
 import { BrandMark, useSpaceBrand } from "@components/BrandMark";
 import { fetchSsoProviders, startSso, type SsoProvider } from "@lib/sso";
@@ -17,6 +18,9 @@ export function ConnectPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [invite, setInvite] = useState("");
+  // Personal-data consent. Unchecked by default and never pre-ticked: a consent the
+  // person did not actively give is not consent, and 152-ФЗ says so out loud.
+  const [consent, setConsent] = useState(false);
   const [code, setCode] = useState("");
   const [partialToken, setPartialToken] = useState("");
   const [twoFactorMethod, setTwoFactorMethod] = useState("totp");
@@ -34,6 +38,10 @@ export function ConnectPage() {
   // The host the setup/SSO probes were last run against — recommitted on field blur, so
   // the SSO buttons and the setup wizard reflect the TARGET instance, not this one.
   const [committedHost, setCommittedHost] = useState(readLastHost);
+  // Whether to ask at all. Derived from the host the form is pointed at, so it appears and
+  // disappears as that field changes — no round trip, and the same rule the phone applies.
+  const askConsent = pdnConsentApplies(committedHost);
+
   // Tenant branding: on a customer's subdomain the login screen wears THEIR name and logo,
   // not ours. Null on the main domain (and on any host no space claims) → Outcome branding.
   const brand = useSpaceBrand();
@@ -82,7 +90,10 @@ export function ConnectPage() {
         const r = await api.setup(email, username, password);
         wirePostAuth(targetHost, r.token, r.username);
       } else if (mode === "register") {
-        const r = await api.register(email, username, password, invite);
+        // Empty where we are not the operator: claiming a consent nobody gave is worse
+        // than recording none. A self-hosted server that requires one refuses this.
+        const r = await api.register(email, username, password, invite,
+          askConsent ? PDN_CONSENT_VERSION : "");
         // Email verification on: the account does not exist yet — the server parked the
         // registration and mailed a code. Swap to the code screen; submit completes it.
         if (r.requires_email_verify && r.partial_token) {
@@ -241,6 +252,34 @@ export function ConnectPage() {
                     </div>
                   </div>
                 )}
+                {mode === "register" && askConsent && (
+                  <>
+                    {/* The consent, and ONLY the consent. Since 156-ФЗ (in force 1 Sep 2025) it
+                        has to stand apart from every other document a person accepts — folding
+                        "and I accept the policy" into the same sentence is the bundling the law
+                        was written to stop, and a caption under the button instead of a box is
+                        named outright as not enough. */}
+                    <label className="form-consent">
+                      <input type="checkbox" checked={consent}
+                        onChange={(e) => setConsent(e.target.checked)} />
+                      <span>
+                        {t("auth.consentBefore")}{" "}
+                        <a href={PDN_CONSENT_URL} target="_blank" rel="noopener">
+                          {t("auth.consentLink")}
+                        </a>
+                        {t("auth.consentAfter")}
+                      </span>
+                    </label>
+                    {/* Informational, deliberately outside the label: the policy is something the
+                        operator publishes, not something the person agrees to. */}
+                    <div className="form-hint">
+                      {t("auth.consentPolicy")}{" "}
+                      <a href={PDN_POLICY_URL} target="_blank" rel="noopener">
+                        {t("auth.consentPolicyLink")}
+                      </a>
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -258,7 +297,8 @@ export function ConnectPage() {
               </div>
             )}
 
-            <button className="btn-primary" type="submit" disabled={busy}>
+            <button className="btn-primary" type="submit"
+              disabled={busy || (mode === "register" && askConsent && !consent)}>
               {busy ? t("auth.btnBusy")
                 : mode === "setup" ? t("auth.btnCreateOwner")
                 : mode === "register" ? t("auth.btnRegister")

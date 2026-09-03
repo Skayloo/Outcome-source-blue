@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using MediatR;
@@ -49,7 +49,20 @@ public static class OAuthEndpoints
             // Anti-CSRF state: HMAC-signed and self-contained (target + expiry + nonce), so
             // the callback can land on ANY server replica — an in-memory store would lose
             // the flow whenever the LB picks a different instance than /start.
-            var state = SignState(jwt.Value.JwtKey, target == "app" ? "app" : "web");
+            var (state, nonce) = SignState(jwt.Value.JwtKey, target == "app" ? "app" : "web");
+            // The state is self-contained so any replica can verify it — and that is exactly why
+            // it alone is not an anti-CSRF token: anyone can fetch one from here and feed it to a
+            // victim, who then gets silently signed into the attacker's account. The nonce is
+            // echoed into a cookie of THIS browser, and the callback insists the two agree.
+            // Lax survives the provider's top-level redirect back to us and nothing else.
+            ctx.Response.Cookies.Append("oauth_nonce", nonce, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = ctx.Request.IsHttps || ctx.Request.Headers["X-Forwarded-Proto"] == "https",
+                SameSite = SameSiteMode.Lax,
+                Path = "/api/v1/auth/oauth",
+                MaxAge = TimeSpan.FromMinutes(10),
+            });
             var redirect = $"{origin}/api/v1/auth/oauth/{p}/callback";
             var url = p switch
             {
@@ -73,9 +86,14 @@ public static class OAuthEndpoints
         {
             var (p, cfg) = await ResolveAsync(provider, sso, ct);
             var origin = RequireOrigin(await sso.PublicOriginAsync(ct));
-            var targetKind = state is null ? null : VerifyState(jwt.Value.JwtKey, state);
-            if (targetKind is null)
+            var verified = state is null ? null : VerifyState(jwt.Value.JwtKey, state);
+            var browserNonce = ctx.Request.Cookies["oauth_nonce"];
+            ctx.Response.Cookies.Delete("oauth_nonce", new CookieOptions { Path = "/api/v1/auth/oauth" });
+            if (verified is null || string.IsNullOrEmpty(browserNonce)
+                || !CryptographicOperations.FixedTimeEquals(
+                        Encoding.ASCII.GetBytes(browserNonce), Encoding.ASCII.GetBytes(verified.Value.Nonce)))
                 return Results.Redirect($"{origin}/#sso_error=state");
+            var targetKind = verified.Value.Target;
             var flow = new Flow(targetKind);
             if (!string.IsNullOrEmpty(error) || string.IsNullOrEmpty(code))
                 return Fail(origin, flow, "provider_denied");
@@ -102,7 +120,7 @@ public static class OAuthEndpoints
                 var res = await mediator.Send(new OAuthLoginCommand(p, email, name, ClientIp(ctx)));
                 var token = Uri.EscapeDataString(res.Token ?? "");
                 return flow.Target == "app"
-                    ? Results.Redirect($"outcome://sso?token={token}")
+                    ? AppHandoff($"outcome://sso?token={token}")
                     : Results.Redirect($"{origin}/#sso={token}");
             }
             catch (DomainException ex)
@@ -114,8 +132,43 @@ public static class OAuthEndpoints
 
     private static IResult Fail(string origin, Flow flow, string reason) =>
         flow.Target == "app"
-            ? Results.Redirect($"outcome://sso?error={Uri.EscapeDataString(reason)}")
+            ? AppHandoff($"outcome://sso?error={Uri.EscapeDataString(reason)}")
             : Results.Redirect($"{origin}/#sso_error={Uri.EscapeDataString(reason)}");
+
+    /// <summary>
+    /// Hands the app its deep link from a REAL page instead of a 302.
+    ///
+    /// Redirecting straight to outcome:// gives the browser a URL it cannot render itself: the
+    /// OS launches the app, and the tab is left with no document at all, spinning forever. The
+    /// person has signed in successfully and is looking at a page that looks broken.
+    ///
+    /// So: a document that fires the deep link from script, offers a plain link for anyone with
+    /// script disabled, and says the tab can be closed. window.close() is attempted but
+    /// deliberately not promised in the text — a browser only lets a page close a window that a
+    /// script opened, and this one was opened by the app.
+    /// </summary>
+    private static IResult AppHandoff(string deepLink)
+    {
+        var href = System.Net.WebUtility.HtmlEncode(deepLink);
+        var js = System.Text.Json.JsonSerializer.Serialize(deepLink);
+        var html =
+            "<!doctype html><html lang=\"ru\"><head><meta charset=\"utf-8\">" +
+            "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+            "<meta name=\"robots\" content=\"noindex\"><title>Outcome</title><style>" +
+            "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;" +
+            "background:#0b0910;color:#e8e4f0;font:16px/1.6 \"Segoe UI\",system-ui,sans-serif;" +
+            "text-align:center;padding:2rem}" +
+            "h1{font-size:1.4rem;margin:0 0 .6rem}p{color:#a49db4;margin:0 0 1.4rem}" +
+            "a{display:inline-block;padding:.8rem 1.5rem;border-radius:.7rem;background:#8b5cf6;" +
+            "color:#fff;text-decoration:none;font-weight:600}</style></head><body><div>" +
+            "<h1>Готово — возвращайтесь в приложение</h1>" +
+            "<p>Эту вкладку можно закрыть.</p>" +
+            "<a href=\"" + href + "\">Открыть Outcome</a></div><script>" +
+            "location.replace(" + js + ");" +
+            "setTimeout(function(){window.close();},1200);" +
+            "</script></body></html>";
+        return Results.Content(html, "text/html; charset=utf-8");
+    }
 
     private static async Task<(string, OAuthProviderOptions)> ResolveAsync(string provider, ISpaceSsoConfig sso, CancellationToken ct)
     {
@@ -205,16 +258,18 @@ public static class OAuthEndpoints
 
     // ── Stateless anti-CSRF state: base64url("target|expiresUnix|nonce") + "." + HMAC ──
 
-    private static string SignState(string key, string target)
+    private static (string State, string Nonce) SignState(string key, string target)
     {
-        var payload = $"{target}|{DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds()}|{Convert.ToHexString(RandomNumberGenerator.GetBytes(12))}";
+        var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(12));
+        var payload = $"{target}|{DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds()}|{nonce}";
         var body = Convert.ToBase64String(Encoding.UTF8.GetBytes(payload))
             .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-        return body + "." + Hmac(key, body);
+        return (body + "." + Hmac(key, body), nonce);
     }
 
-    /// <summary>Returns the flow target ("web"/"app"), or null when the state is forged/expired.</summary>
-    private static string? VerifyState(string key, string state)
+    /// <summary>Returns the flow target ("web"/"app") and the nonce the browser must echo back,
+    /// or null when the state is forged or expired.</summary>
+    private static (string Target, string Nonce)? VerifyState(string key, string state)
     {
         var dot = state.IndexOf('.');
         if (dot <= 0) return null;
@@ -229,7 +284,7 @@ public static class OAuthEndpoints
             if (parts.Length != 3) return null;
             if (!long.TryParse(parts[1], out var exp) ||
                 DateTimeOffset.FromUnixTimeSeconds(exp) < DateTimeOffset.UtcNow) return null;
-            return parts[0] is "app" or "web" ? parts[0] : null;
+            return parts[0] is "app" or "web" ? (parts[0], parts[2]) : null;
         }
         catch
         {

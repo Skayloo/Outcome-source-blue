@@ -9,7 +9,7 @@ import {
   setOnRemoteVideo, setOnRemoteVideoRemoved, clearOnRemoteVideo,
   getLocalCameraStream, getLocalScreenshareStream,
 } from "@lib/livekitSession";
-import { Icon, type IconName } from "@lib/icons";
+import { Icon } from "@lib/icons";
 import { api } from "@lib/services";
 import { copyText } from "@lib/clipboard";
 import { setTransientSuccess, showToast } from "@stores/ui.store";
@@ -17,6 +17,7 @@ import { Avatar } from "@components/Avatar";
 import { QualityBars } from "@components/QualityBars";
 import { t } from "@lib/i18n";
 import { VoiceUserMenu } from "@components/VoiceUserMenu";
+import { VoiceCtl as Ctl } from "@components/VoiceCtl";
 
 interface RemoteEntry { userId: number; stream: MediaStream; screenshare: boolean }
 
@@ -151,16 +152,6 @@ export function VoiceStage({ channelId }: { channelId: number }) {
 }
 
 /** A captioned circular control button (icon + label) for the voice control bar. */
-function Ctl({ name, label, on, red, onClick }: { name: IconName; label: string; on?: boolean; red?: boolean; onClick: () => void }) {
-  const cls = "vsc-btn" + (red ? " on-red" : on ? " on" : "");
-  return (
-    <div className="vsc-ctl">
-      <button className={cls} title={label} onClick={onClick}><Icon name={name} size={22} /></button>
-      <span className="vsc-ctl-label">{label}</span>
-    </div>
-  );
-}
-
 function VideoBox({ label, stream, fill, contain, mirror, expandable }: { label: string; stream: MediaStream; fill?: boolean; contain?: boolean; mirror?: boolean; expandable?: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);

@@ -36,6 +36,8 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
 
     public bool Enabled => _key is not null;
 
+    public IReadOnlySet<string> Transports { get; } = new HashSet<string> { PushTarget.Apns };
+
     public ApnsPushSender(IOptions<ApnsOptions> options, ILogger<ApnsPushSender> log)
     {
         _o = options.Value;
@@ -81,9 +83,10 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
         }
     }
 
-    public async Task<PushOutcome> SendAsync(string deviceToken, bool sandbox, PushMessage message, CancellationToken ct = default)
+    public async Task<PushOutcome> SendAsync(PushTarget target, PushMessage message, CancellationToken ct = default)
     {
         if (_key is null) return PushOutcome.Failed;
+        var (deviceToken, sandbox) = (target.Token, target.Sandbox);
 
         var aps = new JsonObject
         {
@@ -131,9 +134,10 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
         };
     }
 
-    public async Task<PushOutcome> SendCallAsync(string voipToken, bool sandbox, CallPush call, CancellationToken ct = default)
+    public async Task<PushOutcome> SendCallAsync(PushTarget target, CallPush call, CancellationToken ct = default)
     {
         if (_key is null) return PushOutcome.Failed;
+        var (voipToken, sandbox) = (target.Token, target.Sandbox);
 
         // No "aps" block: a VoIP push draws nothing by itself. It wakes the app, which is then
         // obliged to put the system call screen up — that is Apple's bargain for this privilege.

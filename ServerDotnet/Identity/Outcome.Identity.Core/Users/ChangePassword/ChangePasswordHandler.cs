@@ -9,7 +9,9 @@ using Outcome.Domain.Errors;
 
 namespace Outcome.Application.Users;
 
-public sealed class ChangePasswordHandler(UserManager<User> userManager, IAuditRepository audit)
+public sealed class ChangePasswordHandler(
+    UserManager<User> userManager, IAuditRepository audit,
+    ISessionRepository sessions, ICurrentUser current)
     : IRequestHandler<ChangePasswordCommand>
 {
     public async Task Handle(ChangePasswordCommand cmd, CancellationToken ct)
@@ -48,6 +50,14 @@ public sealed class ChangePasswordHandler(UserManager<User> userManager, IAuditR
         if (!result.Succeeded)
             throw DomainException.BadRequest("current password is incorrect");
 
-        await audit.AddAsync(cmd.UserId, "password_change", "user", cmd.UserId, string.Empty, ct);
+        // Changing a password is what someone does when they think somebody else has it, and a
+        // password change that leaves the other party signed in does not do that job. Every other
+        // session goes; this one stays, or the act of securing the account signs you out of it.
+        var revoked = current.SessionTokenHash is { Length: > 0 } h
+            ? await sessions.DeleteAllForUserExceptAsync(cmd.UserId, h, ct)
+            : 0;
+
+        await audit.AddAsync(cmd.UserId, "password_change", "user", cmd.UserId,
+            revoked > 0 ? $"{revoked} other session(s) revoked" : string.Empty, ct);
     }
 }

@@ -91,6 +91,12 @@ services:
       ConnectionStrings__PostgresDirect: "Host=postgres;Port=5432;Database=outcome;Username=outcome;Password=${POSTGRES_PASSWORD}"
       OUTCOME_Redis__Url: "redis:6379"
       OUTCOME_Server__Name: "${SERVER_NAME}"
+      # The API only ever sees the reverse proxy, so it must be told whose X-Forwarded-For to
+      # believe. Docker bridge ranges — NOT the whole RFC1918 space, and nothing outside the
+      # compose network: whoever this trusts can claim any client IP and skip every rate limit.
+      OUTCOME_Server__TrustedProxies__0: "127.0.0.1/32"
+      OUTCOME_Server__TrustedProxies__1: "::1/128"
+      OUTCOME_Server__TrustedProxies__2: "172.16.0.0/12"
       OUTCOME_JwtAuth__JwtKey: "${JWT_KEY}"
       OUTCOME_Minio__Endpoint: "minio:9000"
       OUTCOME_Minio__AccessKey: "${MINIO_ACCESS_KEY}"
@@ -123,6 +129,15 @@ services:
       OUTCOME_Apns__KeyId: "${APNS_KEY_ID:-}"
       OUTCOME_Apns__TeamId: "${APNS_TEAM_ID:-}"
       OUTCOME_Apns__BundleId: "${APNS_BUNDLE_ID:-com.outcome.outcome}"
+      # Android push. Two transports, because RuStore's gateway does not reach a phone without
+      # RuStore on it and FCM does not reach one without Google services — and neither console
+      # forwards to the other. Empty values turn a transport off; the server says which ones it
+      # came up with in its startup log.
+      OUTCOME_RuStorePush__ProjectId: "${RUSTORE_PUSH_PROJECT_ID:-}"
+      OUTCOME_RuStorePush__ServiceToken: "${RUSTORE_PUSH_SERVICE_TOKEN:-}"
+      # The Firebase SERVICE ACCOUNT json, on one line. Not google-services.json — that one ships
+      # inside the APK and only identifies the app; this one authorises sending to it.
+      OUTCOME_Fcm__Credentials: "${FCM_CREDENTIALS:-}"
     healthcheck:
       # curl, not wget: the aspnet base image ships neither, and the Dockerfile installs curl
       # precisely for this check. With wget the probe could never succeed — the container sat

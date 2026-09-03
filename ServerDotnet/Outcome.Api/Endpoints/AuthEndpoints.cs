@@ -1,4 +1,4 @@
-using MediatR;
+﻿using MediatR;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 using Outcome.Api.Http;
@@ -13,7 +13,11 @@ namespace Outcome.Api.Endpoints;
 
 public static class AuthEndpoints
 {
-    public sealed record RegisterBody(string Email, string Username, string Password, string InviteCode);
+    // ConsentVersion is OPTIONAL on purpose. Making it required would reject every client built
+    // before it existed — including the build sitting in RuStore moderation right now. Absent,
+    // the server records its own current version, which is the truthful reading of "whatever
+    // was published when this account was made".
+    public sealed record RegisterBody(string Email, string Username, string Password, string InviteCode, string? ConsentVersion = null);
     public sealed record LoginBody(string Email, string Password);
     public sealed record VerifyTotpBody(string Code);
     public sealed record VerifyRegistrationBody(string Code);
@@ -40,7 +44,7 @@ public static class AuthEndpoints
             var result = await mediator.Send(new RegisterUserCommand(
                 body.Email, body.Username, body.Password, body.InviteCode,
                 ctx.Request.Headers.UserAgent.ToString(), ClientIp(ctx),
-                await HostSpaceIdAsync(ctx, servers)));
+                await HostSpaceIdAsync(ctx, servers), body.ConsentVersion));
             return result;
         }).AddEndpointFilter(RateLimit("register", 3, TimeSpan.FromMinutes(1)))
           .AddEndpointFilter(GlobalRateLimit("register", 600, TimeSpan.FromMinutes(1)));

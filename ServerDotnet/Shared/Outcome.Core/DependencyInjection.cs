@@ -32,6 +32,8 @@ public static class DependencyInjection
         services.Configure<OAuthOptions>(config.GetSection("OAuth"));
         services.Configure<MinioOptions>(config.GetSection("Minio"));
         services.Configure<ApnsOptions>(config.GetSection("Apns"));
+        services.Configure<RuStorePushOptions>(config.GetSection("RuStorePush"));
+        services.Configure<FcmOptions>(config.GetSection("Fcm"));
 
         var connectionString = ResolveConnectionString(config);
         var directConnectionString = config.GetConnectionString("PostgresDirect") ?? connectionString;
@@ -104,7 +106,20 @@ public static class DependencyInjection
         services.AddSingleton<ITotpService, TotpService>();
         services.AddScoped<IPendingTotpStore, PendingTotpStore>();
         services.AddSingleton<IEmailSender, SmtpEmailSender>();
-        services.AddSingleton<IPushSender, ApnsPushSender>();
+        // Push goes out through whichever gateway issued the device's token, so the senders are
+        // registered as themselves and IPushSender resolves to the router over them. Listing them
+        // explicitly rather than injecting IEnumerable<IPushSender> is what keeps the router from
+        // being handed itself.
+        services.AddSingleton<ApnsPushSender>();
+        services.AddSingleton<RuStorePushSender>();
+        services.AddSingleton<FcmPushSender>();
+        services.AddSingleton<IPushSender>(sp => new PushRouter(
+            [
+                sp.GetRequiredService<ApnsPushSender>(),
+                sp.GetRequiredService<RuStorePushSender>(),
+                sp.GetRequiredService<FcmPushSender>(),
+            ],
+            sp.GetRequiredService<ILogger<PushRouter>>()));
 
         // Repositories (scoped — share the request's DbContext).
         services.AddScoped<IUserRepository, UserRepository>();

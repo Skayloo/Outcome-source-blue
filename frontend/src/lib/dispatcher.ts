@@ -636,6 +636,12 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
         clearAuth();
         return;
       }
+      if (payload.code === "CONTENT_BLOCKED") {
+        // Its own code so this reads as a verdict on the WORDS. The server's English text names
+        // the term it matched, which is useful in a log and wrong to put in front of a user.
+        setTransientError(t("chat.contentBlocked"));
+        return;
+      }
       if (payload.code === "RATE_LIMITED" || payload.code === "FORBIDDEN") {
         setTransientError(payload.message || "Server error");
       }

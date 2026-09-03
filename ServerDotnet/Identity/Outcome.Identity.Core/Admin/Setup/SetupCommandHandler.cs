@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using MediatR;
 using Microsoft.AspNetCore.Identity;
 using Outcome.Shared.Abstractions.Messaging;
@@ -8,6 +8,7 @@ using Outcome.Application.Common;
 using Outcome.Domain.Entities;
 using Outcome.Domain.Errors;
 using Outcome.Domain.Permissions;
+using Outcome.Shared.Legal;
 
 namespace Outcome.Application.Admin;
 
@@ -33,7 +34,13 @@ public sealed class SetupHandler(
         if (AuthRules.ValidateUsername(username) is { } unameErr) throw DomainException.BadRequest(unameErr);
         if (AuthRules.ValidatePassword(cmd.Password) is { } pwErr) throw DomainException.BadRequest(pwErr);
 
-        var user = new User { UserName = username, Email = email, RoleId = DefaultRole.Owner, Status = "offline", EmailConfirmed = true };
+        // The owner is a subject too, and this is the one account nobody can create twice.
+        var user = new User
+        {
+            UserName = username, Email = email, RoleId = DefaultRole.Owner,
+            Status = "offline", EmailConfirmed = true,
+            ConsentAt = DateTime.UtcNow, ConsentVersion = PdnConsent.Version,
+        };
         var created = await userManager.CreateAsync(user, cmd.Password);
         if (!created.Succeeded)
             throw DomainException.BadRequest(string.Join("; ", created.Errors.Select(e => e.Description)));

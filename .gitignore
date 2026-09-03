@@ -77,3 +77,8 @@ deploy/compose/mail-config/
 *.p8
 *.p12
 *.mobileprovision
+
+# Desktop shell build output
+desktop/node_modules/
+desktop/web/
+desktop/release/

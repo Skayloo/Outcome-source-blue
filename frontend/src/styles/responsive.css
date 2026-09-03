@@ -8,6 +8,13 @@
   .mobile-backdrop { display: none; }
 }
 
+/* The desktop shell drops the branding panel at every size, not just narrow ones. On the web
+   that panel is the first thing a stranger sees and it introduces the product; someone who has
+   already installed the app has been introduced, and giving half their window to a tagline is
+   a worse trade than on a landing page. The class is set by the shell's preload. */
+html.outcome-desktop .connect-page > .server-panel { display: none; }
+html.outcome-desktop .form-container { max-width: 420px; }
+
 @media (max-width: 768px) {
   /* Connect / setup: drop the branding panel, let the form fill the screen. */
   .connect-page > .server-panel { display: none; }

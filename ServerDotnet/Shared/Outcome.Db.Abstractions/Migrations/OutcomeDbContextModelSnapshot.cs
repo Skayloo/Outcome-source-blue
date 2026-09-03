@@ -191,6 +191,10 @@ namespace Outcome.Db.Abstractions.Migrations
                         .HasColumnName("uploaded_at")
                         .HasDefaultValueSql("now()");
 
+                    b.Property<long?>("UploaderId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("uploader_id");
+
                     b.Property<string>("Waveform")
                         .HasColumnType("text")
                         .HasColumnName("waveform");
@@ -1214,6 +1218,14 @@ namespace Outcome.Db.Abstractions.Migrations
                         .IsConcurrencyToken()
                         .HasColumnType("text")
                         .HasColumnName("concurrency_stamp");
+
+                    b.Property<DateTime?>("ConsentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consent_at");
+
+                    b.Property<string>("ConsentVersion")
+                        .HasColumnType("text")
+                        .HasColumnName("consent_version");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()

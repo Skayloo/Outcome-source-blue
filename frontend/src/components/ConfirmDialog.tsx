@@ -23,7 +23,14 @@ export interface ConfirmOptions {
    *  unmistakable WHO/WHAT the action hits. Highlighted wherever it occurs in the message. */
   readonly highlight?: string;
   /** Render a single-line text field; its value comes back via `prompt()` instead of `confirm()`. */
-  readonly input?: { placeholder?: string; maxLength?: number };
+  readonly input?: {
+    placeholder?: string;
+    maxLength?: number;
+    /** Pre-filled and editable, for an answer that is the same nine times out of ten —
+     *  a placeholder cannot be sent, and re-typing the standard reply is how people stop
+     *  sending one at all. */
+    defaultValue?: string;
+  };
 }
 
 /** Split `message` around every occurrence of `highlight`, wrapping the matches in an
@@ -76,7 +83,7 @@ export function prompt(options: ConfirmOptions & { input: NonNullable<ConfirmOpt
 
 function ConfirmDialog({ options, onDone }: { options: ConfirmOptions; onDone: (r: string | null) => void }) {
   const [closing, setClosing] = useState(false);
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(options.input?.defaultValue ?? "");
   const confirmRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 

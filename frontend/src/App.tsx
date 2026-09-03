@@ -3,7 +3,7 @@ import { authStore } from "@stores/auth.store";
 import { SetPasswordGate } from "@components/SetPasswordGate";
 import { useStoreState } from "@lib/useStore";
 import { restoreSession, hasStoredSession, clearStoredSession } from "@lib/session";
-import { consumeSsoRedirect } from "@lib/sso";
+import { consumeSsoRedirect, wireDesktopSso } from "@lib/sso";
 import { setTransientError } from "@stores/ui.store";
 import { ws } from "@lib/services";
 import { useT, t } from "@lib/i18n";
@@ -34,6 +34,10 @@ export function App() {
     // the user just deliberately signed in as somebody.
     const ssoError = consumeSsoRedirect();
     if (ssoError !== null) setTransientError(t("auth.ssoFailed"));
+    // The same token, arriving the other way. In the desktop shell the round-trip happens in
+    // the user's browser and comes back over the outcome:// scheme, so there is no fragment to
+    // read — the shell hands it over instead. No-op in a browser.
+    wireDesktopSso(() => setTransientError(t("auth.ssoFailed")));
     if (!authStore.getState().isAuthenticated) restoreSession();
     // Not for the branding here — for the noindex a tenant's pages need. Asking on mount means
     // it happens whichever page a crawler landed on, not only the ones that show a logo.

@@ -20,6 +20,10 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.11" />
+    <!-- Pulled in transitively at 2.0.0, which carries GHSA-v5pm-xwqc-g5wc (stack overflow on
+         a circular schema reference). 2.7.5 is the first fix on the 2.x line.
+         Pinned here until the packages above ask for a fixed version themselves. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <!-- Design-time only: required by `dotnet ef` (this is the migrations startup project). Not shipped. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">

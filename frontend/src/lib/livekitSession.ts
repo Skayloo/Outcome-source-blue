@@ -21,6 +21,7 @@ import {
   DisconnectReason,
 } from "livekit-client";
 import { runtimeLivekitUrl } from "@lib/runtimeConfig";
+import { serverOrigin } from "@lib/serverHost";
 import type { WsClient } from "@lib/ws";
 import {
   voiceStore,
@@ -175,7 +176,11 @@ export class LiveKitSession {
       // Route remote audio through a shared Web Audio graph so per-participant/output volume can
       // exceed 1.0 (a bare <audio>.volume is hard-capped at 1.0 by the browser, which made
       // "200%" identical to "100%"). With webAudioMix, setVolume() drives a GainNode → real boost.
-      webAudioMix: true,
+      // The page's context, created from the click that joined — see AudioPipeline.primeContext.
+      // `true` would have LiveKit make its own, which is one more context to wake.
+      webAudioMix: this._audioPipeline.context !== null
+        ? { audioContext: this._audioPipeline.context }
+        : true,
       // Adaptive features reduce quality based on subscriber viewport —
       // disable for "source" quality to maintain full resolution.
       adaptiveStream: !isSource,
@@ -451,6 +456,8 @@ export class LiveKitSession {
 
   /** Called by the "enable sound" button the dock shows while playback is blocked. */
   async unlockAudio(): Promise<void> {
+    // While the click is still in hand — Firefox and Safari grant an AudioContext only here.
+    this._audioPipeline.primeContext();
     await this.room?.startAudio();
     setAudioBlocked(this.room ? !this.room.canPlaybackAudio : false);
   }
@@ -636,19 +643,23 @@ export class LiveKitSession {
     // A runtime override (subdomain ingress, e.g. wss://livekit.outcome.io) wins over the proxy.
     const rt = runtimeLivekitUrl();
     if (rt) return rt;
-    if (this.serverHost !== null) {
-      const host = this.serverHost.split(":")[0] ?? "";
-      const isLocal = host === "localhost" || host === "127.0.0.1" || host === "::1";
+    // The instance we are signed into, authority AND scheme together. Deriving either of them
+    // from window.location is right on the web and wrong in the desktop shell, where the page
+    // comes from app://outcome: the host became "outcome" and the protocol was neither http nor
+    // https, so this produced ws://outcome/livekit and the call simply never connected. The
+    // microphone worked perfectly the entire time, which is what made it look like a mic bug.
+    const origin = serverOrigin();
+    if (origin) {
+      const hostname = new URL(origin).hostname;
+      const isLocal = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
       if (isLocal && directUrl) {
         log.debug("LiveKit URL resolved via direct (local)", { url: directUrl });
         return directUrl;
       }
       if (proxyPath.startsWith("/")) {
-        // Same-origin /livekit proxy (nginx -> backend -> livekit). Match the page
-        // protocol: wss when the page is HTTPS, ws when it is plain HTTP.
-        const isHttps = typeof window !== "undefined" && window.location.protocol === "https:";
-        const protocol = isHttps ? "wss:" : "ws:";
-        const resolved = `${protocol}//${this.serverHost}${proxyPath}`;
+        // The /livekit proxy on that instance (nginx → backend → livekit). http→ws, https→wss,
+        // taken from the origin rather than guessed.
+        const resolved = `${origin.replace(/^http/, "ws")}${proxyPath}`;
         log.debug("LiveKit URL resolved via same-origin proxy", { url: resolved });
         return resolved;
       }
@@ -951,6 +962,7 @@ export class LiveKitSession {
   /** Retry microphone permission after being in listen-only mode. */
   async retryMicPermission(): Promise<void> {
     if (this.room === null) return;
+    this._audioPipeline.primeContext();
     try {
       await this.room.localParticipant.setMicrophoneEnabled(true);
       setListenOnly(false);
@@ -978,6 +990,9 @@ export class LiveKitSession {
     setVoiceTransport(null);
     setAudioBlocked(false);
     this._audioPipeline.teardownAudioPipeline();
+    // The graph goes with the pipeline; the context outlives it by design (the room and the
+    // denoiser share it) and is closed only when the call is actually over.
+    this._audioPipeline.closeContext();
     this.removeAutoplayUnlock();
     this.pendingJoin = null;
     // Clean up manually published tracks.
@@ -1019,6 +1034,10 @@ export class LiveKitSession {
   }
 
   setMuted(muted: boolean): void {
+    // Unmuting is a click, and it is the last moment a browser will hand out a live
+    // AudioContext. Priming it here rather than after the awaits below is the difference
+    // between a pipeline that runs and one that publishes silence.
+    if (!muted) this._audioPipeline.primeContext();
     setLocalMuted(muted);
     // Tell the server (which broadcasts VoiceState) — without this, nobody else ever
     // learns the mic is off and the 🔇 badge never shows on other clients.
@@ -1461,6 +1480,8 @@ const session = new LiveKitSession();
 const outcomeNs = ((window as unknown as Record<string, unknown>).__outcome ??= {}) as Record<string, unknown>;
 outcomeNs.lkDebug = session.getSessionDebugInfo.bind(session);
 
+/** Create the AudioContext while a click is still being handled — see AudioPipeline.primeContext. */
+export const primeVoiceContext = (): void => session.audioPipeline.primeContext();
 export const setWsClient = session.setWsClient.bind(session);
 export const setServerHost = session.setServerHost.bind(session);
 export const setOnError = session.setOnError.bind(session);

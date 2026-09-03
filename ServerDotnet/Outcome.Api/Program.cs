@@ -132,9 +132,18 @@ var fwd = new ForwardedHeadersOptions
 };
 fwd.KnownNetworks.Clear();
 fwd.KnownProxies.Clear();
-var trustedProxies = app.Configuration["TrustedProxies"]
-    ?? "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16";
-foreach (var cidr in trustedProxies.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+// Configured as Server:TrustedProxies (OUTCOME_Server__TrustedProxies), with the historical
+// root-level OUTCOME_TrustedProxies still honoured. The DEFAULT is loopback only: it used to be
+// every RFC1918 range, which is fine while nothing but the proxy can reach the API — and this
+// repo's own compose published port 5000 to the host, so on a LAN any neighbour could hand us
+// whatever X-Forwarded-For they liked and walk through every per-IP rate limit and lockout.
+// A container deployment sets the ranges explicitly (see deploy/compose); an accidental one
+// keys its limits on a real peer address instead of a forged header.
+var trustedProxies = app.Configuration.GetSection("Server:TrustedProxies").Get<string[]>() is { Length: > 0 } configured
+    ? configured
+    : (app.Configuration["TrustedProxies"] ?? "127.0.0.1/32,::1/128")
+        .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+foreach (var cidr in trustedProxies)
     fwd.KnownNetworks.Add(Microsoft.AspNetCore.HttpOverrides.IPNetwork.Parse(cidr));
 app.UseForwardedHeaders(fwd);
 

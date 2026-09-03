@@ -602,6 +602,9 @@
               color var(--dur-fast) var(--ease-out),
               transform var(--dur-press) var(--ease-out);
 }
+/* Fills the button and follows its shape as it morphs on hover — a square picture inside a
+   rounding square is the detail that gives the whole rail away. */
+.rail-icon { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
 .rail-server:hover, .rail-btn:hover { border-radius: 16px; }
 /* Active server/DM: the brand's lit moment — accent fill + a soft accent glow. */
 .rail-server.active { border-radius: 16px; background: var(--accent); color: var(--header-primary); box-shadow: var(--glow-accent-sm); }

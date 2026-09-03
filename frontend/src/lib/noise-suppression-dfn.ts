@@ -22,6 +22,7 @@ import { DeepFilterNoiseFilter } from "deepfilternet3-noise-filter";
 import type { Track, TrackProcessor, AudioProcessorOptions } from "livekit-client";
 import { createLogger } from "@lib/logger";
 import { loadPref, savePref } from "@lib/preferences";
+import { ensureRunning } from "@lib/noise-suppression";
 
 const log = createLogger("noise-suppression-dfn");
 
@@ -37,7 +38,7 @@ const ASSET_BASE = "/dfn";
  * speech; a fan and a street are gone at 20 too, and the slider is there for rooms that
  * genuinely need more.
  */
-const DEFAULT_SUPPRESSION = 20;
+const DEFAULT_SUPPRESSION = 25;
 
 /**
  * Put everyone on the new default once, even if they already had a value.
@@ -47,7 +48,10 @@ const DEFAULT_SUPPRESSION = 20;
  * makes this a one-time reset rather than a setting that refuses to be changed: turn it up
  * afterwards and it stays up.
  */
-const RESET_FLAG = "nsStrengthForced20";
+// Bumped with the number itself: the flag is what makes the reset happen once, so leaving it
+// alone would hand 25 only to people who have never opened voice settings — everyone else
+// keeps whatever they stored, which is the case this mechanism exists for.
+const RESET_FLAG = "nsStrengthForced25";
 
 function applyForcedDefaultOnce(): void {
   if (loadPref<boolean>(RESET_FLAG, false)) return;
@@ -113,17 +117,30 @@ export function prefetchDeepFilter(): Promise<void> {
 async function runPrefetch(): Promise<void> {
   if (!supportsDeepFilter()) return;
   const files = [`${ASSET_BASE}/v3/pkg/df_bg.wasm`, `${ASSET_BASE}/v3/models/DeepFilterNet3_onnx.tar.gz`];
-  await Promise.all(files.map(async (url) => {
+  const landed = await Promise.all(files.map(async (url) => {
     try {
       // The BODY has to be consumed, not just the response awaited: a fetch whose body is
       // never read gets its download cancelled and leaves nothing in the HTTP cache, so the
       // package then fetched all 12 MB a second time. Read it and drop it.
       const res = await fetch(url, { cache: "force-cache", priority: "low" } as RequestInit);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await res.arrayBuffer();
+      return true;
     } catch (err) {
       log.debug("DeepFilterNet prefetch skipped", { url, err });
+      return false;
     }
   }));
+
+  // Only claim the model is warm when it actually IS. This flag used to be set unconditionally,
+  // even when both downloads had failed — and it is what the next call reads to decide whether
+  // to run DeepFilterNet. A false "warm" therefore chose a model that was not in the cache, the
+  // attach failed, and the caller had already turned the browser's own suppressor off to make
+  // room for ours. The result was no suppression at all, stored in localStorage, permanent.
+  if (!landed.every(Boolean)) {
+    log.warn("DeepFilterNet assets did not land — staying on RNNoise until they do");
+    return;
+  }
   savePref(WARMED_KEY, true);
   log.info("DeepFilterNet assets warmed");
 }
@@ -141,7 +158,30 @@ async function runPrefetch(): Promise<void> {
 // which is why every implementation of this trade makes the same one.
 
 /** What the model may cut while speech is present. Low enough to be inaudible on a voice. */
-const SPEECH_LIMIT_DB = 6;
+/**
+ * What the model may cut while the gate is open.
+ *
+ * Six was chosen to keep the model off the words, and it does — but the gate opens on LEVEL,
+ * not on speech, so a keyboard click opens it too, and then six decibels is all the filter is
+ * allowed to do to the click, to the room under it, and to everything else for the next
+ * HOLD_MS. On the guest page, which has no VAD gate and no browser suppression of its own,
+ * six is the whole of what a guest gets.
+ *
+ * Overridable at runtime so a value can be tried on real ears without a redeploy — this
+ * number has been re-tuned repeatedly and each round otherwise costs a build:
+ *   localStorage.setItem("nsSpeechLimitDb", "20")   then rejoin the call
+ */
+// 25 on real ears, chosen over 6 and then 15. Note this EQUALS DEFAULT_SUPPRESSION, so at the
+// default depth the gate is now a no-op — `Math.min(limit, depth)` is the same number either
+// way. That is deliberate and it is the answer to "it used to sound much better": the gate was
+// added after that, and it was the gate taking the result away. It starts protecting speech
+// again the moment the depth is raised above this.
+const DEFAULT_SPEECH_LIMIT_DB = 25;
+
+function speechLimitDb(): number {
+  const v = loadPref<number>("nsSpeechLimitDb", DEFAULT_SPEECH_LIMIT_DB);
+  return Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : DEFAULT_SPEECH_LIMIT_DB;
+}
 /**
  * The gate measures speech AGAINST THE ROOM, not against a fixed level.
  *
@@ -154,7 +194,7 @@ const SPEECH_LIMIT_DB = 6;
  * are margins over a tracked floor rather than dBFS values.
  */
 // Raised from 12/6. At six, a steady room only a few dB above its own floor kept the gate
-// OPEN — and an open gate means the limit sits at SPEECH_LIMIT_DB, so the fan came through
+// OPEN — and an open gate means the limit sits at the speech limit, so the fan came through
 // untouched while the model was allowed to cut almost nothing. Speech runs 20–35 dB over the
 // room, so fourteen is still well clear of it, and closing at nine leaves the floor free to
 // re-learn (it only falls quickly while the gate is shut).
@@ -224,6 +264,8 @@ function attachSpeechGate(proc: DfnInternals, depth: number): void {
     timer = null;
   };
 
+  const limitWhileOpen = speechLimitDb();
+
   const start = (): void => {
     stop();
     const ctx = proc.audioContext;
@@ -258,7 +300,7 @@ function attachSpeechGate(proc: DfnInternals, depth: number): void {
       if (db > floor + CLOSE_MARGIN_DB) lastLoud = now;
 
       open = gateOpen(db, floor, open, now - lastLoud);
-      const want = open ? Math.min(SPEECH_LIMIT_DB, depth) : depth;
+      const want = open ? Math.min(limitWhileOpen, depth) : depth;
       if (want !== applied) {
         proc.processor.setSuppressionLevel(want);
         applied = want;
@@ -266,11 +308,26 @@ function attachSpeechGate(proc: DfnInternals, depth: number): void {
     }, POLL_MS);
   };
 
-  proc.init = async (opts) => { await origInit(opts); start(); };
+  // Wake the context the package just built. It creates one and wires a graph into it, but
+  // never resumes it — and a suspended context runs no graph at all, so the destination node
+  // LiveKit publishes carries silence. Chrome hands out a context that resumes readily and hid
+  // this; Firefox and Safari keep it suspended until some later gesture, which is exactly the
+  // "she was inaudible, then after a while we could hear her" that a guest reported: her next
+  // click woke it. RNNoise has had this since the day it was written — see ensureRunning in
+  // ./noise-suppression; DeepFilterNet never got it.
+  // Fired, not awaited. init() is what LiveKit waits on before the track goes anywhere, and
+  // nothing here should be able to hold that up — waking the context is best effort, and the
+  // gate below attaches to a suspended context perfectly well.
+  const wake = (): void => {
+    const ctx = proc.audioContext;
+    if (ctx !== null) void ensureRunning(ctx);
+  };
+
+  proc.init = async (opts) => { await origInit(opts); wake(); start(); };
   // Switching microphone builds a new source node, and the old analyser is left reading a
   // node nothing flows through — the gate would then sit closed and the model would be back
   // to full depth on every word.
-  proc.restart = async (opts) => { await origRestart(opts); start(); };
+  proc.restart = async (opts) => { await origRestart(opts); wake(); start(); };
   // The package tears the worklet down here; the interval has to go with it, or it keeps
   // poking a processor that no longer has anything behind it.
   proc.destroy = async () => { stop(); await origDestroy(); };

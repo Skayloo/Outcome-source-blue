@@ -72,7 +72,7 @@ public sealed partial class PushNotifier(
                 var devices = scope.ServiceProvider.GetRequiredService<IDeviceTokenRepository>();
                 foreach (var d in await devices.ListForUsersAsync([calleeId], "voip"))
                 {
-                    var outcome = await push.SendCallAsync(d.Token, d.Sandbox, call);
+                    var outcome = await push.SendCallAsync(new PushTarget(d.Token, d.Platform, d.Sandbox), call);
                     if (outcome == PushOutcome.Gone) await devices.RemoveAsync(d.Token);
                     else if (outcome == PushOutcome.Sandbox) await devices.MarkSandboxAsync(d.Token);
                 }
@@ -131,7 +131,7 @@ public sealed partial class PushNotifier(
                 // A preview the recipient asked not to see should not arrive as a picture either.
                 wantsText ? imageUrl : null);
 
-            var outcome = await push.SendAsync(d.Token, d.Sandbox, message);
+            var outcome = await push.SendAsync(new PushTarget(d.Token, d.Platform, d.Sandbox), message);
             if (outcome == PushOutcome.Gone) await devices.RemoveAsync(d.Token);
             else if (outcome == PushOutcome.Sandbox) await devices.MarkSandboxAsync(d.Token);
         }

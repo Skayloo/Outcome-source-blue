@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using MediatR;
 using Microsoft.AspNetCore.Identity;
 using Outcome.Shared.Abstractions.Persistence;
@@ -7,6 +7,7 @@ using Outcome.Application.Common;
 using Outcome.Domain.Entities;
 using Outcome.Domain.Errors;
 using Outcome.Domain.Permissions;
+using Outcome.Shared.Legal;
 
 namespace Outcome.Application.Auth;
 
@@ -41,7 +42,20 @@ public sealed class OAuthLoginCommandHandler(
             var username = await PickFreeUsernameAsync(cmd.DisplayName, email, ct);
             // PasswordSet = false: the random password below is not something they know, so the
             // E2EE key backup cannot be wrapped with it — this account needs a backup passphrase.
-            user = new User { UserName = username, Email = email, RoleId = DefaultRole.Member, Status = "offline", EmailConfirmed = true, PasswordSet = false };
+            // NO consent stamped here, deliberately. The account exists before anyone has been
+            // asked anything: the person clicked a provider button, and a provider sign-in is not
+            // agreement to our processing of their data. Stamping it at creation would record a
+            // consent nobody gave — precisely the "hidden" consent 156-ФЗ was written against.
+            //
+            // ConsentAt stays null, and the gate that already blocks these accounts until they
+            // have a password (SetPasswordGate on the web, set_password_screen on the phone)
+            // collects the tick and posts it to /users/me/consent. Null therefore means "asked
+            // for, not yet given", which is the truth until it is.
+            user = new User
+            {
+                UserName = username, Email = email, RoleId = DefaultRole.Member,
+                Status = "offline", EmailConfirmed = true, PasswordSet = false,
+            };
             // SSO accounts get an unguessable random password: the normal password form
             // can't be used to hijack them, while every password-shaped code path keeps working.
             var created = await userManager.CreateAsync(user, RandomPassword());

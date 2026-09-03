@@ -9,6 +9,12 @@ public sealed class DmRepository(OutcomeDbContext db) : IDmRepository
 {
     public async Task<long?> FindChannelAsync(long userA, long userB, CancellationToken ct = default)
     {
+        // A conversation with yourself is not one. The join below matches a participant row
+        // against ITSELF when both ids are the same, so it happily returns some channel the
+        // user is in — which is how a moderator answering their own report had the answer land
+        // in an unrelated one-person DM instead of anywhere they would ever look.
+        if (userA == userB) return null;
+
         var ids = await (
             from p1 in db.DmParticipants.AsNoTracking()
             join p2 in db.DmParticipants.AsNoTracking() on p1.ChannelId equals p2.ChannelId
@@ -79,6 +85,20 @@ public sealed class DmRepository(OutcomeDbContext db) : IDmRepository
             .Select(m => new { m.ChannelId, m.Id, m.Content, m.Timestamp })
             .ToDictionaryAsync(m => m.ChannelId, ct);
 
+        // The first file on each of those messages. A photo sent without a caption stores an
+        // empty Content, so without this the sidebar row shows a name and nothing under it and
+        // the conversation reads as empty. Position orders the files the way the sender picked
+        // them; it is null on rows written before that column existed, hence the upload-time
+        // fallback that matches how the message view orders them.
+        var lastAtt = await db.Attachments.AsNoTracking()
+            .Where(a => a.MessageId != null && lastIds.Contains(a.MessageId!.Value))
+            .OrderBy(a => a.Position ?? int.MaxValue).ThenBy(a => a.UploadedAt)
+            .Select(a => new { MessageId = a.MessageId!.Value, a.MimeType, a.DurationMs })
+            .ToListAsync(ct);
+        var attByMsg = lastAtt
+            .GroupBy(a => a.MessageId)
+            .ToDictionary(g => g.Key, g => g.First());
+
         // Unread per channel: messages after this user's read marker, not authored by them —
         // the same server-side truth READY ships for server channels.
         var unread = await (
@@ -104,6 +124,7 @@ public sealed class DmRepository(OutcomeDbContext db) : IDmRepository
             .Select(r =>
             {
                 var last = lastMsgs.TryGetValue(r.ChannelId, out var lm) ? lm : null;
+                var att = last != null && attByMsg.TryGetValue(last.Id, out var a) ? a : null;
                 return new DmChannelInfoDto(
                     r.ChannelId,
                     new DmUserDto(r.Id, r.Username, r.Avatar ?? string.Empty, r.Status),
@@ -111,7 +132,9 @@ public sealed class DmRepository(OutcomeDbContext db) : IDmRepository
                     last?.Content ?? string.Empty,
                     last?.Timestamp.ToString("o") ?? string.Empty,
                     unread.TryGetValue(r.ChannelId, out var uc) ? uc : 0,
-                    peerReads.TryGetValue(r.ChannelId, out var pr) ? pr : 0);
+                    peerReads.TryGetValue(r.ChannelId, out var pr) ? pr : 0,
+                    att?.MimeType,
+                    att?.DurationMs);
             })
             // Newest conversation first, the way every messenger orders this list. The comment
             // above called the last message "the sort key" and nothing ever sorted by it, so the

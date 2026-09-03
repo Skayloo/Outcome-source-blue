@@ -5,9 +5,9 @@
 port: 7880
 bind_addresses:
   - 0.0.0.0
-keys:
-  # Must match OUTCOME_Voice__LiveKitApiKey/Secret in docker-compose.yml.
-  LK349f99acd290: c4e6b63ef38d978da6d021507f1a06b72ba495fdd08c1a79
+# Keys come from the LIVEKIT_KEYS environment variable, set by compose from .env — the pair
+# used to be written out here, in a file this repository publishes, which made every install
+# that ran the quick start share one signing secret for its media tokens.
 redis:
   address: redis:6379
 rtc:

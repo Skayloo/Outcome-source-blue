@@ -3,6 +3,7 @@ import { voiceStore } from "@stores/voice.store";
 import { toggleMute, toggleDeafen } from "@lib/voice";
 import { enableCamera, disableCamera, setMuted } from "@lib/livekitSession";
 import { loadPref } from "@components/settings/helpers";
+import { desktop, codeToAccelerator } from "@lib/desktop";
 
 /** Is the user typing in a text field (so we should not steal bare keys for PTT)? */
 function isTyping(): boolean {
@@ -60,6 +61,33 @@ export function GlobalKeybinds() {
     return () => {
       window.removeEventListener("keydown", onKeyDown, { capture: true });
       window.removeEventListener("keyup", onKeyUp, { capture: true });
+    };
+  }, []);
+
+  // ── The same key, but system-wide, when running inside the desktop shell ──────────────
+  //
+  // The handler above only ever sees keys while this window has focus, which is precisely when
+  // you are NOT in the other application you are talking about. The shell registers the key
+  // with the OS instead.
+  //
+  // It arrives as a TOGGLE rather than a hold: the OS shortcut API the shell uses reports key
+  // presses and not releases, so "unmute while held" cannot be expressed. Both handlers can be
+  // live at once without fighting — the browser one only fires when focused, and then the
+  // shell does not receive the key at all.
+  useEffect(() => {
+    const shell = desktop();
+    if (!shell) return;
+
+    const accelerator = codeToAccelerator(loadPref<string>("pttKey", ""));
+    void shell.setPushToTalk(accelerator);
+
+    const off = shell.onPushToTalk(() => {
+      if (voiceStore.getState().currentChannelId == null) return;
+      toggleMute();
+    });
+    return () => {
+      off();
+      void shell.setPushToTalk(""); // hand the key back to the OS when this unmounts
     };
   }, []);
 

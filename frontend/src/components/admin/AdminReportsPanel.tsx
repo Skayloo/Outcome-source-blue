@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@lib/services";
+import { authStore } from "@stores/auth.store";
 import { confirm, prompt } from "@components/ConfirmDialog";
 import { setTransientError, setTransientSuccess } from "@stores/ui.store";
 import { t } from "@lib/i18n";
@@ -25,7 +26,13 @@ function statusLabel(s: ReportStatus): string {
     : t("admin.reportDismissed");
 }
 
-export function AdminReportsPanel() {
+/**
+ * @param scope Whose queue this is. `instance` is every complaint on the deployment, for
+ *   whoever runs it. `server` is only the ones about the ACTIVE server's own channels — what
+ *   its moderators may see, and never a direct message, which belongs to no server.
+ */
+export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" | "server" } = {}) {
+  const meId = authStore.getState().user?.id ?? 0;
   const [reports, setReports] = useState<MessageReportDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,12 +42,12 @@ export function AdminReportsPanel() {
   const load = useCallback((signal?: AbortSignal): void => {
     setLoading(true);
     setError(null);
-    void api
-      .adminListReportsPaged(PAGE_SIZE, (page - 1) * PAGE_SIZE, signal)
+    const list = scope === "server" ? api.listServerReportsPaged : api.adminListReportsPaged;
+    void list(PAGE_SIZE, (page - 1) * PAGE_SIZE, signal)
       .then((r) => { setReports(r.items); setTotal(r.total); })
       .catch((e: unknown) => { if (!signal?.aborted) setError(errMsg(e, t("admin.actionFailed"))); })
       .finally(() => { if (!signal?.aborted) setLoading(false); });
-  }, [page]);
+  }, [page, scope]);
 
   useEffect(() => {
     const c = new AbortController();
@@ -63,12 +70,37 @@ export function AdminReportsPanel() {
 
   /** "Nothing wrong with it" — the reporter is told so, and forwarded the message in question
    *  so the answer is not about a number they have to go and look up. */
-  const dismissWithReply = (id: number): void => {
+  /** Answering is for the OTHER person. On your own report there is nobody to write to, so the
+   *  button says what it will actually do rather than promising a message that goes nowhere. */
+  const dismissWithReply = (id: number, ownReport: boolean): void => {
+    if (ownReport) {
+      void confirm({
+        title: t("admin.reportOwnTitle"),
+        message: t("admin.reportOwnBody"),
+        confirmLabel: t("admin.reportResolveOnly"),
+      }).then((ok) => {
+        if (!ok) return;
+        api.reportAction(id, "dismiss")
+          .then(() => {
+            setReports((rs) => rs.map((r) => (r.id === id ? { ...r, status: "resolved" as ReportStatus } : r)));
+            setTransientSuccess(t("admin.reportResolvedToast"));
+          })
+          .catch((e: unknown) => setTransientError(e instanceof Error ? e.message : String(e)));
+      });
+      return;
+    }
+
     void prompt({
       title: t("admin.reportReplyTitle"),
       message: t("admin.reportReplyBody"),
       confirmLabel: t("admin.reportReply"),
-      input: { placeholder: t("admin.reportReplyPlaceholder"), maxLength: 500 },
+      // Filled in, not hinted: the same answer fits nine reports out of ten, and a hint you
+      // have to retype is how people stop sending one at all. Edit it or send as is.
+      input: {
+        placeholder: t("admin.reportReplyPlaceholder"),
+        defaultValue: t("admin.reportReplyDefault"),
+        maxLength: 500,
+      },
     }).then((note) => {
       if (note === null) return;
       api.reportAction(id, "dismiss", note)
@@ -132,7 +164,7 @@ export function AdminReportsPanel() {
                     once acted on, a report is done: the controls go with it. */}
                 {r.status !== "closed" && (
                   <>
-                    <button className="btn-sm" onClick={() => dismissWithReply(r.id)}>
+                    <button className="btn-sm" onClick={() => dismissWithReply(r.id, r.reporter_id === meId)}>
                       {t("admin.reportReply")}
                     </button>
                     <button className="btn-sm" onClick={() => act(r.id, "hide",

@@ -4,6 +4,7 @@ import type { ServerMessage, ClientMessage } from "./types";
 import { createLogger } from "./logger";
 import { randomUUID } from "./uuid";
 import { runtimeWsUrl } from "./runtimeConfig";
+import { originForHost } from "./serverHost";
 import { getActiveServerId } from "@stores/servers.store";
 
 const log = createLogger("ws");
@@ -63,6 +64,13 @@ function wsUrlFor(host: string): string {
   const rt = runtimeWsUrl();
   if (rt) return rt;
   if (!host || host === window.location.host) {
+    // "Same origin" only means something when the page HAS an origin that serves an instance.
+    // Inside the desktop shell the page comes from app://, and building the socket URL from
+    // window.location there produced ws://outcome/api/v1/ws — a connection to nothing, which
+    // presents as an app that boots forever with no error anywhere. originForHost knows how to
+    // fall back to the server the user actually signed into; reuse it rather than re-deriving.
+    const origin = originForHost("");
+    if (origin) return `${origin.replace(/^http/, "ws").replace(/\/+$/, "")}/api/v1/ws`;
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     return `${scheme}://${window.location.host}/api/v1/ws`;
   }

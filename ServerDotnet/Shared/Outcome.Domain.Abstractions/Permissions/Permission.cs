@@ -28,6 +28,24 @@ public static class Permission
     public const long ManageInvites  = 1L << 26;  // 0x4000000
     public const long ViewAuditLog   = 1L << 27;  // 0x8000000
     public const long Administrator  = 1L << 30;  // 0x40000000 — bypasses all checks
+
+    /// <summary>
+    /// What the owner of the ACTIVE server is granted inside it, and the only place that set is
+    /// written down. Three bits, and the shortness is the point: every one of them is meaningless
+    /// outside a channel of the current server, so none of them can open an instance-wide door.
+    ///
+    /// It used to also carry ManageServer, ManageRoles, KickMembers, MuteMembers and ViewAuditLog
+    /// — "server-scoped" by intention and by nothing else. Those bits are exactly what the
+    /// space-wide handlers gate on, so anyone who created a server (which needs no permission at
+    /// all) could list every account in the space, read the whole audit log, kill anyone's
+    /// sessions, and reassign the global role of any user — including demoting the instance owner.
+    /// Renaming the server, removing its members and setting per-server roles never needed these:
+    /// those endpoints check ownership directly, which is why dropping them cost nothing.
+    ///
+    /// Nothing may be added here without checking what ELSE gates on that bit. A bit that any
+    /// instance-wide handler accepts does not belong in this set.
+    /// </summary>
+    public const long ServerOwnerGrant = ManageChannels | ManageInvites | ManageMessages;
 }
 
 /// <summary>Default role IDs inserted on first run (must match Go).</summary>

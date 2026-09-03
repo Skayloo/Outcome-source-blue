@@ -1,4 +1,4 @@
-using Outcome.Application.Admin;
+﻿using Outcome.Application.Admin;
 using Outcome.Application.Friends;
 using Outcome.Application.Realtime;
 using Outcome.Application.Users;
@@ -18,6 +18,10 @@ public interface IUserRepository
     Task<long> CreateAsync(User user, CancellationToken ct = default);
     Task<int> CountAsync(CancellationToken ct = default);
     Task UpdateTotpSecretAsync(long id, string? secret, CancellationToken ct = default);
+    /// <summary>Record the personal-data consent, ONCE. A second call is a no-op: what is
+    /// stored is when this person first agreed and to which text, and later activity does not
+    /// get to rewrite that.</summary>
+    Task RecordConsentAsync(long id, string version, CancellationToken ct = default);
     Task UpdateStatusAsync(long id, string status, CancellationToken ct = default);
     /// <summary>Clear every leftover presence. Status is a cache of who holds a live socket,
     /// and a process that is killed (deploy, crash, OOM) never runs its disconnect handler —

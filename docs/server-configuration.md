@@ -112,9 +112,20 @@ clients ask `/api/v1/auth/oauth/providers` and render only what the server holds
 The callback lands at `{PublicOrigin}/api/v1/auth/oauth/{provider}/callback` — register exactly
 that with the provider.
 
-## Push notifications (APNs)
+## Push notifications
 
-Bound from `Apns`. Only iOS today.
+A device registers the token of whichever **transport** answered on it, and the server sends
+through that one. The transport is the routing key rather than the operating system, because
+Android has two gateways and a token minted by one is meaningless to the other. Stored in
+`device_tokens.platform`: `ios`, `rustore`, `fcm`.
+
+Configuring none of them is a supported state — messages simply arrive over the live socket
+only, as they did before push existed. An unconfigured transport logs one line and its devices
+go unreachable while the app is closed; it does not delete their registrations.
+
+### APNs (iOS)
+
+Bound from `Apns`. Leave `Key` empty to turn it off.
 
 | Key | |
 | --- | --- |
@@ -122,6 +133,39 @@ Bound from `Apns`. Only iOS today.
 | `KeyPath` | Or a path to the file, if you would rather mount it |
 | `KeyId` / `TeamId` | From the Apple developer portal |
 | `BundleId` | `com.outcome.outcome` |
+
+### RuStore (Android)
+
+Bound from `RuStorePush`. Leave `ServiceToken` empty to turn it off. Both values come from
+RuStore Console → the app → Push notifications → Projects.
+
+| Key | |
+| --- | --- |
+| `ProjectId` | Also compiled into the Android app — the client SDK reads it from the manifest and has no other way to be told, so it is **not** a secret |
+| `ServiceToken` | Authorises sending. This one **is** the secret and must never reach a client |
+| `BaseUrl` | Defaults to `https://vkpns.rustore.ru`; override only to point a test elsewhere |
+
+Requires the RuStore app installed on the device and the user signed into it. For an audience
+that installed Outcome *from* RuStore this holds by construction, which is why this transport
+is the one to configure first.
+
+### FCM (Android)
+
+Bound from `Fcm`. Leave both keys empty to turn it off.
+
+| Key | |
+| --- | --- |
+| `Credentials` | The service-account JSON itself, for deployments that inject secrets as env vars |
+| `CredentialsPath` | Or a path to the file. Ignored when `Credentials` is set |
+
+Firebase Console → Project settings → Service accounts → Generate new private key. This is
+**not** the `google-services.json` that ships inside the Android app: that one identifies the
+app to Google, this one authorises sending to it. Putting the second where the first goes hands
+anyone who unzips the APK the ability to push to every install.
+
+RuStore does not cover this. Its console configures its own transport only — there is no field
+there for a Firebase key — so a phone that has Google services but no RuStore is reachable only
+by talking to FCM directly, which is what this sender does.
 
 ## TLS
 

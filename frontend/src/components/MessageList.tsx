@@ -51,6 +51,9 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   // never noticed — the history you were looking at stayed as lock placeholders until a
   // reload. The component already re-renders on this store, so the flag flipping is enough.
   const channelLoaded = channelId != null && isChannelLoaded(channelId);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => { setLoadError(null); }, [channelId]);
   useEffect(() => {
     if (channelId == null || channelLoaded) return;
     let cancelled = false;
@@ -63,9 +66,14 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
         markListenedBulk(msgs.flatMap((m) => m.attachments.filter((a) => a.listened).map((a) => a.id)));
         markListenedByOthersBulk(msgs.flatMap((m) => m.attachments.filter((a) => a.listened_by_others).map((a) => a.id)));
       })
-      .catch(() => { /* ignore */ });
+      // A swallowed failure leaves an EMPTY channel with no way to tell it apart from one
+      // that has nothing in it — which is exactly what "I joined and there is no history"
+      // looks like from the inside. Say so, and let it be tried again.
+      .catch((e: unknown) => {
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
+      });
     return () => { cancelled = true; };
-  }, [channelId, channelLoaded]);
+  }, [channelId, channelLoaded, retry]);
 
   const messages = channelId != null ? getChannelMessages(channelId) : [];
   // A DM is a conversation between two people; either of them may delete anything in it.
@@ -368,7 +376,17 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
         setShowJump(fromBottom > 400);
       }}
     >
-      {rows.length === 0 ? (
+      {loadError !== null ? (
+        <div className="channel-welcome">
+          <div className="channel-welcome-icon"><Icon name="triangle-alert" size={28} /></div>
+          <div className="channel-welcome-title">{t("chat.historyFailed")}</div>
+          <div className="channel-welcome-text">{loadError}</div>
+          <button className="btn-primary" style={{ marginTop: 12 }}
+            onClick={() => { setLoadError(null); setRetry((n) => n + 1); }}>
+            {t("chat.retry")}
+          </button>
+        </div>
+      ) : rows.length === 0 ? (
         <div className="channel-welcome">
           <div className="channel-welcome-icon">#</div>
           <div className="channel-welcome-title">{t("chat.welcomeTitle")}</div>

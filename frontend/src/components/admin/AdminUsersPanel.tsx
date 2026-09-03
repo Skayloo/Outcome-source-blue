@@ -114,6 +114,9 @@ export function AdminUsersPanel() {
         <span className="spacer" />
         <button className="ac-btn" disabled={busy || loading} onClick={() => loadUsers()}>{loading ? t("admin.loading") : t("admin.refresh")}</button>
       </div>
+      {/* Two role systems exist and this console edits only one of them; saying so costs a
+          line and saves the hour spent wondering why an "admin" cannot moderate a server. */}
+      <p className="admin-note">{t("admin.roleSpaceHint")}</p>
 
       {error && <Banner kind="error">{error}</Banner>}
 
@@ -125,7 +128,7 @@ export function AdminUsersPanel() {
             <tr>
               <th>ID</th>
               <th>{t("admin.username")}</th>
-              <th>{t("admin.role")}</th>
+              <th>{t("admin.roleSpace")}</th>
               <th>{t("admin.status")}</th>
               <th>{t("admin.actions")}</th>
             </tr>

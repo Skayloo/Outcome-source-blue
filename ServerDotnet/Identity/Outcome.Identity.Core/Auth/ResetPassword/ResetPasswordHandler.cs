@@ -56,6 +56,11 @@ public sealed class ResetPasswordHandler(
             await userManager.UpdateAsync(user);
         }
 
+        // A reset is the recovery path for an account somebody else got into: whatever sessions
+        // that somebody opened have to die here, or the new password changes nothing for them.
+        // Before the new one is issued, so the fresh session survives.
+        await sessions.DeleteAllForUserAsync(user.Id, ct);
+
         // Log them straight in, like the email-OTP verify path — no second trip to the login form.
         var token = jwt.Issue(user.Id);
         await SessionIssuer.RecordAsync(sessions, jwt, user.Id, token, cmd.Device, cmd.Ip, ct);

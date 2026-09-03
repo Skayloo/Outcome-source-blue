@@ -141,7 +141,7 @@ export function ServerHeaderMenu({ serverName, onlineCount, canInvite, canCreate
       )}
 
       {showVis && <ServerVisibilityModal serverId={getActiveServerId()} name={serverName} onClose={() => setShowVis(false)} />}
-      {showSettings && <ServerSettingsModal serverId={getActiveServerId()} canDelete={canDeleteServer} onClose={() => setShowSettings(false)} />}
+      {showSettings && <ServerSettingsModal serverId={getActiveServerId()} canDelete={canDeleteServer} canModerate={canManageServer} onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

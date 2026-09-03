@@ -12,8 +12,8 @@ namespace Outcome.Application.Users;
 /// <summary>Self profile shape matching the client's MemberResponse (role NAME, avatar nullable).</summary>
 public sealed record MemberProfileDto(
     long Id, string Username, string? Avatar, string Role, string Status, bool TotpEnabled, DateTime CreatedAt,
-    /// <summary>False ⇒ SSO-only account with no password of its own: the E2EE key backup cannot
-    /// be wrapped with a password, so this account (and only this account) needs a passphrase.</summary>
+    /// <summary>False ⇒ SSO-only account with no password of its own, so the client asks it to
+    /// set one before handing over the app: until it does, nothing can seal its key backup.</summary>
     bool PasswordSet,
     /// <summary>Show message text in push notifications, or only who sent it.</summary>
     bool PushPreview);

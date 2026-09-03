@@ -23,32 +23,20 @@ public sealed class CurrentUserContext : ICurrentUser
         SessionTokenHash = sessionTokenHash;
     }
 
-    /// <summary>Grants SERVER-scoped admin permissions (manage channels/invites/messages + kick) for
-    /// the rest of this request — makes the owner of their ACTIVE server an admin WITHIN it, WITHOUT
-    /// the global Administrator bypass. So a per-server owner can run their own server but cannot edit
-    /// global roles, change instance settings, ban users, or touch other tenants. Idempotent.</summary>
+    /// <summary>Grants the SERVER-scoped permissions of the ACTIVE server's owner for the rest of
+    /// this request — see <see cref="Outcome.Domain.Permissions.Permission.ServerOwnerGrant"/> for
+    /// what is in that set and why it is as small as it is. No global Administrator bypass, and
+    /// nothing an instance-wide handler will accept. Idempotent.</summary>
     public void GrantServerAdmin()
     {
-        const long bits = Outcome.Domain.Permissions.Permission.ManageChannels
-                        | Outcome.Domain.Permissions.Permission.ManageInvites
-                        | Outcome.Domain.Permissions.Permission.ManageMessages
-                        | Outcome.Domain.Permissions.Permission.KickMembers
-                        | Outcome.Domain.Permissions.Permission.MuteMembers
-                        | Outcome.Domain.Permissions.Permission.ManageRoles
-                        | Outcome.Domain.Permissions.Permission.ManageServer
-                        | Outcome.Domain.Permissions.Permission.ViewAuditLog;
+        const long bits = Outcome.Domain.Permissions.Permission.ServerOwnerGrant;
         if ((Permissions & bits) == bits) return;
         Permissions |= bits;
+        // The bitfield and the name list are read by different call sites (PermCheck reads names),
+        // so they have to move together or a permission holds in one check and not the other.
         var names = new List<string>(PermissionNames);
-        void AddName(string n) { if (!names.Contains(n)) names.Add(n); }
-        AddName(P.ManageChannels);
-        AddName(P.ManageInvites);
-        AddName(P.ManageMessages);
-        AddName(P.KickMembers);
-        AddName(P.MuteMembers);
-        AddName(P.ManageRoles);
-        AddName(P.ManageServer);
-        AddName(P.ViewAuditLog);
+        foreach (var n in new[] { P.ManageChannels, P.ManageInvites, P.ManageMessages })
+            if (!names.Contains(n)) names.Add(n);
         PermissionNames = names;
     }
 }

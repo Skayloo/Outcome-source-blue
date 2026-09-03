@@ -27,7 +27,7 @@ services:
     environment:
       POSTGRES_DB: outcome
       POSTGRES_USER: outcome
-      POSTGRES_PASSWORD: outcome
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?see .env.example}
     volumes:
       - outcome_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -42,14 +42,22 @@ services:
       context: ./ServerDotnet
       dockerfile: Dockerfile
     environment:
-      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=outcome;Username=outcome;Password=outcome"
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=outcome;Username=outcome;Password=${POSTGRES_PASSWORD:?see .env.example}"
       ASPNETCORE_URLS: "http://0.0.0.0:5000"
       # Local dev stack → Development so the /scalar API docs are exposed. The deploy/ prod
       # configs leave this unset (defaults to Production), where OpenAPI/Scalar are disabled.
       ASPNETCORE_ENVIRONMENT: "Development"
       OUTCOME_Server__Name: "Outcome Server"
-      # JWT signing key — REGENERATE PER DEPLOYMENT (HS256 needs >= 32 bytes).
-      OUTCOME_JwtAuth__JwtKey: "ae95a466fe9ea37bac64a27f34e7663377b5b275a8efc37a21c97b1b5b219c4b"
+      # The API only ever sees the reverse proxy, so it must be told whose X-Forwarded-For to
+      # believe. Docker bridge ranges — NOT the whole RFC1918 space, and nothing outside the
+      # compose network: whoever this trusts can claim any client IP and skip every rate limit.
+      OUTCOME_Server__TrustedProxies__0: "127.0.0.1/32"
+      OUTCOME_Server__TrustedProxies__1: "::1/128"
+      OUTCOME_Server__TrustedProxies__2: "172.16.0.0/12"
+      # JWT signing key. It used to sit here as a literal, in a file the README tells everyone
+      # to run — so every install that followed the quick start shared one signing key, and it
+      # also signs the file URLs and the OAuth state. From .env, generated per install.
+      OUTCOME_JwtAuth__JwtKey: ${JWT_KEY:?see .env.example}
       # Email/SMTP for 2FA codes. Leave Host blank to LOG the code instead of sending it.
       # Fill these to actually deliver email, then enable the "email_2fa" server setting.
       OUTCOME_Email__Host: ""
@@ -60,22 +68,22 @@ services:
       OUTCOME_Email__UseSsl: "true"
       # MinIO/S3 object storage for uploaded files (regenerate credentials per deployment).
       OUTCOME_Minio__Endpoint: "minio:9000"
-      OUTCOME_Minio__AccessKey: "outcome-b813931e"
-      OUTCOME_Minio__SecretKey: "9f1bee7eb3c02fd7be15593362d3aeb8"
+      OUTCOME_Minio__AccessKey: ${MINIO_ACCESS_KEY:?see .env.example}
+      OUTCOME_Minio__SecretKey: ${MINIO_SECRET_KEY:?see .env.example}
       OUTCOME_Minio__Bucket: "outcome-uploads"
       OUTCOME_Minio__UseSsl: "false"
-      # AES-256-GCM at-rest encryption for uploaded files (base64 of 32 bytes).
-      # REGENERATE PER DEPLOYMENT: openssl rand -base64 32
-      OUTCOME_Minio__EncryptionKey: "BsNyggW4BuhqtmGhfhAKskRD8b3Kd+HqsdGCoBCaXwc="
-      OUTCOME_Voice__LiveKitApiKey: "LK349f99acd290"
-      OUTCOME_Voice__LiveKitApiSecret: "c4e6b63ef38d978da6d021507f1a06b72ba495fdd08c1a79"
+      OUTCOME_Voice__LiveKitApiKey: ${LIVEKIT_API_KEY:?see .env.example}
+      OUTCOME_Voice__LiveKitApiSecret: ${LIVEKIT_API_SECRET:?see .env.example}
       OUTCOME_Voice__LiveKitUrl: "ws://localhost:7880"
       OUTCOME_Voice__LiveKitInternalUrl: "ws://livekit:7880"
       # Redis backplane: makes N api replicas behave as one (WS fan-out, reconnect
       # replay, 2FA challenges, admin log tickets). Scale with docker-compose.scale.yml.
       OUTCOME_Redis__Url: "redis:6379"
-    ports:
-      - "5000:5000"   # exposed for direct REST/debugging; the browser uses the frontend
+    # The API is NOT published: the frontend proxies /api to it over the compose network.
+    # A published API port is a peer the forwarded-header allowlist has to keep out, and the
+    # browser never needed it. Uncomment for direct REST poking on a machine you trust.
+    # ports:
+    #   - "5000:5000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -111,11 +119,13 @@ services:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: outcome-b813931e
-      MINIO_ROOT_PASSWORD: 9f1bee7eb3c02fd7be15593362d3aeb8
-    ports:
-      - "9000:9000"   # S3 API
-      - "9001:9001"   # web console
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?see .env.example}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?see .env.example}
+    # Storage is reached over the compose network only. Published, it is a second front door
+    # into every uploaded file, guarded by nothing but these credentials.
+    # ports:
+    #   - "9000:9000"   # S3 API
+    #   - "9001:9001"   # web console
     volumes:
       - outcome_minio:/data
     restart: unless-stopped
@@ -123,6 +133,10 @@ services:
   livekit:
     <<: *logging
     image: livekit/livekit-server:latest
+    environment:
+      # The key pair lives in .env, not in voice/livekit.yaml — same secret the API signs
+      # its room tokens with, so the two must be fed from one place.
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:?see .env.example}: ${LIVEKIT_API_SECRET:?see .env.example}"
     # Advertise the host's reachable IP as the media (ICE) candidate. On a LAN this must
     # be the host's LAN IP so both localhost AND other devices can reach the media ports;
     # on a VPS set LIVEKIT_NODE_IP to the public IP. Overrides livekit.yaml's use_external_ip.

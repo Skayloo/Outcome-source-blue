@@ -6,6 +6,7 @@ import {
   setDeafened as sessionSetDeafened,
   setWsClient,
   setServerHost,
+  primeVoiceContext,
 } from "@lib/livekitSession";
 
 let inited = false;
@@ -91,6 +92,12 @@ export function initVoice(): void {
 /** Join a voice channel: optimistic UI + voice_join (server replies with voice_token). */
 export function joinVoice(channelId: number): void {
   if (voiceStore.getState().currentChannelId === channelId) return;
+  // Clicking a voice channel is the gesture, and it is the ONLY moment Firefox and Safari
+  // will hand out a live AudioContext. Everything after this returns through the socket:
+  // voice_join goes out, voice_token comes back, and the pipeline is built there — several
+  // turns of the event loop later, where the permission is long gone. Priming here is why
+  // the microphone works on the browsers that do not simply grant it.
+  primeVoiceContext();
   joinVoiceChannel(channelId);
   wsSend("voice_join", { channel_id: channelId });
   playVoiceCue("join");

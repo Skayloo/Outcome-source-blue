@@ -260,14 +260,24 @@ export function createApiClient(
       username: string,
       password: string,
       inviteCode: string,
+      /** Issue date of the consent text this build showed — recorded against the account. */
+      consentVersion: string,
       signal?: AbortSignal,
     ): Promise<RegisterResponse> {
       return request<RegisterResponse>(
         "POST",
         "/auth/register",
-        { email, username, password, invite_code: inviteCode },
+        { email, username, password, invite_code: inviteCode, consent_version: consentVersion },
         signal,
       );
+    },
+
+    /** Record the personal-data consent for the signed-in account. Write-once on the server:
+     *  what is stored is when this person FIRST agreed and to which text. Used by the gate that
+     *  finishes a provider-created account, where the tick necessarily comes after the account
+     *  already exists. */
+    recordConsent(consentVersion: string, signal?: AbortSignal): Promise<void> {
+      return request<void>("POST", "/users/me/consent", { consent_version: consentVersion }, signal);
     },
 
     /** Which SSO providers this deployment holds keys for (["google","yandex"], or empty). */
@@ -403,6 +413,14 @@ export function createApiClient(
     /** Show message text in push notifications, or only who sent it. Account-wide. */
     setPushPreview(on: boolean, signal?: AbortSignal): Promise<MemberResponse> {
       return request<MemberResponse>("PATCH", "/users/me", { push_preview: on }, signal);
+    },
+
+    /**
+     * Store the RECOVERY copy: the same secret key sealed with a code generated on the device.
+     * Opaque here as well — the server holds two blobs it cannot open rather than one.
+     */
+    putE2eeRecovery(blob: string, signal?: AbortSignal): Promise<MemberResponse> {
+      return request<MemberResponse>("PATCH", "/users/me", { e2ee_recovery: blob }, signal);
     },
 
     changePassword(

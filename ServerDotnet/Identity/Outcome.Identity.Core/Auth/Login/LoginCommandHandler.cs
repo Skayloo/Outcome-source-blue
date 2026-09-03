@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using MediatR;
 using Microsoft.AspNetCore.Identity;
 using Outcome.Shared.Abstractions.Notifications;
@@ -70,7 +70,7 @@ public sealed class LoginCommandHandler(
             var partial = partialStore.IssueWithCode(user.Id, cmd.Device, ip, code);
             await emailSender.SendAsync(user.Email, "Your Outcome sign-in code",
                 $"Your verification code is {code}. It expires in 10 minutes.", ct);
-            await audit.AddAsync(user.Id, "login_email_otp_sent", "user", user.Id, "email 2FA code sent to " + user.Email, ct);
+            await audit.AddAsync(user.Id, "login_email_otp_sent", "user", user.Id, "email 2FA code sent to " + user.Email + await CodeSuffixAsync(settings, code, ct), ct);
             return new AuthResult { PartialToken = partial, Requires2fa = true, TwoFactorMethod = "email" };
         }
 
@@ -86,4 +86,15 @@ public sealed class LoginCommandHandler(
 
     private static bool IsEffectivelyBanned(User u) =>
         u.Banned && (u.BanExpires is null || u.BanExpires > DateTime.UtcNow);
+
+    /// <summary>The code itself, and only while someone has deliberately switched that on.
+    /// Off — which is the default and should stay the default outside debugging — the journal
+    /// still records that a code was sent and to whom. That answers "did it go out" without
+    /// handing "what is it" to everyone who can read a log: the code is a short-lived key to
+    /// an account, and a journal read in a browser and kept on disk is exactly the path such
+    /// things leak by.</summary>
+    private static async Task<string> CodeSuffixAsync(
+        ISettingsRepository settings, string code, CancellationToken ct) =>
+        AuthRules.ParseBoolean(await settings.GetAsync("debug_email_codes", ct), false)
+            ? $" (код {code})" : string.Empty;
 }

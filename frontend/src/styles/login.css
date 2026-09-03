@@ -320,6 +320,20 @@
 .form-input.error { border-color: var(--red); }
 .form-hint { font-size: 12px; color: var(--text-faint); margin-top: 6px; line-height: 1.4; }
 
+/* Personal-data consent. A real checkbox rather than a styled div: it has to be reachable by
+   keyboard and announced as a checkbox, because this is the control that decides whether
+   consent was given at all. */
+.form-consent {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 14px; cursor: pointer;
+  font-size: 13px; line-height: 1.5; color: var(--text-dim);
+}
+.form-consent input {
+  flex: 0 0 auto; width: 16px; height: 16px; margin-top: 2px;
+  accent-color: var(--accent); cursor: pointer;
+}
+.form-consent a { color: var(--accent); }
+
 /* Password field */
 .password-wrapper { position: relative; }
 .password-wrapper .form-input { padding-right: 40px; }
@@ -1190,19 +1204,14 @@
 
 /* The control bar anchors the bottom of the full-viewport room (it only renders while
    connected, i.e. inside the wide card whose horizontal padding is 20px). */
+/* The buttons are .vsc-btn / .vsc-ctl, the same components the in-app voice bar uses, so
+   this rule only has to lay them out. */
 .guest-controls {
   position: sticky; bottom: 0; z-index: 2;
-  display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+  display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap;
   margin: 0 -20px 0; padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
-}
-/* .ac-btn carries a global `margin-left: auto` (it right-aligns itself inside admin toolbars).
-   Here that pushed every button apart and broke the centring — the row must be a tidy group. */
-.guest-controls .ac-btn {
-  margin-left: 0;
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 16px;
 }
 
 /* Narrow screens: one column of full-width tiles; the strip scrolls sideways as-is. */
@@ -1230,3 +1239,15 @@
   color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .guest-link-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* The recovery code, shown once. Monospace and widely spaced because it will be copied by
+   hand as often as by button, and a code misread off the screen is a code that does not work. */
+.recovery-code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 1.15rem; letter-spacing: .08em; line-height: 1.9;
+  text-align: center; word-break: break-all;
+  padding: 16px 14px; margin: 4px 0 14px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--bg-secondary); color: var(--text-normal);
+  user-select: all;
+}

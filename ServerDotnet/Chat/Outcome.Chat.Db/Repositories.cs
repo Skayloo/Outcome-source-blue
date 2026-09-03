@@ -94,7 +94,10 @@ public interface IAttachmentRepository
 {
     Task CreateAsync(Attachment attachment, CancellationToken ct = default);
     Task<Attachment?> GetByIdAsync(string id, CancellationToken ct = default);
-    Task<IReadOnlyList<Attachment>> AttachToMessageAsync(IReadOnlyList<string> ids, long messageId, CancellationToken ct = default);
+    /// <summary>Links uploads to a message. <paramref name="senderId"/> is who is sending it:
+    /// an unclaimed upload is only claimable by whoever uploaded it, because knowing the id
+    /// is not the same as having sent the file.</summary>
+    Task<IReadOnlyList<Attachment>> AttachToMessageAsync(IReadOnlyList<string> ids, long messageId, long senderId, CancellationToken ct = default);
     Task<IReadOnlyList<Attachment>> ListByMessageIdsAsync(IReadOnlyList<long> messageIds, CancellationToken ct = default);
     /// <summary>Image attachments, oldest first — the backfill's work list. ALL of them, not
     /// only unmeasured ones: a picture can already have its dimensions and still be missing

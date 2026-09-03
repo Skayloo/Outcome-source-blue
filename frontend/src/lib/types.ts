@@ -29,6 +29,7 @@ export type WsErrorCode =
   | "INVALID_INPUT"
   | "SERVER_ERROR"
   | "CHANNEL_FULL"
+  | "CONTENT_BLOCKED"
   | "VOICE_ERROR"
   | "VIDEO_LIMIT";
 
@@ -567,6 +568,9 @@ export interface RegisterResponse {
 export interface HealthResponse {
   readonly status: string;
   readonly version: string;
+  /** "red" (private build, E2EE clients) or "blue" (public self-hosted). The server defaults
+   *  to blue, so a build that does not announce red must never be treated as private. */
+  readonly edition?: string;
   readonly uptime: number;
   readonly online_users: number;
 }

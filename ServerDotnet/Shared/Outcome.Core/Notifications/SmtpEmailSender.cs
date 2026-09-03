@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -35,6 +35,18 @@ public sealed class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<Smtp
             IsBodyHtml = false,
         };
         message.To.Add(to);
+
+        // System.Net.Mail does not write a Message-ID, and this relay's Postfix is configured
+        // with always_add_missing_headers = no — so the message left without one. A message
+        // with no Message-ID is malformed by RFC 5322 and is a well-known filtering signal:
+        // the receiver accepts it with 250 OK and quietly files it as spam, which reads from
+        // our side as "sent" and from the recipient's as "never arrived". Found exactly that
+        // way — reset codes reaching Gmail and vanishing.
+        //
+        // Built from the sender's own domain, because the identifier is supposed to be unique
+        // to the system that created the message and traceable back to it.
+        var host = o.From.Contains('@') ? o.From[(o.From.IndexOf('@') + 1)..] : "outcome";
+        message.Headers.Add("Message-ID", $"<{Guid.NewGuid():N}@{host}>");
 
         using var client = new SmtpClient(o.Host, o.Port)
         {

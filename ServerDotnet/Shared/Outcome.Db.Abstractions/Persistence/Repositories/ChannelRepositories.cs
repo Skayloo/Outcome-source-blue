@@ -83,6 +83,13 @@ public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUr
         if (pinnedOnly) q = q.Where(m => m.Pinned);
         if (before > 0) q = q.Where(m => m.Id < before);
 
+        // Blocking has to take the content away, not just stop new messages arriving: App Review
+        // guideline 1.2 asks that blocking "remove it from the user's feed instantly", and a
+        // block that leaves yesterday's abuse sitting in the channel has not removed anything.
+        // Filtered in the QUERY rather than after paging, or a page of twenty could come back
+        // with three messages left in it and look like the history had holes.
+        q = q.Where(m => !db.UserBlocks.Any(b => b.BlockerId == requestingUserId && b.BlockedId == m.UserId));
+
         var msgs = await q.OrderByDescending(m => m.Id).Take(limit)
             .Join(db.Users.AsNoTracking(), m => m.UserId, u => u.Id, (m, u) => new
             {

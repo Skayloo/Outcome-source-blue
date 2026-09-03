@@ -26,6 +26,9 @@ It runs entirely in the **browser** — nothing to install for your users. One `
   <img src="docs/images/mobile-settings.png" alt="Outcome for iOS — settings" width="215">
 </p>
 
+> **New here?** [docs/user-guide.md](docs/user-guide.md) walks through every screen of both
+> clients — what each control does, and what it does to your data. Written in Russian.
+
 ## Features
 
 ### Chat
@@ -106,8 +109,14 @@ The whole stack — backend, web frontend, PostgreSQL, object storage, and LiveK
 ```bash
 git clone https://github.com/skayloo/Outcome.git
 cd Outcome
+cp .env.example .env      # then generate every value in it — the file says how
 docker compose up -d --build
 ```
+
+> The secrets used to be literals in `docker-compose.yml`, so every install that followed these
+> three lines shared one JWT signing key and one set of storage credentials with everybody else
+> who had read this repository. They come from `.env` now, and the server refuses to start on the
+> example values.
 
 Then open **http://localhost:8080** in your browser. On first run you'll be walked through creating the **Owner** account; after that, generate an invite code (admin console → Invites) and share it so friends can register.
 
@@ -118,8 +127,8 @@ Then open **http://localhost:8080** in your browser. On first run you'll be walk
 | Port | Service | Notes |
 | ---- | ------- | ----- |
 | `8080` | Web frontend (nginx) | What users open; reverse-proxies `/api` and `/livekit` to the backend |
-| `5000` | .NET backend | Exposed for direct REST/OpenAPI access & debugging |
-| `9000` / `9001` | MinIO (S3 storage / console) | Uploaded files |
+| `5000` | .NET backend | Not published — the frontend proxies `/api` over the compose network. Uncomment in `docker-compose.yml` if you want to poke it directly |
+| `9000` / `9001` | MinIO (S3 storage / console) | Not published — reached over the compose network. A published S3 port is a second front door to every uploaded file |
 | `7880` / `7881` | LiveKit signaling (WS / TCP fallback) | Voice/video |
 | `7882/udp` | LiveKit WebRTC media | Single **muxed** media port shared by all participants — must be reachable directly |
 

@@ -1,6 +1,7 @@
 # Quick start
 
-Two ways in: run the published images, or build from this repo.
+Two ways in: run the published images, or build from this repo. Once it is up,
+[user-guide.md](user-guide.md) covers what to do with it (in Russian).
 
 ## Run it (Docker)
 

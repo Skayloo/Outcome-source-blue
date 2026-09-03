@@ -1,0 +1,130 @@
+{
+  "name": "outcome-desktop",
+  "productName": "Outcome",
+  "version": "1.0.1",
+  "private": true,
+  "description": "Outcome — мессенджер для команды на своём сервере",
+  "author": {
+    "name": "Outcome",
+    "email": "skayloo@yandex.ru"
+  },
+  "main": "electron/main.js",
+  "scripts": {
+    "sync": "node scripts/sync-web.mjs",
+    "start": "npm run sync && electron .",
+    "dist:win": "npm run sync && electron-builder --win --publish never",
+    "dist:linux": "npm run sync && electron-builder --linux --publish never",
+    "dist:mac": "npm run sync && electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "ru.outcome.desktop",
+    "productName": "Outcome",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "web/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "msi",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Outcome"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network",
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.social-networking",
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://outcome.ru/download/"
+      }
+    ],
+    "msi": {
+      "oneClick": false,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Outcome",
+      "artifactName": "${productName}-${version}.${ext}"
+    },
+    "appx": {
+      "identityName": "REPLACE-WITH-PARTNER-CENTER-IdentityName",
+      "publisher": "CN=REPLACE-WITH-PARTNER-CENTER-Publisher-GUID",
+      "publisherDisplayName": "Outcome",
+      "applicationId": "Outcome",
+      "displayName": "Outcome",
+      "backgroundColor": "#141118",
+      "languages": [
+        "ru-RU",
+        "en-US"
+      ]
+    },
+    "deb": {
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "libasound2t64 | libasound2"
+      ],
+      "afterInstall": "build/deb/after-install.sh",
+      "fpm": [
+        "build/deb/apparmor-profile=/etc/apparmor.d/outcome-desktop"
+      ]
+    }
+  },
+  "homepage": "https://outcome.ru",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

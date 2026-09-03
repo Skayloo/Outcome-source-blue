@@ -268,10 +268,7 @@ public sealed class WebSocketHandler(
         {
             var info = await serverRepo.GetAsync(newServer, ct);
             if (info is not null && info.OwnerId == auth.UserId)
-                permBits |= Outcome.Domain.Permissions.Permission.ManageChannels
-                          | Outcome.Domain.Permissions.Permission.ManageInvites
-                          | Outcome.Domain.Permissions.Permission.ManageMessages
-                          | Outcome.Domain.Permissions.Permission.KickMembers;
+                permBits |= Outcome.Domain.Permissions.Permission.ServerOwnerGrant;
         }
 
         var newAuth = auth with
@@ -682,20 +679,15 @@ public sealed class WebSocketHandler(
         var permBits = Permissions.ToBits(await permissions.GetEffectiveForServerAsync(user.Id, activeServer, ct));
         var role = await roles.GetByIdAsync(effectiveRole, ct);
 
-        // The owner of the active server is an admin WITHIN it — server-scoped manage perms only (NOT the
-        // global Administrator bypass), so moderation stays inside their tenant and can't reach roles/other servers.
+        // The owner of the active server is an admin WITHIN it — Permission.ServerOwnerGrant and
+        // nothing else, so moderation stays inside their tenant. The same set the HTTP middleware
+        // grants: the socket and the REST API answering differently for one person is a bug that
+        // only shows up as "muting works after a reload".
         if ((permBits & Outcome.Domain.Permissions.Permission.Administrator) == 0)
         {
             var info = await serverRepo.GetAsync(activeServer, ct);
             if (info is not null && info.OwnerId == user.Id)
-                permBits |= Outcome.Domain.Permissions.Permission.ManageChannels
-                          | Outcome.Domain.Permissions.Permission.ManageInvites
-                          | Outcome.Domain.Permissions.Permission.ManageMessages
-                          | Outcome.Domain.Permissions.Permission.KickMembers
-                          | Outcome.Domain.Permissions.Permission.MuteMembers
-                          | Outcome.Domain.Permissions.Permission.ManageRoles
-                          | Outcome.Domain.Permissions.Permission.ManageServer
-                          | Outcome.Domain.Permissions.Permission.ViewAuditLog;
+                permBits |= Outcome.Domain.Permissions.Permission.ServerOwnerGrant;
         }
 
         return new AuthInfo(user.Id, user.Username, user.Avatar, effectiveRole,

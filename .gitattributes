@@ -5,3 +5,8 @@
 *.yml   text eol=lf
 Dockerfile text eol=lf
 Caddyfile  text eol=lf
+
+# Everything the .deb carries into a Linux system, including files with no extension. The
+# AppArmor profile is read by apparmor_parser and the maintainer script by /bin/bash; both
+# fail on Windows line endings, and the package would be built broken without a word.
+desktop/build/deb/** text eol=lf

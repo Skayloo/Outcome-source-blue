@@ -135,16 +135,7 @@ public static class ModerationEndpoints
 
             var report = await reports.GetByIdAsync(id) ?? throw DomainException.NotFound("report not found");
 
-            // Two ways in, and they are not the same door. A server's moderator may act on
-            // complaints about THEIR server — checked against the report's own snapshot of
-            // where the message lived, never a server id the caller supplies. Everything else,
-            // direct messages included, stays with whoever runs the instance.
-            var isAdmin = (current.Permissions & Outcome.Domain.Permissions.Permission.Administrator) != 0;
-            var mineToModerate = report.ServerId is { } rsid
-                && rsid == srv.ServerId
-                && (current.Permissions & Outcome.Domain.Permissions.Permission.ManageMessages) != 0;
-            if (!isAdmin && !mineToModerate)
-                throw DomainException.Forbidden("you cannot act on this report");
+            RequireCanModerate(current, srv, report);
 
             if (report.Status == MessageReport.StatusClosed)
                 throw DomainException.BadRequest("this report has already been acted on");
@@ -185,6 +176,17 @@ public static class ModerationEndpoints
                 if (note.Length > MaxReason) note = note[..MaxReason];
                 if (note.Length == 0) note = "Reviewed: this message does not break the rules.";
 
+                // Nobody to write to when you are the one who complained — the whole point is
+                // telling the OTHER person what was decided. Silently addressing yourself is
+                // what put the answer in a conversation with one participant.
+                if (report.ReporterId == current.UserId)
+                {
+                    await reports.SetStatusAsync(id, MessageReport.StatusResolved);
+                    await audit.AddAsync(current.UserId, "report_dismiss", "message", report.MessageId,
+                        $"report #{id} resolved by its own reporter; no answer sent");
+                    return Results.NoContent();
+                }
+
                 var author = await users.GetByIdAsync(report.AuthorId);
                 var channelId = await dms.FindChannelAsync(current.UserId, report.ReporterId)
                                 ?? await dms.CreateChannelAsync(current.UserId, report.ReporterId);
@@ -193,13 +195,25 @@ public static class ModerationEndpoints
                 await dms.OpenAsync(current.UserId, channelId);
                 await dms.OpenAsync(report.ReporterId, channelId);
 
-                var (mid, ts) = await messages.CreateAsync(channelId, current.UserId, note, null,
-                    forwardedFrom: author?.UserName);
                 var me = await users.GetByIdAsync(current.UserId);
-                var frame = WsFrames.ChatMessage(mid, channelId, current.UserId, me?.UserName ?? "admin",
-                    me?.Avatar, "admin", note, null, ts, 0, null, author?.UserName);
-                foreach (var pid in new[] { current.UserId, report.ReporterId })
-                    await hub.SendToUserAsync(pid, frame);
+
+                async Task SayAsync(string text, string? forwardedFrom)
+                {
+                    var (mid, ts) = await messages.CreateAsync(channelId, current.UserId, text, null, forwardedFrom);
+                    var frame = WsFrames.ChatMessage(mid, channelId, current.UserId, me?.UserName ?? "admin",
+                        me?.Avatar, "admin", text, null, ts, 0, null, forwardedFrom);
+                    foreach (var pid in new[] { current.UserId, report.ReporterId })
+                        await hub.SendToUserAsync(pid, frame);
+                }
+
+                // TWO messages, in this order. The first IS the forward — the text that was
+                // complained about, credited to whoever wrote it. Putting the moderator's words
+                // under a "forwarded from" label instead produced an answer that claimed to be
+                // somebody else's message and did not contain the one being answered about, so
+                // the reporter saw a verdict with nothing attached to it.
+                var quoted = report.Content.Trim();
+                await SayAsync(quoted.Length > 0 ? quoted : "(сообщение без текста)", author?.UserName);
+                await SayAsync(note, null);
             }
 
             // Removing the message ENDS the complaint — there is nothing left to argue about, so
@@ -213,13 +227,18 @@ public static class ModerationEndpoints
         });
 
         app.MapPatch("/api/v1/admin/reports/{id:long}/status", async (long id, SetReportStatusBody body,
-            ICurrentUser current, IMessageReportRepository reports) =>
+            ICurrentUser current, ICurrentServer srv, IMessageReportRepository reports) =>
         {
-            RequireAdmin(current);
+            if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             var status = (body.Status ?? string.Empty).Trim();
             if (!MessageReport.IsSettableByHand(status))
                 throw DomainException.BadRequest("status must be one of: open, resolved, dismissed");
             var report = await reports.GetByIdAsync(id) ?? throw DomainException.NotFound("report not found");
+            // Same door as acting on it. A server's moderator could hide, remove and answer a
+            // complaint but not move its label, because this one gate still asked for the
+            // INSTANCE administrator — so the queue they were given worked everywhere except
+            // the dropdown sitting in the middle of it.
+            RequireCanModerate(current, srv, report);
             // Closed is where a report ends. Letting a label move it back would undo the record
             // that something was actually done about it.
             if (report.Status == MessageReport.StatusClosed)
@@ -242,12 +261,29 @@ public static class ModerationEndpoints
         status = r.Status, created_at = r.CreatedAt,
     };
 
-    /// <summary>Whoever moderates messages in the CURRENT server. The instance owner holds
-    /// every permission, so this admits them too without a second branch.</summary>
+    /// <summary>Two ways in, and they are not the same door. A server's moderator may touch
+    /// complaints about THEIR server — checked against the report's own snapshot of where the
+    /// message lived, never a server id the caller supplies. Everything else, direct messages
+    /// included, stays with whoever runs the instance.</summary>
+    private static void RequireCanModerate(ICurrentUser current, ICurrentServer srv, MessageReport report)
+    {
+        var isAdmin = (current.Permissions & Outcome.Domain.Permissions.Permission.Administrator) != 0;
+        var mine = report.ServerId is { } rsid
+            && rsid == srv.ServerId
+            && (current.Permissions & Outcome.Domain.Permissions.Permission.ManageMessages) != 0;
+        if (!isAdmin && !mine) throw DomainException.Forbidden("you cannot act on this report");
+    }
+
+    /// <summary>Whoever moderates messages in the CURRENT server. Administrator is checked
+    /// separately: it bypasses every other bit, and the instance owner's role carries it WITHOUT
+    /// carrying ManageMessages — so folding the two into one mask locked the owner out of the
+    /// queue their own console could already read.</summary>
     private static void RequireModerator(ICurrentUser current)
     {
         if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
-        if ((current.Permissions & Outcome.Domain.Permissions.Permission.ManageMessages) == 0)
+        const long allowed = Outcome.Domain.Permissions.Permission.ManageMessages
+                           | Outcome.Domain.Permissions.Permission.Administrator;
+        if ((current.Permissions & allowed) == 0)
             throw DomainException.Forbidden("you cannot moderate messages here");
     }
 

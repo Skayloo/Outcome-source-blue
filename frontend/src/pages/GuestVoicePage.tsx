@@ -14,10 +14,12 @@ import {
 } from "livekit-client";
 import { BrandMark, useSpaceBrand } from "@components/BrandMark";
 import { Icon } from "@lib/icons";
+import { VoiceCtl } from "@components/VoiceCtl";
 import { createLogger } from "@lib/logger";
 import { t } from "@lib/i18n";
-import { createRNNoiseProcessor } from "@lib/noise-suppression";
+import { createRNNoiseProcessor, MIN_DENOISE_RATE, micInputRate, handBackToBrowser } from "@lib/noise-suppression";
 import { createDeepFilterProcessor, deepFilterWarmed, prefetchDeepFilter, supportsDeepFilter } from "@lib/noise-suppression-dfn";
+import { AudioPipeline, micCaptureOptions } from "@lib/audioPipeline";
 
 const log = createLogger("guest-voice");
 
@@ -34,36 +36,74 @@ type Phase = "loading" | "form" | "connecting" | "connected" | "closed" | "inval
  * Fails soft at every step: no DeepFilterNet leaves RNNoise, no worklet at all leaves the
  * plain microphone. A call with noise beats no call.
  */
-async function attachNoiseSuppressor(room: Room): Promise<void> {
+async function attachNoiseSuppressor(room: Room, rebuild: () => void, pipeline: AudioPipeline): Promise<void> {
   const mic = room.localParticipant.getTrackPublication(Track.Source.Microphone);
   if (mic?.track === undefined) {
     log.warn("no microphone track to filter — guest is listening only");
     return;
   }
 
+  // Already filtered — leave it alone. LiveKit's `stopMicTrackOnMute` defaults to FALSE, so
+  // muting keeps the track and its processor alive; the old code here believed a fresh track
+  // came back on unmute and rebuilt the filter every time. Rebuilding means instantiating 16 MB
+  // of DeepFilterNet wasm again, at the exact moment somebody wants to speak, which is what
+  // put three "processor created" lines in a sixteen-second console.
+  if (mic.track.getProcessor() !== undefined) return;
+
+  // Same band check as the app: a headset on the hands-free profile gives 8-16 kHz, and both
+  // of our models are 48 kHz designs. The guest page turns the browser's suppressor off in
+  // its capture defaults, so leaving early here has to turn it back on.
+  const mediaTrack = mic.track.mediaStreamTrack;
+  log.info("microphone input", mediaTrack.getSettings());
+  const rate = micInputRate(mediaTrack);
+  if (rate !== null && rate < MIN_DENOISE_RATE) {
+    log.warn("narrowband microphone — leaving suppression to the browser", { rate });
+    await handBackToBrowser(mediaTrack, `input at ${rate} Hz`);
+    return;
+  }
+
+  // Loudness FIRST, model second. The denoiser judges what it is given, and given a raw quiet
+  // microphone it judges the voice to be noise — so the levelling has to happen before it sees
+  // anything. LiveKit's replaceTrack is the seam: publish the normalised track, then attach
+  // the processor on top of it.
+  const levelled = pipeline.installPreGain(mediaTrack);
+  if (levelled !== null) {
+    try {
+      await mic.track.replaceTrack(levelled);
+      log.info("publishing the normalised microphone");
+    } catch (err) {
+      // Keep the raw track rather than lose audio over a failed swap.
+      log.warn("could not publish the normalised track — staying on the raw one", err);
+    }
+  }
+
   const warmed = deepFilterWarmed();
   try {
-    if (mic.track.getProcessor() !== undefined) await mic.track.stopProcessor();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- setProcessor's generic is wider than the audio processor it accepts at runtime
     await mic.track.setProcessor((warmed ? createDeepFilterProcessor() : createRNNoiseProcessor()) as any);
     log.info("noise suppressor attached", { engine: warmed ? "deepfilter" : "rnnoise" });
   } catch (err) {
+    // Our filter owns the signal only while it is actually running. Hand the microphone back
+    // to the browser's own suppressor rather than leaving the guest with no suppression at
+    // all — which is strictly worse than never having tried.
     log.error("no noise suppression at all — the filter failed to attach", err);
+    await handBackToBrowser(mediaTrack, "attach failed");
     return;
   }
 
-  // If the model was not ready, upgrade as soon as it lands — DO swap here, unlike the app.
-  // The app cannot: its audio pipeline owns the sender track, so a second swap leaves the
-  // level analyser reading a track nothing flows through. This page has no such pipeline —
-  // the processor sits directly on the LiveKit track and nothing else touches it.
+  // If the model was not ready, upgrade as soon as it lands. It matters more here than
+  // anywhere: a guest clicked a link once, so "the strong filter from your next call" may mean
+  // never. Waiting a few seconds into this one is the only chance they get.
   //
-  // It matters more here than anywhere: a guest clicked a link once, so "the strong filter
-  // from your next call" may mean never. Waiting a few seconds into this one is the only
-  // chance they get.
-  if (!warmed && supportsDeepFilter()) void upgradeGuest(room);
+  // The comment here used to say this page has no audio pipeline and so could swap freely.
+  // That stopped being true when the pipeline was added: a swap replaces the track its source
+  // node reads, leaving the graph wired to one nothing flows through — silence, permanently,
+  // not for a few seconds. So the upgrade now rebuilds the pipeline after the swap, which is
+  // cheap because the context underneath is shared and stays awake.
+  if (!warmed && supportsDeepFilter()) void upgradeGuest(room, rebuild);
 }
 
-async function upgradeGuest(room: Room): Promise<void> {
+async function upgradeGuest(room: Room, rebuild: () => void): Promise<void> {
   try {
     await prefetchDeepFilter();
     const mic = room.localParticipant.getTrackPublication(Track.Source.Microphone);
@@ -71,10 +111,33 @@ async function upgradeGuest(room: Room): Promise<void> {
     await mic.track.stopProcessor();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same wide generic as above
     await mic.track.setProcessor(createDeepFilterProcessor() as any);
+    // The track the graph was reading is gone with the old processor; rebuild onto the new one.
+    rebuild();
     log.info("upgraded to DeepFilterNet mid-call");
   } catch (err) {
     log.warn("DeepFilterNet upgrade failed — staying on RNNoise", err);
   }
+}
+
+/**
+ * Register a one-shot document listener that unlocks audio on the next interaction.
+ *
+ * Idempotent by construction: the listener removes itself, and re-arming while one is already
+ * waiting would only add a second that does the same thing.
+ */
+let guestUnlockArmed = false;
+function armGuestAudioUnlock(room: Room): void {
+  if (guestUnlockArmed) return;
+  guestUnlockArmed = true;
+  const unlock = (): void => {
+    guestUnlockArmed = false;
+    for (const e of ["pointerdown", "keydown", "touchstart"]) document.removeEventListener(e, unlock);
+    void room.startAudio().catch(() => { /* the visible button is still there */ });
+  };
+  for (const e of ["pointerdown", "keydown", "touchstart"]) {
+    document.addEventListener(e, unlock, { passive: true });
+  }
+  log.warn("audio playback blocked — unlocking on the next interaction");
 }
 
 /** iOS or Android — the platforms where the Outcome app can take this link over. */
@@ -117,11 +180,33 @@ export function GuestVoicePage({ code }: { code: string }) {
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [tiles, setTiles] = useState<Tile[]>([]);
-  const [muted, setMuted] = useState(false);
+  // Joins muted, like every other conference tool: a guest clicking a link has no idea what
+  // their microphone is about to broadcast, and twenty live microphones is what a call sounds
+  // like when it fails. The camera starts off for the same reason.
+  const [muted, setMuted] = useState(true);
   const [camera, setCamera] = useState(false);
   const [screen, setScreen] = useState(false);
+  // Start the 24 MB filter downloading the moment the page opens, not after the guest is
+  // already talking. It used to begin inside the room: RNNoise carried the call while
+  // DeepFilterNet came down, so a guest spent the first minute — sometimes the whole call —
+  // on the weak filter, which is what "the noise suppressor does nothing" was. The name
+  // field, the microphone prompt and the join click are dead time the download can have.
+  useEffect(() => {
+    if (supportsDeepFilter()) void prefetchDeepFilter();
+  }, []);
+
   const roomRef = useRef<Room | null>(null);
   const workerRef = useRef<Worker | null>(null);
+  /**
+   * The same pipeline the signed-in client runs, on the same class.
+   *
+   * The guest page used to stop at the denoiser: no make-up gain, no compressor, no
+   * transmission gate. That is why it kept the browser's AGC on — there was nothing else to
+   * bring the loudness back — and AGC sits BEFORE the model, lifting the room's floor and
+   * giving the denoiser a moving target. Two problems that only look separate. Handing guests
+   * the whole chain fixes both, and it is the chain the app has been running for weeks.
+   */
+  const pipelineRef = useRef<AudioPipeline>(new AudioPipeline());
   const audioRef = useRef<HTMLDivElement | null>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -138,7 +223,13 @@ export function GuestVoicePage({ code }: { code: string }) {
         setPhase("form");
       })
       .catch(() => setPhase("invalid"));
+    const pipeline = pipelineRef.current;
     return () => {
+      pipeline.teardownAudioPipeline();
+      pipeline.setRoom(null);
+      // The graph goes with the pipeline; the context outlives it and has to be closed here,
+      // or the page leaves an audio device open behind it.
+      pipeline.closeContext();
       roomRef.current?.disconnect().catch(() => { /* leaving anyway */ });
       void wakeLockRef.current?.release().catch(() => { /* already gone */ });
       wakeLockRef.current = null;
@@ -209,17 +300,26 @@ export function GuestVoicePage({ code }: { code: string }) {
       }
       const { token } = await r.json();
 
+      // Before the Room, and inside the click that started this: the context created here is
+      // the one LiveKit hands to the noise suppressor, and one created any later is a context
+      // Firefox and Safari will not start. Three separate contexts is what made a guest silent
+      // on Firefox while the same call was fine on Chrome.
+      pipelineRef.current.primeContext();
+      const sharedAudioContext = pipelineRef.current.context;
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
-        // Ours is the only processing on this signal besides echo cancellation. The browser's
-        // suppressor would gate the audio first and leave our model chewing on what survived;
-        // its AGC is worse, because it runs BEFORE our filter and keeps lifting and dropping
-        // the noise floor between words — a moving target is the hardest case for a denoiser.
-        // AGC on: guests have no gain control of their own and nothing downstream to make
-        // up the difference, so switching it off simply made every guest quiet. The browser's
-        // own suppression stays off — two filters in series is a different problem.
-        audioCaptureDefaults: { echoCancellation: true, noiseSuppression: false, autoGainControl: true },
+        // Identical to the signed-in client, deliberately: the browser's suppressor would gate
+        // the audio before ours sees it, and its AGC runs BEFORE our filter, lifting and
+        // dropping the room's floor between words — the hardest case for a denoiser. AGC can
+        // be off here now because the pipeline below restores the loudness after the model,
+        // which is the only place it can be done without moving the floor the model reads.
+        audioCaptureDefaults: micCaptureOptions(),
+        // The room shares the page's context rather than making its own. LiveKit documents
+        // this option as being for exactly this — "enables audio mixing via the Web Audio API
+        // to bypass autoplay restrictions" — and the signed-in client has had it all along,
+        // which is why logged-in users never saw the browser difference guests did.
+        ...(sharedAudioContext ? { webAudioMix: { audioContext: sharedAudioContext } } : {}),
       });
       roomRef.current = room;
       const rerender = () => refreshTiles(room);
@@ -236,7 +336,16 @@ export function GuestVoicePage({ code }: { code: string }) {
         .on(RoomEvent.Disconnected, () => setPhase("closed"))
         // A phone will not play incoming audio until the visitor gestures. Without a visible
         // button they never do, and the room simply seems dead.
-        .on(RoomEvent.AudioPlaybackStatusChanged, () => setAudioBlocked(!room.canPlaybackAudio))
+        .on(RoomEvent.AudioPlaybackStatusChanged, () => {
+          const blocked = !room.canPlaybackAudio;
+          setAudioBlocked(blocked);
+          // The same automatic unlock the signed-in client has had all along, and the reason
+          // logged-in users never saw the gap guests did: a click ANYWHERE calls startAudio,
+          // which is what wakes the context the noise suppressor runs in. The button below
+          // stays for phones, where a visitor may never click anything at all — but nobody
+          // should have to find it to be heard.
+          if (blocked) armGuestAudioUnlock(room);
+        })
         .on(RoomEvent.TrackSubscribed,
           (track: RemoteTrack, _pub: RemoteTrackPublication, _p: RemoteParticipant) => {
             // Audio is attached to a hidden sink; video is rendered by the tiles below.
@@ -259,16 +368,9 @@ export function GuestVoicePage({ code }: { code: string }) {
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error(t("guest.connectTimeout"))), 20_000)),
       ]);
-      try {
-        await room.localParticipant.setMicrophoneEnabled(true);
-        // NOT awaited, ever. A noise filter must never be able to hold up a call: whatever
-        // it does — probe a cache, load a model, fail outright — the guest is already
-        // connected and the mic is already publishing. It attaches underneath or it does not.
-        void attachNoiseSuppressor(room);
-      } catch {
-        // No mic permission — stay as a listener; the button reflects reality.
-        setMuted(true);
-      }
+      // No microphone at join: the guest arrives muted and publishes on their first unmute,
+      // which is also where the filter goes on. This is why the permission prompt no longer
+      // fires the instant the page connects — nothing is captured until they ask for it.
       refreshTiles(room);
       setPhase("connected");
       // A locked screen suspends the tab and the microphone with it.
@@ -289,9 +391,25 @@ export function GuestVoicePage({ code }: { code: string }) {
     if (!room) return;
     const next = !muted;
     setMuted(next);
+    // Synchronously, before the first await: this call IS the gesture, and Firefox and Safari
+    // will only start an AudioContext while one is being handled. Everything below runs in
+    // promise continuations, where that permission is already gone.
+    if (!next) {
+      pipelineRef.current.setRoom(room);
+      pipelineRef.current.primeContext();
+    }
     void room.localParticipant.setMicrophoneEnabled(!next)
-      // Unmuting publishes a fresh track, which carries no processor of its own.
-      .then(() => (next ? Promise.resolve() : attachNoiseSuppressor(room)))
+      // First unmute is where the microphone is actually captured, so it is also where the
+      // filter goes on. Later unmutes find it already there and leave it alone.
+      .then(() => (next ? Promise.resolve()
+        : attachNoiseSuppressor(room, () => pipelineRef.current.setupAudioPipeline(),
+            pipelineRef.current)))
+      .then(() => {
+        // After the suppressor, never before: the pipeline taps the track the processor
+        // produced, and building it first would leave it wired to the raw one. The context it
+        // uses was already created above, while the click was still in hand.
+        if (!next) pipelineRef.current.setupAudioPipeline();
+      })
       .then(() => refreshTiles(room))
       .catch(() => setMuted(!next));
   };
@@ -316,6 +434,11 @@ export function GuestVoicePage({ code }: { code: string }) {
   };
 
   const leave = (): void => {
+    // Before the room goes: the pipeline holds an AudioContext and a worklet, and leaving them
+    // running keeps the microphone open on a page that says the call is over.
+    pipelineRef.current.teardownAudioPipeline();
+    pipelineRef.current.setRoom(null);
+    pipelineRef.current.closeContext();
     roomRef.current?.disconnect().catch(() => { /* leaving anyway */ });
     roomRef.current = null;
     workerRef.current?.terminate();
@@ -423,18 +546,19 @@ export function GuestVoicePage({ code }: { code: string }) {
               ))}
             </div>
 
+            {/* The same controls as the in-app voice bar, from the same component. These were
+                `.ac-btn` — the admin toolbar button, whose base state and `.on` state are both
+                var(--accent) — so pressing mute swapped the icon and left the button looking
+                exactly as it did before. Muted is red, publishing is green, neutral is dark. */}
             <div className="guest-controls">
-              <button className={"ac-btn" + (muted ? " on" : "")} onClick={toggleMute}>
-                <Icon name={muted ? "mic-off" : "mic"} size={16} /> {muted ? t("guest.unmute") : t("guest.mute")}
-              </button>
-              <button className={"ac-btn" + (camera ? " on" : "")} onClick={toggleCamera}>
-                <Icon name={camera ? "camera-off" : "camera"} size={16} /> {camera ? t("guest.cameraOff") : t("guest.cameraOn")}
-              </button>
-              <button className={"ac-btn" + (screen ? " on" : "")} onClick={toggleScreen}>
-                <Icon name={screen ? "monitor-off" : "monitor"} size={16} /> {screen ? t("guest.screenOff") : t("guest.screenOn")}
-              </button>
-              <button className="ac-btn account-delete-btn" onClick={leave}>
-                <Icon name="phone-down" size={16} /> {t("guest.leave")}
+              <VoiceCtl name={muted ? "mic-off" : "mic"} red={muted}
+                label={muted ? t("guest.unmute") : t("guest.mute")} onClick={toggleMute} />
+              <VoiceCtl name={camera ? "camera-off" : "camera"} on={camera}
+                label={camera ? t("guest.cameraOff") : t("guest.cameraOn")} onClick={toggleCamera} />
+              <VoiceCtl name={screen ? "monitor-off" : "monitor"} on={screen}
+                label={screen ? t("guest.screenOff") : t("guest.screenOn")} onClick={toggleScreen} />
+              <button className="vsc-btn disconnect" title={t("guest.leave")} onClick={leave}>
+                <Icon name="phone-down" size={18} /> {t("guest.leave")}
               </button>
             </div>
           </>

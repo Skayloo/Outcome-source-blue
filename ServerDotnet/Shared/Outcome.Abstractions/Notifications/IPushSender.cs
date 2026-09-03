@@ -45,6 +45,26 @@ public sealed record CallPush(
     bool Cancelled = false);
 
 /// <summary>
+/// One device to push to.
+/// </summary>
+/// <param name="Transport">Which gateway minted <paramref name="Token"/>. Routing keys on the
+/// TRANSPORT rather than on the operating system, because Android has two of them — RuStore's
+/// own and FCM — and a token issued by one is meaningless to the other. Persisted in
+/// <c>device_tokens.platform</c>, whose pre-existing rows all read <c>ios</c>, so widening the
+/// vocabulary needed no migration.</param>
+/// <param name="Sandbox">APNs only: this token belongs to Apple's sandbox gateway. The other
+/// transports have no such split and always pass false.</param>
+public sealed record PushTarget(string Token, string Transport, bool Sandbox = false)
+{
+    /// <summary>Apple, via APNs. The historical value, which is why it is not called "apns".</summary>
+    public const string Apns = "ios";
+    /// <summary>RuStore's own transport, over vkpns.</summary>
+    public const string RuStore = "rustore";
+    /// <summary>Firebase Cloud Messaging.</summary>
+    public const string Fcm = "fcm";
+}
+
+/// <summary>
 /// Delivers a notification to one device. Implementations must not throw for a rejected
 /// token — a bad device is a normal outcome, not an error the caller should handle.
 /// </summary>
@@ -53,12 +73,19 @@ public interface IPushSender
     /// <summary>False when no push credentials are configured; callers skip the work entirely.</summary>
     bool Enabled { get; }
 
-    Task<PushOutcome> SendAsync(string deviceToken, bool sandbox, PushMessage message, CancellationToken ct = default);
+    /// <summary>
+    /// Which <see cref="PushTarget.Transport"/> values this sender can deliver to. A sender is
+    /// asked about nothing else — handing an APNs token to the RuStore gateway would not fail
+    /// loudly, it would fail as a token the gateway has simply never heard of.
+    /// </summary>
+    IReadOnlySet<string> Transports { get; }
+
+    Task<PushOutcome> SendAsync(PushTarget target, PushMessage message, CancellationToken ct = default);
 
     /// <summary>
     /// Rings a phone. This is a different kind of push entirely: it is delivered to a separate
     /// token, wakes the app rather than drawing a banner, and iOS requires the app to answer it
     /// by showing the system call screen — so it must only ever be sent for a real call.
     /// </summary>
-    Task<PushOutcome> SendCallAsync(string voipToken, bool sandbox, CallPush call, CancellationToken ct = default);
+    Task<PushOutcome> SendCallAsync(PushTarget target, CallPush call, CancellationToken ct = default);
 }

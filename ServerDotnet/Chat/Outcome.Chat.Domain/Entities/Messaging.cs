@@ -22,6 +22,11 @@ public sealed class Attachment
 {
     public string Id { get; set; } = "";
     public long? MessageId { get; set; }
+    /// <summary>Who uploaded it. The id of an attachment is enough to attach it to a message,
+    /// and the id travels in every signed URL the file was ever served from — so without an
+    /// owner recorded here, anyone who was once shown a file could later post it as their own.
+    /// Null on rows written before this column existed; those fall back to the old behaviour.</summary>
+    public long? UploaderId { get; set; }
     public string Filename { get; set; } = "";
     public string StoredAs { get; set; } = "";
     public string MimeType { get; set; } = "";

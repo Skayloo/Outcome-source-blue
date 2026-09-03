@@ -1,0 +1,19 @@
+# Lets Outcome create the user namespace its sandbox is built on.
+#
+# Ubuntu 24.04 turned on kernel.apparmor_restrict_unprivileged_userns, which denies
+# unprivileged user namespaces to any binary without a profile saying otherwise. Chromium's
+# sandbox is built on exactly that, so without this file the app finds no way to sandbox
+# itself and — correctly — refuses to run at all rather than run unprotected.
+#
+# unconfined plus `userns` is the shape Chrome and other third-party packages ship for the
+# same reason: the point is not to confine the app, it is to hand back the one capability the
+# distribution took away.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile outcome-desktop /opt/Outcome/outcome-desktop flags=(unconfined) {
+  userns,
+
+  # Anything the administrator wants to add, without editing a packaged file.
+  include if exists <local/outcome-desktop>
+}
