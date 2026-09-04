@@ -126,13 +126,22 @@ async function upgradeGuest(room: Room, rebuild: () => void): Promise<void> {
  * waiting would only add a second that does the same thing.
  */
 let guestUnlockArmed = false;
+/** Set once room.startAudio() has RESOLVED. canPlaybackAudio is NOT that: with webAudioMix
+ *  LiveKit recomputes it from the AudioContext state, so a play() the browser refused still
+ *  reports "allowed" a moment later — and the tab stays mute with nothing armed to ask again.
+ *  Same trap as livekitSession.audioStarted; both sides learned it the same evening. */
+let guestAudioStarted = false;
 function armGuestAudioUnlock(room: Room): void {
   if (guestUnlockArmed) return;
   guestUnlockArmed = true;
   const unlock = (): void => {
     guestUnlockArmed = false;
     for (const e of ["pointerdown", "keydown", "touchstart"]) document.removeEventListener(e, unlock);
-    void room.startAudio().catch(() => { /* the visible button is still there */ });
+    void room.startAudio()
+      .then(() => { guestAudioStarted = true; })
+      // Refused: this gesture was not one the browser accepts. Wait for the next rather than
+      // leaving the visitor with a room that looks connected and plays nothing.
+      .catch(() => armGuestAudioUnlock(room));
   };
   for (const e of ["pointerdown", "keydown", "touchstart"]) {
     document.addEventListener(e, unlock, { passive: true });
@@ -306,6 +315,7 @@ export function GuestVoicePage({ code }: { code: string }) {
       // on Firefox while the same call was fine on Chrome.
       pipelineRef.current.primeContext();
       const sharedAudioContext = pipelineRef.current.context;
+      guestAudioStarted = false; // fresh room, fresh elements: nothing has played yet
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -344,7 +354,7 @@ export function GuestVoicePage({ code }: { code: string }) {
           // which is what wakes the context the noise suppressor runs in. The button below
           // stays for phones, where a visitor may never click anything at all — but nobody
           // should have to find it to be heard.
-          if (blocked) armGuestAudioUnlock(room);
+          if (blocked || !guestAudioStarted) armGuestAudioUnlock(room);
         })
         .on(RoomEvent.TrackSubscribed,
           (track: RemoteTrack, _pub: RemoteTrackPublication, _p: RemoteParticipant) => {
@@ -513,7 +523,10 @@ export function GuestVoicePage({ code }: { code: string }) {
 
         {audioBlocked && (
           <button className="vd-unblock" onClick={() => {
-            void roomRef.current?.startAudio().then(() => setAudioBlocked(!roomRef.current?.canPlaybackAudio));
+            void roomRef.current?.startAudio().then(() => {
+              guestAudioStarted = true;
+              setAudioBlocked(false);
+            });
           }}>{t("voice.enableSound")}</button>
         )}
 

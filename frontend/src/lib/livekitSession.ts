@@ -170,6 +170,14 @@ export class LiveKitSession {
   // --- Room factory ---
 
   private createRoom(): Room {
+    // Not every join arrives from a click: a reload that rejoins the channel, a channel move
+    // the server pushed, a reconnect that rebuilds the room. joinVoice() primes the context,
+    // those paths do not — and a room built without one falls back to a context LiveKit makes
+    // itself, which we hold no reference to and can never resume. Its remote audio then mixes
+    // into a stopped graph while the speaking indicator, computed by the SFU, keeps blinking:
+    // the caller sees a talking head and hears nothing. Prime here so the room always gets OURS.
+    this._audioPipeline.primeContext();
+    this.audioStarted = false;
     const quality = getStreamQuality();
     const isSource = quality === "source";
     const newRoom = new Room({
@@ -458,8 +466,7 @@ export class LiveKitSession {
   async unlockAudio(): Promise<void> {
     // While the click is still in hand — Firefox and Safari grant an AudioContext only here.
     this._audioPipeline.primeContext();
-    await this.room?.startAudio();
-    setAudioBlocked(this.room ? !this.room.canPlaybackAudio : false);
+    await this.startAudioNow();
   }
 
   private async measureTransport(): Promise<void> {
@@ -503,35 +510,76 @@ export class LiveKitSession {
    */
   private autoplayUnlockHandler: (() => void) | null = null;
 
+  /** Gestures the browsers accept as "the user is here". pointerdown fires before click and
+   *  survives a drag that never becomes one; keydown covers whoever never touches the mouse. */
+  private static readonly UNLOCK_EVENTS = ["pointerdown", "keydown", "touchstart"] as const;
+
+  /**
+   * Set only once room.startAudio() has actually RESOLVED.
+   *
+   * Not the same thing as room.canPlaybackAudio, and the difference cost a call: with
+   * webAudioMix LiveKit recomputes that flag inside acquireAudioContext from the AudioContext
+   * state alone, so a startAudio() whose element play() the browser refused still ends with
+   * "playback allowed" three milliseconds later. Firefox refuses that play() on a tab the user
+   * has not clicked in — and we took the flag at its word, stood the unlock handler down, and
+   * left the tab permanently mute with the remote track subscribed, the meters moving and no
+   * way for anyone to ask again.
+   */
+  private audioStarted = false;
+
+  /** The one place playback is started. Re-arms on refusal instead of giving up. */
+  private async startAudioNow(): Promise<void> {
+    if (this.room === null) return;
+    try {
+      await this.room.startAudio();
+      this.audioStarted = true;
+      setAudioBlocked(false);
+      log.info("Audio playback started");
+    } catch (err) {
+      // Either no gesture was in hand, or an element still refuses. Wait for the next one.
+      log.debug("startAudio refused — waiting for another gesture", err);
+      this.armAutoplayUnlock();
+    }
+  }
+
+  private armAutoplayUnlock(): void {
+    if (this.autoplayUnlockHandler !== null) return; // already waiting for a gesture
+    const handler = (): void => {
+      this.removeAutoplayUnlock();
+      void this.startAudioNow();
+    };
+    this.autoplayUnlockHandler = handler;
+    for (const e of LiveKitSession.UNLOCK_EVENTS) {
+      document.addEventListener(e, handler, { passive: true });
+    }
+  }
+
   private handleAudioPlaybackChanged = (): void => {
     if (this.room === null) return;
     if (this.room.canPlaybackAudio) {
-      log.info("Audio playback is now allowed");
       setAudioBlocked(false);
-      this.removeAutoplayUnlock();
+      // Stand down ONLY when playback really started. "Allowed" on its own is the context
+      // reporting itself running — see audioStarted.
+      if (this.audioStarted) {
+        log.info("Audio playback is now allowed");
+        this.removeAutoplayUnlock();
+      } else {
+        this.armAutoplayUnlock();
+      }
       return;
     }
-    // A click ANYWHERE unlocks it — but on a phone the visitor may never click, and the room
-    // just looks dead. The store flag puts a visible button in front of them.
+    // A gesture ANYWHERE unlocks it — but on a phone the visitor may never make one, and the
+    // room just looks dead. The store flag puts a visible button in front of them.
     setAudioBlocked(true);
     log.warn("Audio playback blocked by browser — registering click-to-unlock");
-    // Remove previous handler if any, then register a new one
-    this.removeAutoplayUnlock();
-    this.autoplayUnlockHandler = () => {
-      if (this.room !== null) {
-        void this.room.startAudio().then(() => {
-          log.info("Audio playback unlocked via user gesture");
-          setAudioBlocked(false);
-        });
-      }
-      this.removeAutoplayUnlock();
-    };
-    document.addEventListener("click", this.autoplayUnlockHandler, { once: true });
+    this.armAutoplayUnlock();
   };
 
   private removeAutoplayUnlock(): void {
     if (this.autoplayUnlockHandler !== null) {
-      document.removeEventListener("click", this.autoplayUnlockHandler);
+      for (const e of LiveKitSession.UNLOCK_EVENTS) {
+        document.removeEventListener(e, this.autoplayUnlockHandler);
+      }
       this.autoplayUnlockHandler = null;
     }
   }
@@ -607,7 +655,7 @@ export class LiveKitSession {
         this.seedExistingGuests(channelId);
         log.info("Auto-reconnect succeeded", { attempt, channelId, url: resolvedUrl });
         this.logIceConnectionInfo();
-        this.room.startAudio().catch((err) => log.debug("Failed to start audio after reconnect", err));
+        void this.startAudioNow();
         await this.restoreLocalVoiceState("reconnect");
         this._audioPipeline.setupAudioPipeline();
         this.reapplyMuteGain();
@@ -906,9 +954,7 @@ export class LiveKitSession {
         // Optimistic startAudio — may succeed if the join was triggered by a
         // recent user gesture. If not, the AudioPlaybackStatusChanged handler
         // will register a click-to-unlock fallback.
-        this.room.startAudio().catch(() => {
-          log.debug("Optimistic startAudio failed — waiting for user gesture");
-        });
+        void this.startAudioNow();
         // Locking the screen suspends the tab, and with it the microphone. Held for the call.
         void this.acquireWakeLock();
         window.setTimeout(() => void this.measureTransport(), 3000);

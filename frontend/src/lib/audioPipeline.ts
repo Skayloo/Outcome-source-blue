@@ -262,7 +262,19 @@ export class AudioPipeline {
    * Cheap and idempotent: a second call while one is already primed does nothing.
    */
   primeContext(): void {
-    if (this.sharedCtx !== null && this.sharedCtx.state !== "closed") return;
+    const existing = this.sharedCtx;
+    if (existing !== null && existing.state !== "closed") {
+      // Existing is not the same as running. A context built outside a gesture starts
+      // suspended, and one the browser parked when the tab went to the background stays that
+      // way until something wakes it. Every caller of this is a click, and a click is the only
+      // thing that can — returning early here left remote audio mixing into a stopped graph.
+      if (existing.state === "suspended") {
+        void existing.resume()
+          .then(() => log.info("audio context resumed from the gesture", { state: existing.state }))
+          .catch((err) => log.warn("audio context resume rejected", err));
+      }
+      return;
+    }
     try {
       // No forced sampleRate. Asking for 48000 on a Mac whose device runs at 44100 is a
       // request Chrome and Safari satisfy by resampling and Firefox does not: the context is
