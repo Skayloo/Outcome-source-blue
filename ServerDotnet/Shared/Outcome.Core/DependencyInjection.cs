@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.Configure<UploadOptions>(config.GetSection("Upload"));
         services.Configure<VoiceOptions>(config.GetSection("Voice"));
         services.Configure<EmailOptions>(config.GetSection("Email"));
+        services.Configure<SupportMailOptions>(config.GetSection("SupportMail"));
         services.Configure<OAuthOptions>(config.GetSection("OAuth"));
         services.Configure<MinioOptions>(config.GetSection("Minio"));
         services.Configure<ApnsOptions>(config.GetSection("Apns"));
@@ -45,6 +46,7 @@ public static class DependencyInjection
         services.AddSingleton<ISpaceRegistry>(registry);
         services.AddSingleton(registry);
         services.AddSingleton<SpaceProvisioner>();
+        services.AddSingleton<Outcome.Infrastructure.Mail.SupportMailbox>();
         services.AddScoped<CurrentSpaceContext>();
         services.AddScoped<ICurrentSpace>(sp => sp.GetRequiredService<CurrentSpaceContext>());
 

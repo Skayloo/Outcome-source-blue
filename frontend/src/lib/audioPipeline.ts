@@ -22,7 +22,6 @@
 
 import { Track, type Room, type LocalAudioTrack } from "livekit-client";
 import { loadPref, savePref } from "@components/settings/helpers";
-import { nextMakeupGain, MAKEUP_GAIN } from "@lib/makeupGain";
 // The local "you're talking" ring is driven by a CLIENT-SIDE mic level monitor
 // (Discord-style: computed locally from the mic, independent of the SFU's
 // active-speaker round-trip which does not reliably include the local user).
@@ -56,7 +55,9 @@ export function vadThreshold(sensitivity: number): number {
   return ((100 - sensitivity) / 100) * 0.10;
 }
 
-export function micCaptureOptions(): { echoCancellation: boolean; noiseSuppression: boolean; autoGainControl: boolean } {
+export function micCaptureOptions(): {
+  echoCancellation: boolean; noiseSuppression: boolean; autoGainControl: boolean; voiceIsolation: boolean;
+} {
   const enhanced = loadPref<boolean>("enhancedNoiseSuppression", true);
   return {
     // Echo cancellation stays: it runs before everything else, which is where it belongs,
@@ -82,6 +83,10 @@ export function micCaptureOptions(): { echoCancellation: boolean; noiseSuppressi
     // is the only thing positioned to do it per-microphone. So AGC does the coarse work and
     // the normaliser trims what is left.
     autoGainControl: loadPref("autoGainControl", true),
+    // In LiveKit's own capture defaults, and free where it exists: a platform-level voice
+    // isolation pass that runs before anything we can reach. Ignored by browsers that do not
+    // have it, so there is nothing to feature-detect.
+    voiceIsolation: true,
   };
 }
 
@@ -201,7 +206,7 @@ export class AudioPipeline {
       return;
     }
 
-    const wantDeep = loadPref<string>("nsEngine", "deepfilter") === "deepfilter" && supportsDeepFilter();
+    const wantDeep = loadPref<string>("nsEngine", "rnnoise") === "deepfilter" && supportsDeepFilter();
     const deepReady = wantDeep && deepFilterWarmed();
     const key = deepReady ? `deepfilter:${suppressionLevel()}` : "rnnoise";
 
@@ -319,101 +324,79 @@ export class AudioPipeline {
     try {
       const mediaTrack = micPub.track.mediaStreamTrack;
       // The primed one when a click gave us one, which is the whole point of primeContext.
-      // The page's context, not one of our own. Falling back to a fresh one only covers the
-      // case where nothing primed it — and that one will be suspended wherever it matters.
+      // The page's context, not one of our own.
       const ctx = this.sharedCtx ?? new AudioContext();
       this.sharedCtx ??= ctx;
 
       const source = ctx.createMediaStreamSource(new MediaStream([mediaTrack]));
 
-      // Analyser: VAD reads time-domain data from here (always real audio)
+      // A TAP, not a stage. It is connected to nothing downstream, so it reads the signal
+      // without standing in it: the VAD meter and the speaking ring both live off this, and
+      // neither can affect a single sample anyone hears.
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 2048;
       analyser.smoothingTimeConstant = 0.3;
+      source.connect(analyser);
 
-      // GainNode: controls both input volume and VAD gating. Clamp on read too:
-      // prefs saved by older builds could hold up to 300, which audibly clips.
-      const gainNode = ctx.createGain();
-      this.currentInputGain = Math.min(loadPref<number>("inputVolume", 100), 200) / 100;
-      gainNode.gain.setValueAtTime(this.currentInputGain, ctx.currentTime);
-
-      const dest = ctx.createMediaStreamDestination();
-
-      // The loudness AGC used to provide, moved to where it belongs: after the model. Make-up
-      // gain lifts the voice back to the level people expect, and the compressor catches the
-      // peaks that lift would otherwise clip. Both sit downstream of the denoiser, so neither
-      // can raise the noise floor it measures — which is the whole reason AGC had to go.
-      const makeup = ctx.createGain();
-      // Unity while AGC is on: it has already set the level, and a fixed lift on top is the
-      // same double regulation in slower motion.
-      const startGain = loadPref<boolean>("autoGainControl", true) ? 1 : MAKEUP_GAIN;
-      makeup.gain.setValueAtTime(startGain, ctx.currentTime);
-
-      const comp = ctx.createDynamicsCompressor();
-      comp.threshold.setValueAtTime(-24, ctx.currentTime);
-      comp.knee.setValueAtTime(30, ctx.currentTime);
-      comp.ratio.setValueAtTime(4, ctx.currentTime);
-      comp.attack.setValueAtTime(0.003, ctx.currentTime);
-      comp.release.setValueAtTime(0.25, ctx.currentTime);
-
-      // Wire: source → analyser (tap) and source → gain → make-up → compressor → dest
-      // Order matters, and the first arrangement had it backwards.
+      // WHY THERE IS NOTHING ELSE HERE.
       //
-      //   source → levelMeter                    raw level, nothing gates it
-      //   source → makeup → analyser             the VAD judges NORMALISED audio
-      //                   → gainNode → comp → dest
+      // The browser already runs the WebRTC audio pipeline on this track, in a fixed order:
+      // high-pass → echo cancellation → noise suppression (ours instead) → AGC. AGC is the
+      // LAST stage by design, and everything we used to hang off this graph — make-up gain, a
+      // 4:1 compressor, a VAD gate — was a second regulator sitting after it, four steps too
+      // late. That is the whole explanation for "Chrome is deafening, Firefox is fine": Chrome
+      // levels aggressively, Firefox gently, and our second stage did not flatten that
+      // difference, it multiplied it. LiveKit's own capture defaults leave the browser's AGC
+      // on and add nothing; Jitsi puts RNNoise in a worklet and stops there. So do we now.
       //
-      // The measurement is taken off the SOURCE because gainNode is also the VAD gate: with a
-      // quiet microphone the gate stays shut, a meter behind it reads zero, the normaliser
-      // learns nothing and never lifts — and the gate cannot open because nothing lifted it.
-      // The only way out of that circle was to shout, which is exactly what a guest on Firefox
-      // had to do.
+      // Loudness differences BETWEEN people belong to the listener — per-participant gain on
+      // the receiving side, where nobody's signal is rewritten. See AudioElements.
       //
-      // And the VAD now sits AFTER the make-up gain for the same reason in reverse: a fixed
-      // threshold only means the same thing on every machine if what it judges has already
-      // been brought to the same loudness.
-      source.connect(makeup);
-      makeup.connect(analyser);
-      makeup.connect(gainNode);
-      gainNode.connect(comp);
-      comp.connect(dest);
+      // The one exception is the input-volume slider: a fixed multiplier the person chose
+      // themselves, not an automatic regulator racing the AGC. At 100% it does not exist at
+      // all, and then we publish the microphone track untouched — no graph in the sending
+      // path means no way for a suspended context to turn a live microphone into silence.
+      let dest: MediaStreamAudioDestinationNode | null = null;
+      let gainNode: GainNode | null = null;
+      if (this.currentInputGain !== 1) {
+        gainNode = ctx.createGain();
+        gainNode.gain.setValueAtTime(this.currentInputGain, ctx.currentTime);
+        dest = ctx.createMediaStreamDestination();
+        source.connect(gainNode);
+        gainNode.connect(dest);
+      }
 
       this.pipelineTrack = mediaTrack;
-      // No normaliser here: loudness is settled upstream of the denoiser now — see
-      // installPreGain. Two regulators on one signal is what made a guest deafening.
-      makeup.gain.setValueAtTime(1, ctx.currentTime);
-
       this.audioPipelineCtx = ctx;
       this.audioPipelineGain = gainNode;
       this.audioPipelineAnalyser = analyser;
       this.audioPipelineDest = dest;
 
-      // Swap the WebRTC sender to the pipeline output — but ONLY once the AudioContext is
-      // actually running. A suspended context (autoplay policy) outputs SILENCE, which made
-      // the mic appear dead for the first moments after joining. Until it resumes, LiveKit's
-      // NATIVE mic track stays on the sender (audible immediately); we swap in seamlessly on
-      // 'running'. resume() usually succeeds because join is a click, but the statechange
-      // listener covers the case where it needs a later gesture.
-      const adjustedTrack = dest.stream.getAudioTracks()[0];
-      const sender = micPub.track.sender;
-      const swapIn = (): void => {
-        // Bail if the pipeline was torn down / rebuilt in the meantime (stale closure).
-        if (adjustedTrack === undefined || !sender || this.audioPipelineDest !== dest) return;
-        void sender.replaceTrack(adjustedTrack).catch((err) => {
-          log.warn("Failed to replace sender track with pipeline output", err);
-        });
-      };
-      if (ctx.state === "running") {
-        swapIn();
-      } else {
-        const onState = (): void => {
-          if (ctx.state === "running") { ctx.removeEventListener("statechange", onState); swapIn(); }
+      // Only when the slider is off unity. Swap once the context is actually running: a
+      // suspended one outputs SILENCE, and until it resumes LiveKit's native track stays on
+      // the sender, audible from the first second.
+      if (dest !== null) {
+        const adjustedTrack = dest.stream.getAudioTracks()[0];
+        const sender = micPub.track.sender;
+        const swapIn = (): void => {
+          // Bail if the pipeline was torn down / rebuilt in the meantime (stale closure).
+          if (adjustedTrack === undefined || !sender || this.audioPipelineDest !== dest) return;
+          void sender.replaceTrack(adjustedTrack).catch((err) => {
+            log.warn("Failed to replace sender track with pipeline output", err);
+          });
         };
-        ctx.addEventListener("statechange", onState);
-        void ctx.resume();
+        if (ctx.state === "running") {
+          swapIn();
+        } else {
+          const onState = (): void => {
+            if (ctx.state === "running") { ctx.removeEventListener("statechange", onState); swapIn(); }
+          };
+          ctx.addEventListener("statechange", onState);
+          void ctx.resume();
+        }
       }
 
-      log.info("Audio pipeline created", { inputGain: this.currentInputGain, ctxState: ctx.state });
+      log.info("Audio pipeline created", { inputGain: this.currentInputGain, inPath: dest !== null, ctxState: ctx.state });
 
       // Start VAD polling if sensitivity < 100
       this.startVadPolling();
@@ -437,103 +420,6 @@ export class AudioPipeline {
    * faster than that is what pumping sounds like. setTargetAtTime rather than a step, so the
    * change is a slide and never a click.
    */
-  private startNormaliser(ctx: AudioContext, meter: AnalyserNode, makeup: GainNode): void {
-    this.stopNormaliser();
-    // Runs alongside AGC now, not instead of it, and that is not the double regulation it was
-    // when this sat AFTER the denoiser. There it multiplied an already-lifted signal and drove
-    // the output to 0.86 against a target of 0.05. Here it is upstream of the model and its
-    // job is different: AGC does the coarse, per-microphone work and lands each browser
-    // somewhere different, and this brings those somewheres to one number.
-    const buf = new Float32Array(meter.fftSize);
-    let gain = MAKEUP_GAIN;
-    // What the microphone is actually producing, reported every few seconds. Twice now the
-    // right numbers were guessed at instead of read — a floor too high to notice speech, then
-    // a ceiling too low to lift it — and each guess cost a round trip through a real call.
-    // These two numbers make the next question answerable from a console instead.
-    let peak = 0;
-    let ticks = 0;
-    this.normaliserTimer = setInterval(() => {
-      meter.getFloatTimeDomainData(buf);
-      let sum = 0;
-      for (const v of buf) sum += v * v;
-      const rms = Math.sqrt(sum / buf.length);
-      if (rms > peak) peak = rms;
-      if (++ticks >= 25) {                       // ~3 s
-        log.info("microphone level", {
-          peakRms: Number(peak.toFixed(5)),
-          peakDbfs: Number((20 * Math.log10(peak + 1e-9)).toFixed(1)),
-          gain: Number(gain.toFixed(2)),
-          sending: Number((peak * gain).toFixed(4)),
-        });
-        peak = 0;
-        ticks = 0;
-      }
-      const next = nextMakeupGain(gain, rms);
-      if (next === gain) return;
-      gain = next;
-      makeup.gain.setTargetAtTime(gain, ctx.currentTime, 0.15);
-    }, 120);
-  }
-
-  private preGainDest: MediaStreamAudioDestinationNode | null = null;
-
-  /**
-   * Bring the microphone to a common loudness BEFORE the denoiser sees it.
-   *
-   * This is the difference between browsers, and it cannot be fixed anywhere else. We ask for
-   * autoGainControl and each browser honours it differently: Chrome lifts hard, macOS lifts
-   * for Safari, Firefox barely lifts at all. The denoiser then runs at 25 dB of suppression,
-   * and to it a signal at -70 dBFS is indistinguishable from noise — so on Firefox it deleted
-   * the voice while the same call was fine on Chrome. Nothing downstream can undo that: by
-   * the time the old make-up gain ran, there was nothing left to amplify.
-   *
-   * So the lift moves upstream of the model. LiveKit's own replaceTrack is the seam: we build
-   * source → meter → gain → destination on the raw capture and hand the result back as the
-   * track, then the processor is attached on top of THAT. The browser's AGC still does the
-   * coarse, per-microphone work; this removes what it leaves behind.
-   *
-   * Returns the track to publish, or null when there is nothing to do — the caller then keeps
-   * the raw one rather than losing audio over a failed graph.
-   */
-  installPreGain(raw: MediaStreamTrack): MediaStreamTrack | null {
-    const ctx = this.sharedCtx;
-    if (ctx === null) {
-      log.warn("no shared context — publishing the microphone unnormalised");
-      return null;
-    }
-    try {
-      this.teardownPreGain();
-      const source = ctx.createMediaStreamSource(new MediaStream([raw]));
-      const meter = ctx.createAnalyser();
-      meter.fftSize = 1024;
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(1, ctx.currentTime);
-      const dest = ctx.createMediaStreamDestination();
-      source.connect(meter);
-      source.connect(gain);
-      gain.connect(dest);
-      this.preGainDest = dest;
-      this.startNormaliser(ctx, meter, gain);
-      const out = dest.stream.getAudioTracks()[0];
-      if (out === undefined) { this.teardownPreGain(); return null; }
-      log.info("pre-model normaliser installed");
-      return out;
-    } catch (err) {
-      log.warn("could not install the pre-model normaliser", err);
-      this.teardownPreGain();
-      return null;
-    }
-  }
-
-  private teardownPreGain(): void {
-    this.stopNormaliser();
-    if (this.preGainDest !== null) { this.preGainDest.disconnect(); this.preGainDest = null; }
-  }
-
-  /**
-   * Close the page's context. Only when the call is over: while it is up, the room and the
-   * denoiser are inside it, and closing it takes their audio with it.
-   */
   closeContext(): void {
     if (this.sharedCtx === null) return;
     const ctx = this.sharedCtx;
@@ -541,10 +427,6 @@ export class AudioPipeline {
     void ctx.close().catch(() => { /* already gone */ });
   }
 
-  private stopNormaliser(): void {
-    if (this.normaliserTimer !== null) clearInterval(this.normaliserTimer);
-    this.normaliserTimer = null;
-  }
 
   teardownAudioPipeline(): void {
     this.pipelineTrack = null;
@@ -569,7 +451,12 @@ export class AudioPipeline {
     if (this.audioPipelineGain !== null) { this.audioPipelineGain.disconnect(); this.audioPipelineGain = null; }
     if (this.audioPipelineAnalyser !== null) { this.audioPipelineAnalyser.disconnect(); this.audioPipelineAnalyser = null; }
     if (this.audioPipelineDest !== null) { this.audioPipelineDest.disconnect(); this.audioPipelineDest = null; }
-    if (this.audioPipelineCtx !== null) { void this.audioPipelineCtx.close(); this.audioPipelineCtx = null; }
+    // Drop the REFERENCE, never close it. It is the page's context — the room mixes every
+    // remote voice through it (webAudioMix) and the denoiser runs in it. Closing it here is
+    // what made muting your own microphone take everyone else's audio with it: mute tears the
+    // pipeline down, and the comment three lines up has always said the context survives while
+    // the code right here closed it.
+    this.audioPipelineCtx = null;
     this.vadGated = false;
   }
 
@@ -652,13 +539,13 @@ export class AudioPipeline {
    *  The pipeline only exists when unmuted — muting tears it down entirely. */
   updatePipelineGain(): void {
     if (this.audioPipelineGain === null || this.audioPipelineCtx === null) return;
-    const effectiveGain = this.vadGated ? 0 : this.currentInputGain;
-    this.audioPipelineGain.gain.setTargetAtTime(effectiveGain, this.audioPipelineCtx.currentTime, 0.015);
+    this.audioPipelineGain.gain.setTargetAtTime(this.currentInputGain, this.audioPipelineCtx.currentTime, 0.015);
   }
 
+  /** Kept as a READING, not an action: the VAD says whether it hears speech, and the UI shows
+   *  it. It no longer touches the audio — see the note in setupAudioPipeline. */
   private setVadGated(gated: boolean): void {
     this.vadGated = gated;
-    this.updatePipelineGain();
   }
 
   // --- Volume/sensitivity ---
@@ -667,27 +554,28 @@ export class AudioPipeline {
     // 2× ceiling: higher gains drive the mic signal into digital clipping.
     const clamped = Math.max(0, Math.min(200, volume));
     savePref("inputVolume", clamped);
+    const wasInPath = this.currentInputGain !== 1;
     this.currentInputGain = clamped / 100;
-    this.updatePipelineGain();
+    // Crossing unity changes whether there is a graph in the sending path at all, so the
+    // pipeline has to be rebuilt rather than nudged.
+    if (wasInPath !== (this.currentInputGain !== 1)) this.setupAudioPipeline();
+    else this.updatePipelineGain();
   }
 
   /**
-   * Apply voice sensitivity as a client-side VAD gate.
-   * Sensitivity 0 = gate everything (threshold impossibly high).
-   * Sensitivity 100 = gate nothing (no VAD polling).
-   * VAD sets gain to 0 when gated, restores inputVolume when ungated.
+   * The line above which the meter calls it speech.
+   *
+   * It used to be a transmission gate — silence below the line never left the machine — and
+   * that is not what conferencing clients do: the denoiser removes noise, the SFU decides who
+   * is speaking from the level in the packet header, and nothing on the send path is allowed
+   * to chop a quiet word. Somebody with an old low value saved was getting exactly that, and
+   * we heard it as "his audio is ragged". Now it only moves the indicator.
    */
   setVoiceSensitivity(sensitivity: number): void {
     const clamped = Math.max(0, Math.min(100, sensitivity));
     savePref("voiceSensitivity", clamped);
-    // Restart VAD polling with the new threshold (pipeline stays intact)
     this.stopVadPolling();
-    if (clamped >= 100) {
-      // Ensure ungated
-      if (this.vadGated) { this.vadGated = false; this.updatePipelineGain(); }
-    } else {
-      this.startVadPolling();
-    }
+    if (clamped < 100) this.startVadPolling();
     log.debug("Voice sensitivity updated", { sensitivity: clamped });
   }
 
@@ -704,6 +592,18 @@ export class AudioPipeline {
 
   /** Latest RMS value from VAD (for UI indicator bar). */
   get lastVadRms(): number { return this._lastVadRms; }
+
+  /** One reading of what we are actually publishing, off the analyser tap. For the voice
+   *  report: measuring beats asking someone whether it "sounds loud". */
+  readPublishedRms(): number | null {
+    const an = this.audioPipelineAnalyser;
+    if (an === null) return null;
+    const buf = new Float32Array(new ArrayBuffer(an.fftSize * 4));
+    an.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    return Math.sqrt(sum / buf.length);
+  }
   /** Whether VAD is using AudioWorklet (true) or setTimeout fallback (false). */
   get vadUsingWorklet(): boolean { return this._vadUsingWorklet; }
 

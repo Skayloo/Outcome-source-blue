@@ -1214,9 +1214,31 @@
   border-top: 1px solid var(--border);
 }
 
-/* Narrow screens: one column of full-width tiles; the strip scrolls sideways as-is. */
+/* Narrow screens: two columns that SCROLL, instead of one column that shrinks.
+   `grid-auto-rows: 1fr` divides the container's height between the rows, which is right for
+   four people and absurd for eighteen: every tile became a 50-pixel letterbox, `object-fit:
+   cover` cropped each face to a band, and the result was a collage of foreheads. A fixed
+   aspect ratio plus vertical scrolling keeps a face a face however many join. */
 @media (max-width: 560px) {
-  .guest-tiles { grid-template-columns: 1fr; }
+  .guest-tiles {
+    /* Columns follow BOTH the room and the screen, which is the whole trick.
+       The minimum track is the width that would give exactly --tile-cols columns (the count the
+       page derives from how many people are in the room, ~sqrt), floored at 150px. auto-fit
+       then packs as many as fit: never more than the layout asked for — four people get 2x2,
+       not 3+1 — and fewer when the phone is too narrow for even that. One person leaves a
+       single track that spans everything, so the tile fills the screen instead of sitting in a
+       corner. */
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(max(150px, calc((100% - (var(--tile-cols, 1) - 1) * 8px) / var(--tile-cols, 1))), 1fr)
+    );
+    /* And the rows: share the height while they can, stop shrinking at something a face still
+       fits in, and let the grid scroll past that. Four people fill the screen; fifty get fifty
+       legible tiles and a scrollbar, instead of fifty bands of forehead. */
+    grid-auto-rows: minmax(120px, 1fr);
+    overflow-y: auto; overscroll-behavior-y: contain;
+    gap: 8px;
+  }
   .guest-tiles.strip { justify-content: flex-start; height: 88px; }
   .guest-tiles.strip .guest-tile { flex-basis: 132px; }
   .guest-card.wide { padding: 10px 12px 0; }

@@ -13,6 +13,7 @@ import {
 import { loadPref, savePref } from "@components/settings/helpers";
 import { createLogger } from "@lib/logger";
 import { parseUserId } from "@lib/livekitSession";
+import { nextNormGain } from "@lib/loudnessNorm";
 
 const log = createLogger("audioElements");
 
@@ -39,12 +40,126 @@ export class AudioElements {
   /** Master output volume multiplier (0-2.0). Per-user volumes are scaled by this. */
   private outputVolumeMultiplier: number;
 
+  // --- Receive-side loudness normalisation ------------------------------------------------
+  // The ONE place a difference in loudness between people may be corrected. On the sending
+  // side the browser's AGC already regulates, and a second regulator racing it is what made
+  // the same person deafening in Chrome and quiet in Firefox. Here every voice is measured
+  // against the same target, on one listener's machine, and nobody's signal is rewritten for
+  // everyone else. See loudnessNorm.ts for the arithmetic and its check.
+  private ctx: AudioContext | null = null;
+  /** Passive taps: a source and an analyser per speaker, connected to NOTHING downstream. */
+  private levelTaps = new Map<number, { src: MediaStreamAudioSourceNode; an: AnalyserNode; buf: Float32Array<ArrayBuffer> }>();
+  private normGain = new Map<number, number>();
+  private normTimer: ReturnType<typeof setInterval> | null = null;
+
+  /** The page's AudioContext, handed over once voice is up. Without it there is no measuring
+   *  and normalisation simply does not happen — everything else works as before. */
+  setContext(ctx: AudioContext | null): void {
+    if (ctx === this.ctx) return;
+    this.ctx = ctx;
+    if (ctx === null) this.stopNormalising();
+  }
+
+  private addLevelTap(userId: number, track: MediaStreamTrack): void {
+    const ctx = this.ctx;
+    if (ctx === null || userId <= 0 || this.levelTaps.has(userId)) return;
+    try {
+      const src = ctx.createMediaStreamSource(new MediaStream([track]));
+      const an = ctx.createAnalyser();
+      an.fftSize = 1024;
+      src.connect(an); // and no further: a reading, not a stage
+      this.levelTaps.set(userId, { src, an, buf: new Float32Array(new ArrayBuffer(an.fftSize * 4)) });
+      this.startNormalising();
+    } catch (err) {
+      log.debug("could not tap remote level", err);
+    }
+  }
+
+  private removeLevelTap(userId: number): void {
+    const tap = this.levelTaps.get(userId);
+    if (tap === undefined) return;
+    tap.src.disconnect();
+    tap.an.disconnect();
+    this.levelTaps.delete(userId);
+    this.normGain.delete(userId);
+    if (this.levelTaps.size === 0) this.stopNormalising();
+  }
+
+  // 400 ms: slow enough that four ticks are a second of speech, which is the timescale the
+  // correction is allowed to move on. Faster and the listener hears it working.
+  private startNormalising(): void {
+    if (this.normTimer !== null) return;
+    this.normTimer = setInterval(() => this.tickNormalise(), 400);
+  }
+
+  private stopNormalising(): void {
+    if (this.normTimer !== null) { clearInterval(this.normTimer); this.normTimer = null; }
+    for (const userId of [...this.levelTaps.keys()]) this.removeLevelTap(userId);
+  }
+
+  private tickNormalise(): void {
+    for (const [userId, tap] of this.levelTaps) {
+      tap.an.getFloatTimeDomainData(tap.buf);
+      let sum = 0;
+      for (const v of tap.buf) sum += v * v;
+      const rms = Math.sqrt(sum / tap.buf.length);
+      const before = this.normGain.get(userId) ?? 1;
+      const after = nextNormGain(before, rms);
+      if (Math.abs(after - before) < 1e-4) continue;
+      this.normGain.set(userId, after);
+      this.applyVolume(userId);
+    }
+  }
+
+  private applyVolume(userId: number): void {
+    const participant = [...(this.room?.remoteParticipants.values() ?? [])]
+      .find((p) => parseUserId(p.identity) === userId);
+    participant?.setVolume(this.getEffectiveVolume(userId));
+  }
+
   constructor() {
     this.outputVolumeMultiplier = Math.min(loadPref<number>("outputVolume", 100), MAX_VOLUME_PCT) / 100;
   }
 
   setRoom(room: Room | null): void {
     this.room = room;
+  }
+
+  /**
+   * Mute the <audio> elements whose sound the Web Audio graph is already carrying.
+   *
+   * LiveKit mutes an element itself — but only when the AudioContext is on the track at the
+   * moment of attach (RemoteAudioTrack.attach). Safari hands the context over LATER, because
+   * it waits for a gesture, and setAudioContext() then wires up the graph without touching the
+   * element that is already playing. Both paths run, a few milliseconds apart, and every voice
+   * in the room is heard twice.
+   *
+   * Only ever called once playback has actually started through a context we own; if the graph
+   * were not carrying the audio, these elements would be the only thing anyone could hear.
+   */
+  silenceDoubledElements(): void {
+    for (const el of this.remoteMicAudioElements.values()) {
+      if (el.muted) continue;
+      el.muted = true;
+      el.volume = 0;
+    }
+  }
+
+  /** What each speaker is arriving at, and what we are doing about it. For the voice report. */
+  remoteLevels(): Array<{ userId: number; rms: number; norm: number; volume: number }> {
+    const out: Array<{ userId: number; rms: number; norm: number; volume: number }> = [];
+    for (const [userId, tap] of this.levelTaps) {
+      tap.an.getFloatTimeDomainData(tap.buf);
+      let sum = 0;
+      for (const v of tap.buf) sum += v * v;
+      out.push({
+        userId,
+        rms: Math.sqrt(sum / tap.buf.length),
+        norm: this.normGain.get(userId) ?? 1,
+        volume: this.getEffectiveVolume(userId),
+      });
+    }
+    return out;
   }
 
   /** Get the current output volume multiplier. */
@@ -55,7 +170,10 @@ export class AudioElements {
   /** Compute the effective volume for a participant: per-user volume * master output. */
   getEffectiveVolume(userId: number): number {
     const userVol = userId > 0 ? getSavedUserVolume(userId) : 100;
-    return (userVol / 100) * this.outputVolumeMultiplier;
+    // The normalisation factor rides on top of both, so a listener who drags someone's slider
+    // still gets exactly what they asked for, relative to a voice that is already levelled.
+    const norm = userId > 0 ? (this.normGain.get(userId) ?? 1) : 1;
+    return (userVol / 100) * this.outputVolumeMultiplier * norm;
   }
 
   private getScreenshareOutputVolume(): number {
@@ -103,6 +221,7 @@ export class AudioElements {
       if (track.sid !== undefined) {
         this.remoteMicAudioElements.set(track.sid, audioEl);
       }
+      this.addLevelTap(userId, track.mediaStreamTrack);
       // Apply saved per-user volume via LiveKit's setVolume (supports 0-2.0 range)
       participant.setVolume(this.getEffectiveVolume(userId));
       const savedOutput = loadPref<string>("audioOutputDevice", "");
@@ -133,6 +252,7 @@ export class AudioElements {
     } else {
       for (const el of track.detach()) el.remove();
       if (track.sid !== undefined) this.remoteMicAudioElements.delete(track.sid);
+      this.removeLevelTap(userId);
       log.debug("Remote audio track unsubscribed and detached", { userId, trackSid: track.sid });
     }
   }
@@ -215,6 +335,7 @@ export class AudioElements {
 
   /** Remove all remote audio elements from the DOM and clear tracking maps. */
   cleanupAllAudioElements(): void {
+    this.stopNormalising();
     for (const el of this.remoteMicAudioElements.values()) el.remove();
     this.remoteMicAudioElements.clear();
     for (const audioEls of this.screenshareAudioElements.values()) {

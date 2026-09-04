@@ -9,13 +9,18 @@
 import { Icon, type IconName } from "@lib/icons";
 
 export function VoiceCtl(
-  { name, label, on, red, onClick }:
-  { name: IconName; label: string; on?: boolean; red?: boolean; onClick: () => void },
+  { name, glyph, label, on, red, onClick }:
+  { name?: IconName; glyph?: string; label: string; on?: boolean; red?: boolean; onClick: () => void },
 ) {
   const cls = "vsc-btn" + (red ? " on-red" : on ? " on" : "");
   return (
     <div className="vsc-ctl">
-      <button className={cls} title={label} onClick={onClick}><Icon name={name} size={22} /></button>
+      {/* A glyph instead of an icon where the meaning IS the character: there is no hand in the
+          icon set, and a drawn hand next to a real emoji reaction bar would read as two
+          different vocabularies. */}
+      <button className={cls} title={label} onClick={onClick}>
+        {glyph !== undefined ? <span className="vsc-glyph">{glyph}</span> : name !== undefined ? <Icon name={name} size={22} /> : null}
+      </button>
       <span className="vsc-ctl-label">{label}</span>
     </div>
   );

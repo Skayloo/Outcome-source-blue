@@ -9,6 +9,8 @@ import { createLogger } from "./logger";
 import { runtimeApiBase } from "./runtimeConfig";
 import { getActiveServerId } from "@stores/servers.store";
 import type {
+  SupportMailSummary,
+  SupportMailMessage,
   PublicUser,
   FriendsListResponse,
   AdminStatsResponse,
@@ -767,6 +769,21 @@ export function createApiClient(
     /** Admin: paged moderation inbox. */
     adminListReportsPaged(limit: number, offset: number, signal?: AbortSignal): Promise<{ items: MessageReportDto[]; total: number }> {
       return pagedGet<MessageReportDto>("API", baseUrl(), "/admin/reports", limit, offset, signal);
+    },
+
+    /** Admin: the support mailbox. `configured` is false when the server has no mailbox set,
+     *  which is not an error — the panel says so rather than showing a failure. */
+    adminListMail(limit: number, offset: number, signal?: AbortSignal):
+      Promise<{ configured: boolean; messages: SupportMailSummary[] }> {
+      return request("GET", `/admin/mail?limit=${limit}&offset=${offset}`, undefined, signal);
+    },
+
+    adminGetMail(uid: number, signal?: AbortSignal): Promise<SupportMailMessage> {
+      return request("GET", `/admin/mail/${uid}`, undefined, signal);
+    },
+
+    adminReplyMail(uid: number, text: string, signal?: AbortSignal): Promise<void> {
+      return request<void>("POST", `/admin/mail/${uid}/reply`, { text }, signal);
     },
 
     adminSetReportStatus(id: number, status: ReportStatus, signal?: AbortSignal): Promise<void> {

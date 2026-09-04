@@ -21,6 +21,8 @@ import {
   DisconnectReason,
 } from "livekit-client";
 import { runtimeLivekitUrl } from "@lib/runtimeConfig";
+import { onReaction, raisedHands, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
+import { describeMediaError } from "@lib/mediaErrors";
 import { serverOrigin } from "@lib/serverHost";
 import type { WsClient } from "@lib/ws";
 import {
@@ -38,6 +40,7 @@ import {
   setVoiceTransport,
   setAudioBlocked,
   setAudioSmoothed,
+  setRaisedHands,
 } from "@stores/voice.store";
 import { loadPref } from "@components/settings/helpers";
 import { showToast } from "@stores/ui.store";
@@ -177,6 +180,8 @@ export class LiveKitSession {
     // into a stopped graph while the speaking indicator, computed by the SFU, keeps blinking:
     // the caller sees a talking head and hears nothing. Prime here so the room always gets OURS.
     this._audioPipeline.primeContext();
+    // The receive-side normaliser measures in this context; without it it simply does nothing.
+    this._audioElements.setContext(this._audioPipeline.context);
     this.audioStarted = false;
     const quality = getStreamQuality();
     const isSource = quality === "source";
@@ -221,6 +226,13 @@ export class LiveKitSession {
     newRoom.on(RoomEvent.TrackUnpublished, (_pub, p) => this.syncGuestParticipant(p));
     newRoom.on(RoomEvent.Disconnected, this.handleDisconnected);
     newRoom.on(RoomEvent.ActiveSpeakersChanged, this.handleActiveSpeakersChanged);
+    // Hands are participant attributes, so every event that can change the roster or an
+    // attribute recomputes the whole set — six entries, and the alternative is a diff nobody
+    // can debug at midnight.
+    newRoom.on(RoomEvent.ParticipantAttributesChanged, this.syncHands);
+    newRoom.on(RoomEvent.LocalTrackPublished, this.syncHands);
+    newRoom.on(RoomEvent.ParticipantConnected, this.syncHands);
+    newRoom.on(RoomEvent.ParticipantDisconnected, this.syncHands);
     newRoom.on(RoomEvent.AudioPlaybackStatusChanged, this.handleAudioPlaybackChanged);
     newRoom.on(RoomEvent.LocalTrackPublished, this.handleLocalTrackPublished);
 
@@ -426,6 +438,41 @@ export class LiveKitSession {
     });
   }
 
+  /** Push LiveKit's view of raised hands into the store the tiles read. */
+  private syncHands = (): void => {
+    if (this.room === null) return;
+    const byUser = new Map<number, number>();
+    for (const [identity, at] of raisedHands(this.room)) {
+      const userId = parseUserId(identity);
+      if (userId > 0) byUser.set(userId, at);
+    }
+    setRaisedHands(byUser);
+  };
+
+  /** Raise or lower our own hand; the room hears about it through attributes. */
+  async setHandRaised(up: boolean): Promise<void> {
+    if (this.room === null) return;
+    await setHandRaised(this.room, up);
+    this.syncHands();
+  }
+
+  /** Fire a reaction into the room. Silently does nothing outside a call, which is what a
+   *  keyboard shortcut pressed in the wrong window should do. */
+  async sendReaction(emoji: Reaction): Promise<void> {
+    if (this.room === null) return;
+    await sendReaction(this.room, emoji);
+  }
+
+  /** Subscribe to reactions, by userId. Returns an unsubscribe; a no-op one when there is no
+   *  room, so callers do not have to care. */
+  onReaction(cb: (userId: number, emoji: Reaction) => void): () => void {
+    if (this.room === null) return () => { /* not in a call */ };
+    return onReaction(this.room, (identity, emoji) => {
+      const userId = parseUserId(identity);
+      if (userId > 0) cb(userId, emoji);
+    });
+  }
+
   /** LiveKit's built-in speaking detection — replaces custom RMS polling. */
   private handleActiveSpeakersChanged = (speakers: Participant[]): void => {
     if (this.currentChannelId === null) return;
@@ -534,6 +581,10 @@ export class LiveKitSession {
       await this.room.startAudio();
       this.audioStarted = true;
       setAudioBlocked(false);
+      // The graph is carrying the room now, so anything still coming out of an <audio> element
+      // is the same voice a second time — see AudioElements.silenceDoubledElements. Guarded on
+      // the context being OURS: without one the elements are the only audible path.
+      if (this._audioPipeline.context !== null) this._audioElements.silenceDoubledElements();
       log.info("Audio playback started");
     } catch (err) {
       // Either no gesture was in hand, or an element still refuses. Wait for the next one.
@@ -1088,7 +1139,19 @@ export class LiveKitSession {
     // Tell the server (which broadcasts VoiceState) — without this, nobody else ever
     // learns the mic is off and the 🔇 badge never shows on other clients.
     this.ws?.send({ type: "voice_mute", payload: { muted } });
-    this.applyMicMuteState(muted).catch((e) => log.warn("applyMicMuteState failed", e));
+    this.applyMicMuteState(muted).catch((e: unknown) => {
+      log.warn("applyMicMuteState failed", e);
+      // Failing to MUTE is not something to undo — the track is already going quiet. Failing to
+      // UNMUTE is: the dock would keep saying you are live while the browser refused the
+      // microphone, and you would talk to a room that cannot hear you. Put the state back and
+      // say why, instead of leaving a button that visibly does nothing.
+      if (muted) return;
+      setLocalMuted(true);
+      this.ws?.send({ type: "voice_mute", payload: { muted: true } });
+      const denied = e instanceof DOMException
+        && (e.name === "NotAllowedError" || e.name === "SecurityError");
+      this.onErrorCallback?.(t(denied ? "voice.micBlocked" : "voice.micFailed"));
+    });
   }
 
   setDeafened(deafened: boolean): void {
@@ -1154,13 +1217,9 @@ export class LiveKitSession {
     } catch (err) {
       setLocalCamera(false);
       log.error("Failed to enable camera", err);
-      if (err instanceof DOMException && err.name === "NotAllowedError") {
-        this.onErrorCallback?.("Camera permission denied");
-      } else if (err instanceof DOMException && err.name === "NotFoundError") {
-        this.onErrorCallback?.("No camera found");
-      } else {
-        this.onErrorCallback?.("Failed to start camera");
-      }
+      // Localised, and with the case these three lines were missing: a camera another app is
+      // holding fails as NotReadableError and used to land in "Failed to start camera".
+      this.onErrorCallback?.(describeMediaError(err, "camera"));
     }
   }
 
@@ -1428,6 +1487,48 @@ export class LiveKitSession {
     };
   }
 
+  /**
+   * Everything needed to answer "why does it sound like that", in one paste.
+   *
+   * Written because the last three evenings of voice bugs were spent measuring with the words
+   * "loud" and "ragged". The most valuable line is `applied`: what the browser ACTUALLY did
+   * with our capture constraints, which is not always what we asked for and is the whole
+   * difference between Chrome and Firefox.
+   */
+  getVoiceReport(): Record<string, unknown> {
+    const micPub = this.room?.localParticipant.getTrackPublication(Track.Source.Microphone);
+    const settings = micPub?.track?.mediaStreamTrack.getSettings() as Record<string, unknown> | undefined;
+    return {
+      browser: navigator.userAgent,
+      room: this.room?.name ?? null,
+      state: this.room?.state ?? null,
+      transport: this.getIceConnectionState(),
+      mic: {
+        muted: micPub?.isMuted ?? null,
+        engine: this._audioPipeline.activeEngine,
+        // What the browser granted, not what we requested.
+        applied: settings === undefined ? null : {
+          deviceId: settings.deviceId,
+          sampleRate: settings.sampleRate,
+          echoCancellation: settings.echoCancellation,
+          noiseSuppression: settings.noiseSuppression,
+          autoGainControl: settings.autoGainControl,
+          voiceIsolation: settings.voiceIsolation,
+        },
+        publishedRms: this._audioPipeline.readPublishedRms(),
+        inputVolume: this._audioPipeline.inputGain,
+        sensitivity: loadPref<number>("voiceSensitivity", 98),
+      },
+      audio: {
+        contextState: this._audioPipeline.ctxState,
+        playbackStarted: this.audioStarted,
+        canPlayback: this.room?.canPlaybackAudio ?? null,
+        outputVolume: this._audioElements.getOutputVolumeMultiplier(),
+      },
+      speakers: this._audioElements.remoteLevels(),
+    };
+  }
+
   /** Log ICE connection details for debugging cross-network voice issues. */
   private logIceConnectionInfo(): void {
     if (this.room === null) return;
@@ -1525,6 +1626,7 @@ const session = new LiveKitSession();
 // Usage: JSON.stringify(__outcome.lkDebug(), null, 2)
 const outcomeNs = ((window as unknown as Record<string, unknown>).__outcome ??= {}) as Record<string, unknown>;
 outcomeNs.lkDebug = session.getSessionDebugInfo.bind(session);
+outcomeNs.voiceReport = session.getVoiceReport.bind(session);
 
 /** Create the AudioContext while a click is still being handled — see AudioPipeline.primeContext. */
 export const primeVoiceContext = (): void => session.audioPipeline.primeContext();
@@ -1541,6 +1643,9 @@ export const retryMicPermission = session.retryMicPermission.bind(session);
 export const unlockAudio = session.unlockAudio.bind(session);
 export const cleanupAll = session.cleanupAll.bind(session);
 export const setMuted = session.setMuted.bind(session);
+export const setHandRaisedLocal = session.setHandRaised.bind(session);
+export const sendVoiceReaction = session.sendReaction.bind(session);
+export const onVoiceReaction = session.onReaction.bind(session);
 export const setDeafened = session.setDeafened.bind(session);
 export const enableCamera = session.enableCamera.bind(session);
 export const disableCamera = session.disableCamera.bind(session);

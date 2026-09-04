@@ -21,14 +21,15 @@ import { AdminSpacesPanel } from "@components/admin/AdminSpacesPanel";
 import { loadSpace, isRootSpace } from "@lib/space";
 import { AdminBugsPanel } from "@components/admin/AdminBugsPanel";
 import { AdminReportsPanel } from "@components/admin/AdminReportsPanel";
+import { AdminMailPanel } from "@components/admin/AdminMailPanel";
 
 type Section =
-  | "dashboard" | "logs" | "audit" | "users" | "servers" | "spaces" | "roles" | "invites" | "server" | "bugs" | "reports";
+  | "dashboard" | "logs" | "audit" | "users" | "servers" | "spaces" | "roles" | "invites" | "server" | "bugs" | "reports" | "mail";
 
 /** Sections that belong to whoever RUNS the instance: process-wide logs, infrastructure
  *  health, instance settings, the bug queue and the space registry itself. The backend
  *  refuses them from a tenant host too — this only keeps the console honest. */
-const INSTANCE_ONLY: ReadonlySet<Section> = new Set<Section>(["dashboard", "logs", "bugs", "server", "spaces"]);
+const INSTANCE_ONLY: ReadonlySet<Section> = new Set<Section>(["dashboard", "logs", "bugs", "server", "spaces", "mail"]);
 
 interface NavItem { id: Section; icon: IconName; label: () => string }
 interface NavGroup { title: () => string; items: NavItem[] }
@@ -49,6 +50,7 @@ const NAV: NavGroup[] = [
     { id: "invites", icon: "user-plus", label: () => t("admin.invites") },
     { id: "reports", icon: "flag", label: () => t("admin.reports") },
     { id: "bugs", icon: "bug", label: () => t("admin.bugs") },
+    { id: "mail", icon: "reply", label: () => t("admin.mail") },
   ] },
   { title: () => t("admin.grpSettings"), items: [
     { id: "server", icon: "settings", label: () => t("admin.serverSettings") },
@@ -58,6 +60,7 @@ const NAV: NavGroup[] = [
 const TITLES: Record<Section, () => string> = {
   dashboard: () => t("admin.dashboard"),
   logs: () => t("admin.serverLogs"),
+  mail: () => t("admin.mail"),
   audit: () => t("admin.auditLog"),
   users: () => t("admin.users"),
   servers: () => t("admin.servers"),
@@ -162,6 +165,7 @@ export function AdminPage() {
             {section === "invites" && <InviteManager />}
             {section === "bugs" && <AdminBugsPanel />}
             {section === "reports" && <AdminReportsPanel />}
+            {section === "mail" && <AdminMailPanel />}
             {section === "server" && <ServerSettingsPanel />}
           </div>
         </main>

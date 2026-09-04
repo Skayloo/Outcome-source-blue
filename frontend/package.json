@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/build-rnnoise-worklet.mjs && tsc --noEmit && vite build",
+    "worklet": "node scripts/build-rnnoise-worklet.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

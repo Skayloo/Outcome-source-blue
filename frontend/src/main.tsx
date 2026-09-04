@@ -15,6 +15,7 @@ import "@styles/motion.css";
 import "@styles/responsive.css";
 import { App } from "./App";
 import { prefetchDeepFilter } from "@lib/noise-suppression-dfn";
+import { loadPref } from "@components/settings/helpers";
 import { migrateLegacyPrefs } from "@components/settings/helpers";
 import { applyAllPreferences } from "@lib/applyPreferences";
 
@@ -24,8 +25,10 @@ applyAllPreferences();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
 
-// Pull the noise-suppression model down in the background, once, so that joining a call
-// never has to choose the weaker filter just because nobody had used voice on this machine
-// yet. Idle-time and fire-and-forget: it must not compete with anything the app is doing.
-if (typeof requestIdleCallback === "function") requestIdleCallback(() => void prefetchDeepFilter());
-else setTimeout(() => void prefetchDeepFilter(), 4000);
+// DeepFilterNet is 24 MB and is no longer the default filter, so it is pulled down only for
+// the people who actually chose it. Everyone else runs RNNoise, which ships with the bundle.
+// Idle-time and fire-and-forget: it must not compete with anything the app is doing.
+if (loadPref<string>("nsEngine", "rnnoise") === "deepfilter") {
+  if (typeof requestIdleCallback === "function") requestIdleCallback(() => void prefetchDeepFilter());
+  else setTimeout(() => void prefetchDeepFilter(), 4000);
+}

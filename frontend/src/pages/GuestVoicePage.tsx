@@ -15,11 +15,14 @@ import {
 import { BrandMark, useSpaceBrand } from "@components/BrandMark";
 import { Icon } from "@lib/icons";
 import { VoiceCtl } from "@components/VoiceCtl";
+import { FloatingReactions, VoiceFxControls, useReactionFeed } from "@components/VoiceFx";
+import { describeMediaError } from "@lib/mediaErrors";
+import { onReaction, raisedHands, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
 import { createLogger } from "@lib/logger";
 import { t } from "@lib/i18n";
 import { createRNNoiseProcessor, MIN_DENOISE_RATE, micInputRate, handBackToBrowser } from "@lib/noise-suppression";
-import { createDeepFilterProcessor, deepFilterWarmed, prefetchDeepFilter, supportsDeepFilter } from "@lib/noise-suppression-dfn";
 import { AudioPipeline, micCaptureOptions } from "@lib/audioPipeline";
+import { nextNormGain } from "@lib/loudnessNorm";
 
 const log = createLogger("guest-voice");
 
@@ -62,26 +65,20 @@ async function attachNoiseSuppressor(room: Room, rebuild: () => void, pipeline: 
     return;
   }
 
-  // Loudness FIRST, model second. The denoiser judges what it is given, and given a raw quiet
-  // microphone it judges the voice to be noise — so the levelling has to happen before it sees
-  // anything. LiveKit's replaceTrack is the seam: publish the normalised track, then attach
-  // the processor on top of it.
-  const levelled = pipeline.installPreGain(mediaTrack);
-  if (levelled !== null) {
-    try {
-      await mic.track.replaceTrack(levelled);
-      log.info("publishing the normalised microphone");
-    } catch (err) {
-      // Keep the raw track rather than lose audio over a failed swap.
-      log.warn("could not publish the normalised track — staying on the raw one", err);
-    }
-  }
+  // No levelling stage in front of the model any more. It was here because the browser's AGC
+  // had been turned off and Firefox handed over a raw, near-inaudible microphone — but the AGC
+  // is on again, it does the coarse lift where WebRTC intends it to, and a second regulator on
+  // the same signal is what every one of these bugs has turned out to be.
 
-  const warmed = deepFilterWarmed();
   try {
+    // RNNoise, and only RNNoise. It is what Jitsi ships in a worklet — a few hundred kilobytes
+    // against DeepFilterNet's 24 MB — and a guest who clicked a link once should not spend the
+    // first minute of the call downloading a model. The swap to the heavier filter mid-call
+    // used to live here and was its own source of silence: replacing the track under a running
+    // graph leaves the graph reading one nothing flows through.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- setProcessor's generic is wider than the audio processor it accepts at runtime
-    await mic.track.setProcessor((warmed ? createDeepFilterProcessor() : createRNNoiseProcessor()) as any);
-    log.info("noise suppressor attached", { engine: warmed ? "deepfilter" : "rnnoise" });
+    await mic.track.setProcessor(createRNNoiseProcessor() as any);
+    log.info("noise suppressor attached", { engine: "rnnoise" });
   } catch (err) {
     // Our filter owns the signal only while it is actually running. Hand the microphone back
     // to the browser's own suppressor rather than leaving the guest with no suppression at
@@ -90,34 +87,9 @@ async function attachNoiseSuppressor(room: Room, rebuild: () => void, pipeline: 
     await handBackToBrowser(mediaTrack, "attach failed");
     return;
   }
-
-  // If the model was not ready, upgrade as soon as it lands. It matters more here than
-  // anywhere: a guest clicked a link once, so "the strong filter from your next call" may mean
-  // never. Waiting a few seconds into this one is the only chance they get.
-  //
-  // The comment here used to say this page has no audio pipeline and so could swap freely.
-  // That stopped being true when the pipeline was added: a swap replaces the track its source
-  // node reads, leaving the graph wired to one nothing flows through — silence, permanently,
-  // not for a few seconds. So the upgrade now rebuilds the pipeline after the swap, which is
-  // cheap because the context underneath is shared and stays awake.
-  if (!warmed && supportsDeepFilter()) void upgradeGuest(room, rebuild);
+  rebuild();
 }
 
-async function upgradeGuest(room: Room, rebuild: () => void): Promise<void> {
-  try {
-    await prefetchDeepFilter();
-    const mic = room.localParticipant.getTrackPublication(Track.Source.Microphone);
-    if (mic?.track === undefined) return; // call ended while the model was coming down
-    await mic.track.stopProcessor();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same wide generic as above
-    await mic.track.setProcessor(createDeepFilterProcessor() as any);
-    // The track the graph was reading is gone with the old processor; rebuild onto the new one.
-    rebuild();
-    log.info("upgraded to DeepFilterNet mid-call");
-  } catch (err) {
-    log.warn("DeepFilterNet upgrade failed — staying on RNNoise", err);
-  }
-}
 
 /**
  * Register a one-shot document listener that unlocks audio on the next interaction.
@@ -125,12 +97,120 @@ async function upgradeGuest(room: Room, rebuild: () => void): Promise<void> {
  * Idempotent by construction: the listener removes itself, and re-arming while one is already
  * waiting would only add a second that does the same thing.
  */
+/** The microphone a returning guest picked last time. Their own browser, their own choice —
+ *  it never leaves the device. */
+const GUEST_MIC_KEY = "outcome:guest:micId";
+
+/** The page's AudioContext, once the join has one. Module-level because the unlock handlers
+ *  below live out here too, and they need to know whether the Web Audio graph — rather than
+ *  the <audio> elements — is what the room is being heard through. */
+let guestSharedCtx: AudioContext | null = null;
+
+/**
+ * Receive-side loudness levelling for the guest page.
+ *
+ * The signed-in client got this and the guest page did not — and the guest page is where the
+ * dailies actually happen, so "still a bit floaty" was measured on the one path without it.
+ * Same arithmetic, same bounds, same reason it belongs here and not on the sender: the browser
+ * already regulates there, and a second regulator racing it is the whole bug we just removed.
+ */
+const guestTaps = new Map<string, { p: RemoteParticipant; an: AnalyserNode; src: MediaStreamAudioSourceNode; buf: Float32Array<ArrayBuffer>; gain: number }>();
+let guestNormTimer: ReturnType<typeof setInterval> | null = null;
+
+function guestTapLevel(participant: RemoteParticipant, track: RemoteTrack): void {
+  const ctx = guestSharedCtx;
+  if (ctx === null || guestTaps.has(participant.identity)) return;
+  try {
+    const an = ctx.createAnalyser();
+    an.fftSize = 1024;
+    const src = ctx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack]));
+    src.connect(an); // a reading, not a stage
+    guestTaps.set(participant.identity, {
+      p: participant, an, src, buf: new Float32Array(new ArrayBuffer(an.fftSize * 4)), gain: 1,
+    });
+    guestNormTimer ??= setInterval(() => {
+      for (const tap of guestTaps.values()) {
+        tap.an.getFloatTimeDomainData(tap.buf);
+        let sum = 0;
+        for (const v of tap.buf) sum += v * v;
+        const next = nextNormGain(tap.gain, Math.sqrt(sum / tap.buf.length));
+        if (Math.abs(next - tap.gain) < 1e-4) continue;
+        tap.gain = next;
+        tap.p.setVolume(next);
+      }
+    }, 400);
+  } catch (err) {
+    log.debug("could not tap remote level", err);
+  }
+}
+
+/** The guest half of __outcome.voiceReport(): that one reads the signed-in session, which on
+ *  this page is empty. Same question, same paste, different room. */
+function installGuestReport(room: Room, pipeline: AudioPipeline): void {
+  const ns = ((window as unknown as Record<string, unknown>).__outcome ??= {}) as Record<string, unknown>;
+  ns.voiceReport = (): Record<string, unknown> => {
+    const mic = room.localParticipant.getTrackPublication(Track.Source.Microphone);
+    const settings = mic?.track?.mediaStreamTrack.getSettings() as Record<string, unknown> | undefined;
+    return {
+      page: "guest",
+      browser: navigator.userAgent,
+      room: room.name,
+      state: room.state,
+      mic: {
+        muted: mic?.isMuted ?? null,
+        engine: pipeline.activeEngine,
+        applied: settings === undefined ? null : {
+          deviceId: settings.deviceId, sampleRate: settings.sampleRate,
+          echoCancellation: settings.echoCancellation,
+          noiseSuppression: settings.noiseSuppression,
+          autoGainControl: settings.autoGainControl,
+          voiceIsolation: settings.voiceIsolation,
+        },
+        publishedRms: pipeline.readPublishedRms(),
+      },
+      audio: { contextState: pipeline.ctxState, canPlayback: room.canPlaybackAudio },
+      speakers: [...guestTaps.entries()].map(([identity, tap]) => {
+        tap.an.getFloatTimeDomainData(tap.buf);
+        let sum = 0;
+        for (const v of tap.buf) sum += v * v;
+        return { identity, rms: Math.sqrt(sum / tap.buf.length), norm: tap.gain };
+      }),
+    };
+  };
+}
+
+function guestDropTap(identity: string): void {
+  const tap = guestTaps.get(identity);
+  if (tap === undefined) return;
+  tap.src.disconnect();
+  tap.an.disconnect();
+  guestTaps.delete(identity);
+  if (guestTaps.size === 0 && guestNormTimer !== null) {
+    clearInterval(guestNormTimer);
+    guestNormTimer = null;
+  }
+}
+
 let guestUnlockArmed = false;
 /** Set once room.startAudio() has RESOLVED. canPlaybackAudio is NOT that: with webAudioMix
  *  LiveKit recomputes it from the AudioContext state, so a play() the browser refused still
  *  reports "allowed" a moment later — and the tab stays mute with nothing armed to ask again.
  *  Same trap as livekitSession.audioStarted; both sides learned it the same evening. */
 let guestAudioStarted = false;
+/** The same doubling trap the signed-in client has — see AudioElements.silenceDoubledElements.
+ *  Safari hands the AudioContext over only after a gesture, so the elements attached before
+ *  that keep playing alongside the graph and every voice arrives twice. */
+function silenceDoubledGuestAudio(): void {
+  if (guestSharedCtx === null) return;
+  for (const el of document.querySelectorAll("audio")) {
+    // LiveKit's iOS workaround plays an empty track on purpose; muting it breaks the very
+    // thing it is there for.
+    if (el.id === "livekit-dummy-audio-el" || el.muted) continue;
+    el.muted = true;
+    el.volume = 0;
+  }
+}
+
 function armGuestAudioUnlock(room: Room): void {
   if (guestUnlockArmed) return;
   guestUnlockArmed = true;
@@ -138,7 +218,7 @@ function armGuestAudioUnlock(room: Room): void {
     guestUnlockArmed = false;
     for (const e of ["pointerdown", "keydown", "touchstart"]) document.removeEventListener(e, unlock);
     void room.startAudio()
-      .then(() => { guestAudioStarted = true; })
+      .then(() => { guestAudioStarted = true; silenceDoubledGuestAudio(); })
       // Refused: this gesture was not one the browser accepts. Wait for the next rather than
       // leaving the visitor with a room that looks connected and plays nothing.
       .catch(() => armGuestAudioUnlock(room));
@@ -187,23 +267,35 @@ export function GuestVoicePage({ code }: { code: string }) {
   const [channelName, setChannelName] = useState("");
   const [serverName, setServerName] = useState("");
   const [name, setName] = useState("");
+  // Which microphone to publish with. A laptop with a webcam, a headset and a monitor all
+  // report a microphone, the browser picks whichever it calls "default", and until now the
+  // guest page had no way to disagree — the signed-in client has had a picker all along.
+  const [mics, setMics] = useState<Array<{ id: string; label: string }>>([]);
+  /** Written to directly rather than through state: this moves twenty times a second, and a
+   *  React render per frame to animate one bar is how a join screen starts dropping frames. */
+  const meterRef = useRef<HTMLDivElement>(null);
+  /** Whether the browser actually handed over a microphone on this screen. "denied" is the
+   *  state that used to be invisible: no labels, no device list, a bar that never moves, and
+   *  nothing on screen saying why. */
+  const [micProbe, setMicProbe] = useState<"pending" | "ok" | "denied">("pending");
+  const [micId, setMicId] = useState<string>(() => {
+    try { return localStorage.getItem(GUEST_MIC_KEY) ?? ""; } catch { return ""; }
+  });
   const [error, setError] = useState<string | null>(null);
   const [tiles, setTiles] = useState<Tile[]>([]);
+  /** Raised hands by participant identity — LiveKit attributes, so a hand raised before we
+   *  joined is already there and one whose owner leaves takes itself down. */
+  const [hands, setHands] = useState<ReadonlyMap<string, number>>(new Map());
+  const reactions = useReactionFeed<string>(
+    (cb) => (roomRef.current === null ? () => { /* not connected */ } : onReaction(roomRef.current, cb)),
+    [phase],
+  );
   // Joins muted, like every other conference tool: a guest clicking a link has no idea what
   // their microphone is about to broadcast, and twenty live microphones is what a call sounds
   // like when it fails. The camera starts off for the same reason.
   const [muted, setMuted] = useState(true);
   const [camera, setCamera] = useState(false);
   const [screen, setScreen] = useState(false);
-  // Start the 24 MB filter downloading the moment the page opens, not after the guest is
-  // already talking. It used to begin inside the room: RNNoise carried the call while
-  // DeepFilterNet came down, so a guest spent the first minute — sometimes the whole call —
-  // on the weak filter, which is what "the noise suppressor does nothing" was. The name
-  // field, the microphone prompt and the join click are dead time the download can have.
-  useEffect(() => {
-    if (supportsDeepFilter()) void prefetchDeepFilter();
-  }, []);
-
   const roomRef = useRef<Room | null>(null);
   const workerRef = useRef<Worker | null>(null);
   /**
@@ -290,7 +382,85 @@ export function GuestVoicePage({ code }: { code: string }) {
       });
     }
     setTiles(list);
+    setHands(raisedHands(room));
   };
+
+  // Fill the picker while the guest is still deciding to join. Two things happen here, and
+  // the second matters more: device LABELS stay empty until the page has held a microphone
+  // once, so we take one briefly — which also puts the browser's permission prompt on THIS
+  // screen. Refused here, the guest finds out now, not two minutes later in a room full of
+  // people where the unmute button just flips back and says nothing.
+  useEffect(() => {
+    if (phase !== "form") return;
+    let cancelled = false;
+    let probe: MediaStream | null = null;
+    const stopProbe = (): void => { probe?.getTracks().forEach((tr) => tr.stop()); probe = null; };
+    const list = (): void => {
+      void navigator.mediaDevices?.enumerateDevices().then((devices) => {
+        if (cancelled) return;
+        setMics(devices
+          // "default" and "communications" are the browser's own aliases for a real device
+          // further down the list; our first option already means "whatever the system picks".
+          .filter((d) => d.kind === "audioinput"
+            && d.deviceId !== "default" && d.deviceId !== "communications" && d.deviceId !== "")
+          .map((d) => ({
+            id: d.deviceId,
+            label: d.label || t("settings.deviceMicrophone", { id: d.deviceId.slice(0, 8) }),
+          })));
+      }).catch(() => { /* enumeration unavailable — the picker stays on the default */ });
+    };
+    let raf = 0;
+    const meter = (an: AnalyserNode): void => {
+      const buf = new Float32Array(new ArrayBuffer(an.fftSize * 4));
+      const tick = (): void => {
+        an.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (const v of buf) sum += v * v;
+        const rms = Math.sqrt(sum / buf.length);
+        // Square root, not the raw value: loudness is not linear, and a bar that only twitches
+        // when you shout tells the guest their microphone is broken when it is fine.
+        const pct = Math.min(100, Math.round(Math.sqrt(rms) * 180));
+        if (meterRef.current !== null) meterRef.current.style.width = `${pct}%`;
+        raf = requestAnimationFrame(tick);
+      };
+      tick();
+    };
+    void (async () => {
+      try {
+        probe = await navigator.mediaDevices.getUserMedia(
+          micId ? { audio: { deviceId: { exact: micId } } } : { audio: true });
+        if (!cancelled) setMicProbe("ok");
+      } catch {
+        // Refused, or no microphone at all. Say so HERE — this is the screen where it can
+        // still be fixed, and a dead level bar with no explanation is what a broken app looks
+        // like. Without permission the browser also hands back devices with empty ids, which
+        // is why the picker would otherwise silently not be there either.
+        if (!cancelled) setMicProbe("denied");
+      }
+      if (cancelled) { stopProbe(); return; }
+      list();
+      // The stream stays open while this screen is up, on purpose: it drives the level bar, so
+      // a guest can see their own voice move BEFORE joining. Every conference tool shows the
+      // recording indicator on its pre-join screen for exactly this reason.
+      if (probe !== null) {
+        pipelineRef.current.primeContext();
+        const ctx = pipelineRef.current.context;
+        if (ctx !== null) {
+          const an = ctx.createAnalyser();
+          an.fftSize = 1024;
+          ctx.createMediaStreamSource(probe).connect(an);
+          meter(an);
+        }
+      }
+      navigator.mediaDevices?.addEventListener("devicechange", list);
+    })();
+    return () => {
+      cancelled = true;
+      if (raf !== 0) cancelAnimationFrame(raf);
+      stopProbe();
+      navigator.mediaDevices?.removeEventListener("devicechange", list);
+    };
+  }, [phase, micId]);
 
   async function join(ev: React.FormEvent) {
     ev.preventDefault();
@@ -315,6 +485,7 @@ export function GuestVoicePage({ code }: { code: string }) {
       // on Firefox while the same call was fine on Chrome.
       pipelineRef.current.primeContext();
       const sharedAudioContext = pipelineRef.current.context;
+      guestSharedCtx = sharedAudioContext;
       guestAudioStarted = false; // fresh room, fresh elements: nothing has played yet
       const room = new Room({
         adaptiveStream: true,
@@ -324,7 +495,9 @@ export function GuestVoicePage({ code }: { code: string }) {
         // dropping the room's floor between words — the hardest case for a denoiser. AGC can
         // be off here now because the pipeline below restores the loudness after the model,
         // which is the only place it can be done without moving the floor the model reads.
-        audioCaptureDefaults: micCaptureOptions(),
+        // ...plus the device the guest chose on the way in. Empty means "let the browser
+        // decide", which is what it did on its own before this picker existed.
+        audioCaptureDefaults: { ...micCaptureOptions(), ...(micId ? { deviceId: micId } : {}) },
         // The room shares the page's context rather than making its own. LiveKit documents
         // this option as being for exactly this — "enables audio mixing via the Web Audio API
         // to bypass autoplay restrictions" — and the signed-in client has had it all along,
@@ -343,7 +516,10 @@ export function GuestVoicePage({ code }: { code: string }) {
         .on(RoomEvent.TrackMuted, () => rerender())
         .on(RoomEvent.TrackUnmuted, () => rerender())
         .on(RoomEvent.LocalTrackUnpublished, (_pub: LocalTrackPublication) => rerender())
-        .on(RoomEvent.Disconnected, () => setPhase("closed"))
+        .on(RoomEvent.Disconnected, () => {
+          for (const identity of [...guestTaps.keys()]) guestDropTap(identity);
+          setPhase("closed");
+        })
         // A phone will not play incoming audio until the visitor gestures. Without a visible
         // button they never do, and the room simply seems dead.
         .on(RoomEvent.AudioPlaybackStatusChanged, () => {
@@ -356,18 +532,23 @@ export function GuestVoicePage({ code }: { code: string }) {
           // should have to find it to be heard.
           if (blocked || !guestAudioStarted) armGuestAudioUnlock(room);
         })
+        .on(RoomEvent.ParticipantAttributesChanged, () => refreshTiles(room))
         .on(RoomEvent.TrackSubscribed,
-          (track: RemoteTrack, _pub: RemoteTrackPublication, _p: RemoteParticipant) => {
+          (track: RemoteTrack, _pub: RemoteTrackPublication, p: RemoteParticipant) => {
             // Audio is attached to a hidden sink; video is rendered by the tiles below.
             if (track.kind === Track.Kind.Audio && audioRef.current) {
               audioRef.current.appendChild(track.attach());
+              guestTapLevel(p, track);
             }
             rerender();
           })
-        .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        .on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack, _pub: RemoteTrackPublication, p: RemoteParticipant) => {
           track.detach().forEach((el) => el.remove());
+          guestDropTap(p.identity);
           rerender();
         });
+
+      installGuestReport(room, pipelineRef.current);
 
       const url = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/livekit`;
       // Bound the connect: a browser that can't do WebRTC (or a blocked media port) leaves
@@ -421,7 +602,16 @@ export function GuestVoicePage({ code }: { code: string }) {
         if (!next) pipelineRef.current.setupAudioPipeline();
       })
       .then(() => refreshTiles(room))
-      .catch(() => setMuted(!next));
+      .catch((err: unknown) => {
+        setMuted(!next);
+        // Saying nothing here is what made this look like a dead button: the toggle flipped
+        // back, the room carried on, and the guest pressed it again. The camera path next to
+        // it has always explained itself. A microphone the browser refuses is by far the most
+        // common reason, and it is not something the page can fix for them — so name it.
+        const denied = err instanceof DOMException
+          && (err.name === "NotAllowedError" || err.name === "SecurityError");
+        setError(t(denied ? "guest.micBlocked" : "guest.micFailed"));
+      });
   };
 
   const toggleCamera = (): void => {
@@ -430,7 +620,10 @@ export function GuestVoicePage({ code }: { code: string }) {
     const next = !camera;
     void room.localParticipant.setCameraEnabled(next)
       .then(() => { setCamera(next); refreshTiles(room); })
-      .catch(() => setError(t("guest.cameraFailed")));
+      // The browser knows WHY — a refused permission, a camera another app is holding, a
+      // camera switched off in the system are three different problems with three different
+      // fixes. Throwing that away and saying "could not turn the camera on" cost an evening.
+      .catch((err: unknown) => setError(describeMediaError(err, "camera")));
   };
 
   const toggleScreen = (): void => {
@@ -507,13 +700,46 @@ export function GuestVoicePage({ code }: { code: string }) {
         )}
 
         {(phase === "form" || phase === "connecting") && (
-          <form className="connect-form" onSubmit={join} noValidate>
+          <form
+            className="connect-form" onSubmit={join} noValidate
+            // Firefox and Safari hand over a running AudioContext only while a gesture is being
+            // handled, and typing a name is the first one this screen gets.
+            onPointerDown={() => pipelineRef.current.primeContext()}
+            onKeyDown={() => pipelineRef.current.primeContext()}
+          >
             <div className="form-group">
               <label className="form-label" htmlFor="guest-name">{t("guest.nameLabel")}</label>
               <input className="form-input" id="guest-name" autoFocus maxLength={24}
                 placeholder={t("guest.namePlaceholder")}
                 value={name} onChange={(e) => setName(e.target.value)} />
               <div className="form-hint">{t("guest.nameHint")}</div>
+            </div>
+            {micProbe !== "denied" && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="guest-mic">{t("guest.micLabel")}</label>
+                <select
+                  className="form-input" id="guest-mic" value={micId}
+                  onChange={(ev) => {
+                    setMicId(ev.target.value);
+                    try { localStorage.setItem(GUEST_MIC_KEY, ev.target.value); } catch { /* private mode */ }
+                  }}
+                >
+                  <option value="">{t("guest.micDefault")}</option>
+                  {mics.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+                </select>
+              </div>
+            )}
+            {/* Not behind the picker's condition: someone with one microphone needs the check
+                more than someone with three, not less. */}
+            <div className="form-group">
+              <div className="form-hint">
+                {micProbe === "denied" ? t("guest.micBlocked") : t("guest.micCheck")}
+              </div>
+              {micProbe !== "denied" && (
+                <div style={{ height: 6, borderRadius: 3, background: "rgba(127,127,127,.22)", overflow: "hidden" }}>
+                  <div ref={meterRef} style={{ height: "100%", width: "0%", borderRadius: 3, background: "currentColor", opacity: .75 }} />
+                </div>
+              )}
             </div>
             <button className="btn-primary" type="submit" disabled={phase === "connecting"}>
               {phase === "connecting" ? t("guest.connecting") : t("guest.joinBtn")}
@@ -525,6 +751,7 @@ export function GuestVoicePage({ code }: { code: string }) {
           <button className="vd-unblock" onClick={() => {
             void roomRef.current?.startAudio().then(() => {
               guestAudioStarted = true;
+              silenceDoubledGuestAudio();
               setAudioBlocked(false);
             });
           }}>{t("voice.enableSound")}</button>
@@ -548,6 +775,8 @@ export function GuestVoicePage({ code }: { code: string }) {
             <div className={"guest-tiles" + (shares.length > 0 ? " strip" : "")}>
               {tiles.map((p) => (
                 <div key={p.id} className={"guest-tile" + (p.speaking ? " speaking" : "")}>
+                  <FloatingReactions items={reactions.get(p.id) ?? []} />
+                  {hands.has(p.id) && <span className="vstage-hand" title={t("voice.handRaised")}>✋</span>}
                   {p.camera
                     ? <VideoTile stream={p.camera} mirror={p.isLocal} muted={p.isLocal} />
                     : <div className="guest-tile-audio"><Icon name="volume-2" size={14} /></div>}
@@ -566,10 +795,25 @@ export function GuestVoicePage({ code }: { code: string }) {
             <div className="guest-controls">
               <VoiceCtl name={muted ? "mic-off" : "mic"} red={muted}
                 label={muted ? t("guest.unmute") : t("guest.mute")} onClick={toggleMute} />
-              <VoiceCtl name={camera ? "camera-off" : "camera"} on={camera}
+              {/* Same grammar as the microphone next to it: the ICON is the STATE, not the
+                  action. Crossed out and red means they cannot see you; plain and green means
+                  you are on camera. It read backwards before — a plain camera icon while the
+                  camera was off, and the crossed-out one only once you turned it ON. */}
+              <VoiceCtl name={camera ? "camera" : "camera-off"} on={camera} red={!camera}
                 label={camera ? t("guest.cameraOff") : t("guest.cameraOn")} onClick={toggleCamera} />
               <VoiceCtl name={screen ? "monitor-off" : "monitor"} on={screen}
                 label={screen ? t("guest.screenOff") : t("guest.screenOn")} onClick={toggleScreen} />
+              <VoiceFxControls
+                handUp={roomRef.current !== null && hands.has(roomRef.current.localParticipant.identity)}
+                onHand={(up) => {
+                  const room = roomRef.current;
+                  if (room === null) return;
+                  void setHandRaised(room, up).then(() => setHands(raisedHands(room)));
+                }}
+                onReact={(emoji: Reaction) => {
+                  if (roomRef.current !== null) void sendReaction(roomRef.current, emoji);
+                }}
+              />
               <button className="vsc-btn disconnect" title={t("guest.leave")} onClick={leave}>
                 <Icon name="phone-down" size={18} /> {t("guest.leave")}
               </button>

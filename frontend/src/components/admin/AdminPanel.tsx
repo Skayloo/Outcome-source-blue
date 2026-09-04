@@ -8,15 +8,17 @@ import { AdminLogsPanel } from "@components/admin/AdminLogsPanel";
 import { ServerSettingsPanel } from "@components/admin/ServerSettingsPanel";
 import { RolesPanel } from "@components/admin/RolesPanel";
 import { InviteManager } from "@components/admin/InviteManager";
+import { AdminMailPanel } from "@components/admin/AdminMailPanel";
 
 type AdminTab =
-  | "dashboard" | "users" | "roles" | "invites" | "server" | "audit" | "logs";
+  | "dashboard" | "users" | "roles" | "invites" | "mail" | "server" | "audit" | "logs";
 
 const TAB_TITLES: Record<AdminTab, () => string> = {
   dashboard: () => t("admin.dashboard"),
   users: () => t("admin.users"),
   roles: () => t("admin.roles"),
   invites: () => t("admin.invites"),
+  mail: () => t("admin.mail"),
   server: () => t("admin.serverSettings"),
   audit: () => t("admin.auditLog"),
   logs: () => t("admin.serverLogs"),
@@ -56,6 +58,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           {tab === "users" && <AdminUsersPanel />}
           {tab === "roles" && <RolesPanel />}
           {tab === "invites" && <InviteManager />}
+          {tab === "mail" && <AdminMailPanel />}
           {tab === "server" && <ServerSettingsPanel />}
           {tab === "audit" && <AdminAuditPanel />}
           {tab === "logs" && <AdminLogsPanel />}

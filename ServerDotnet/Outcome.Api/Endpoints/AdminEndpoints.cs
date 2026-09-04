@@ -5,6 +5,7 @@ using Outcome.Api.Realtime;
 using Outcome.Shared.Abstractions.Persistence;
 using Outcome.Shared.Abstractions.Realtime;
 using Outcome.Shared.Abstractions.Security;
+using Outcome.Infrastructure.Mail;
 using Outcome.Application.Admin;
 using Outcome.Application.Channels;
 using Outcome.Application.Roles;
@@ -39,6 +40,9 @@ public static class AdminEndpoints
     /// space — the Administrator bit alone must not open these, or the tenancy boundary is
     /// only a matter of which buttons the UI happens to render.
     /// </summary>
+    /// <summary>Body of a reply from the support mailbox.</summary>
+    public sealed record ReplyBody(string? Text);
+
     private static void RequireInstanceAdmin(ICurrentUser current, ICurrentSpace space)
     {
         RequireAdmin(current);
@@ -241,6 +245,34 @@ public static class AdminEndpoints
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             await mediator.Send(new DeleteChannelCommand(id, current.Permissions));
             await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelDelete(id));
+            return Results.NoContent();
+        });
+
+        // ── Support mailbox ──────────────────────────────────────────────────────
+        // The shared inbox, read and answered from here. Instance-only: it is one mailbox
+        // belonging to whoever runs the instance, not a per-tenant feature — a space owner
+        // reaching it would be reading somebody else's support queue.
+        group.MapGet("/mail", async (int? limit, int? offset, ICurrentUser current, ICurrentSpace space,
+            SupportMailbox mail, HttpContext ctx, CancellationToken ct) =>
+        {
+            RequireInstanceAdmin(current, space);
+            if (!mail.Configured) return Results.Ok(new { configured = false, messages = Array.Empty<object>() });
+            var items = await mail.ListAsync(limit ?? 50, offset ?? 0, ct);
+            return Results.Ok(new { configured = true, messages = items });
+        });
+
+        group.MapGet("/mail/{uid:int}", async (uint uid, ICurrentUser current, ICurrentSpace space,
+            SupportMailbox mail, CancellationToken ct) =>
+        {
+            RequireInstanceAdmin(current, space);
+            return await mail.GetAsync(uid, ct);
+        });
+
+        group.MapPost("/mail/{uid:int}/reply", async (uint uid, ReplyBody body, ICurrentUser current,
+            ICurrentSpace space, SupportMailbox mail, CancellationToken ct) =>
+        {
+            RequireInstanceAdmin(current, space);
+            await mail.ReplyAsync(uid, body.Text ?? "", ct);
             return Results.NoContent();
         });
 

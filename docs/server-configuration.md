@@ -98,6 +98,35 @@ of sending them — fine for a first run, not for real users.
 A mail outage answers **503**, not 500: the account exists and the send failed, and the two
 mean different things to whoever is looking at the response.
 
+## Support mailbox
+
+Bound from `SupportMail`. Separate from `Email` above on purpose: that one only ever sends,
+from `no-reply`, and nobody reads what comes back. This is a real mailbox — the admin console
+lists what arrives in it and answers from it (Admin → Mail).
+
+With `Host` empty the feature is simply off: the endpoints answer `configured: false` and the
+panel says the mailbox is not set up, rather than showing an error.
+
+| Key | Default |
+| --- | --- |
+| `Host` / `Port` | *(empty)* / `993` |
+| `UseSsl` | `true` (IMAPS; `143` + `false` is STARTTLS) |
+| `Username` / `Password` | *(empty)* — the full address, e.g. `admin@outcome.ru` |
+| `From` / `FromName` | *(empty ⇒ `Username`)* / `Outcome` |
+| `SmtpHost` / `SmtpPort` | *(empty ⇒ `Host`)* / `465` |
+| `MaxMessages` | `200` |
+
+Replies are threaded (`In-Reply-To` and `References`), so the answer lands in the conversation
+the person started instead of arriving as a new message. They are sent from `From`, which must
+be a mailbox the SMTP host is allowed to send as — sending from anywhere else fails SPF for
+the domain, which is why `SmtpHost` defaults to the IMAP host rather than to the `Email` one.
+
+Only an instance administrator in the **root** space reaches it. It is one mailbox belonging to
+whoever runs the instance; a space owner reading it would be reading someone else's queue.
+
+Everything in the mailbox is untrusted input. HTML-only mail is converted to text on the
+server and never rendered as markup, and bodies are capped at 100 000 characters.
+
 ## Single sign-on
 
 Bound from `OAuth`. A provider turns on simply by having both halves of its credential —

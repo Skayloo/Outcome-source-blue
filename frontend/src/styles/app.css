@@ -461,6 +461,84 @@
 .vstage-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vstage-badge.muted, .vstage-badge.deaf { color: var(--red); }
 
+/* --- Reactions and raised hands ------------------------------------------------------------
+   Shared by the signed-in stage and the guest page: the same meeting is held on both, and a
+   guest whose applause looks different has been told they are a lesser participant. */
+
+/* The hand sits top-left, opposite the name row, so it never collides with the badges there. */
+.vstage-hand {
+  position: absolute; top: 8px; left: 8px; z-index: 2;
+  font-size: 18px; line-height: 1;
+  padding: 4px 6px; border-radius: 8px;
+  background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(4px);
+}
+
+/* Purely decorative, and pointer-events:none is load-bearing: the tile underneath opens the
+   participant menu on right-click, and a floating emoji must never eat that. */
+.vfx-float {
+  position: absolute; inset: 0; z-index: 3;
+  pointer-events: none;
+  display: flex; align-items: flex-end; justify-content: center;
+  overflow: hidden;
+}
+.vfx-float-item {
+  font-size: 30px; line-height: 1;
+  animation: vfx-rise 3.2s ease-out forwards;
+  will-change: transform, opacity;
+}
+@keyframes vfx-rise {
+  0%   { transform: translateY(10%) scale(.7); opacity: 0; }
+  12%  { transform: translateY(-10%) scale(1.15); opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translateY(-190%) scale(1); opacity: 0; }
+}
+/* Reduced motion still needs the reaction to be SEEN — it just must not fly across the tile. */
+@media (prefers-reduced-motion: reduce) {
+  .vfx-float-item { animation: vfx-fade 3.2s ease-out forwards; }
+  @keyframes vfx-fade { 0%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
+}
+
+.vfx-picker-wrap { position: relative; display: flex; }
+.vfx-picker {
+  position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  display: flex; gap: 2px; padding: 6px;
+  border-radius: 14px; border: 1px solid var(--border);
+  background: var(--bg-float, var(--bg-elevated, #1e1f22));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+  z-index: 20;
+}
+.vfx-pick {
+  border: 0; background: transparent; cursor: pointer;
+  font-size: 24px; line-height: 1; padding: 6px 7px; border-radius: 10px;
+  transition: transform 120ms ease-out, background-color 120ms ease-out;
+}
+.vfx-pick:hover { background: rgba(255, 255, 255, .10); transform: scale(1.18); }
+.vfx-pick:active { transform: scale(.96); }
+.vfx-pick:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* On a phone the React button sits near the edge, and a picker centred on the BUTTON hangs
+   half of itself off the screen — the party popper was simply unreachable. Making the wrapper
+   unpositioned hands the picker's containing block to the control bar instead, which spans the
+   viewport: centred on the bar, it cannot overflow, and no magic offsets are involved. */
+@media (max-width: 560px) {
+  /* NOT .guest-controls: it is already `position: sticky`, which is a containing block AND the
+     reason the bar stays put while the tiles scroll. Overwriting it with `relative` would have
+     traded an off-screen picker for a control bar that slides away. */
+  .vstage-controls { position: relative; }
+  .vfx-picker-wrap { position: static; }
+  .vfx-picker {
+    max-width: calc(100vw - 24px);
+    flex-wrap: wrap; justify-content: center;
+  }
+}
+
+/* A glyph where the meaning IS the character — see VoiceCtl. */
+.vsc-glyph { font-size: 20px; line-height: 1; }
+
+/* The tiles have to establish a containing block for both of the above. */
+.vstage-tile, .guest-tile { position: relative; }
+
 /* ── Connection-quality bars (dock header + stage name pills) ─────────────── */
 .q-bars {
   display: inline-flex; align-items: flex-end; gap: 1.5px; flex-shrink: 0;

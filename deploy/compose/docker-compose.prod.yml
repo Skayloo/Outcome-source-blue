@@ -114,6 +114,13 @@ services:
       OUTCOME_Email__Password: "${EMAIL_PASSWORD}"
       OUTCOME_Email__From: "${EMAIL_FROM}"
       OUTCOME_Email__UseSsl: "${EMAIL_USE_SSL}"
+      # Общий ящик поддержки, который читает и отвечает админ-панель. Отдельный от Email
+      # выше: тот односторонний отправитель кодов от no-reply, этот — почтовый ящик живого
+      # человека. Пусто = функция просто выключена, панель скажет «не настроено».
+      OUTCOME_SupportMail__Host: "${SUPPORT_MAIL_HOST:-}"
+      OUTCOME_SupportMail__Username: "${SUPPORT_MAIL_USERNAME:-}"
+      OUTCOME_SupportMail__Password: "${SUPPORT_MAIL_PASSWORD:-}"
+      OUTCOME_SupportMail__From: "${SUPPORT_MAIL_FROM:-}"
       # SSO. A provider turns ON simply by having both a client id and a secret — the
       # clients ask /auth/oauth/providers and render only the buttons that will work.
       # PublicOrigin must be the browser-facing https origin: it builds the redirect_uri

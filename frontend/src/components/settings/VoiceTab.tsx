@@ -40,7 +40,7 @@ export function VoiceTab() {
   // Mirrors the enhanced-suppressor preference so the two rows it overrides re-render the
   // moment it moves, instead of lying until the panel is reopened.
   const [enhanced, setEnhanced] = useState<boolean>(() => loadPref<boolean>("enhancedNoiseSuppression", true));
-  const [engine, setEngine] = useState<string>(() => loadPref<string>("nsEngine", "deepfilter"));
+  const [engine, setEngine] = useState<string>(() => loadPref<string>("nsEngine", "rnnoise"));
   const strengthTimer = useRef<number | null>(null);
   // Polled rather than pushed: it changes at most once per call, and a store for one string
   // that only the settings screen reads is not worth the wiring.

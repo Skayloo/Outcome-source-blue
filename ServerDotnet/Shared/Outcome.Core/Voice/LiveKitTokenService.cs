@@ -27,6 +27,9 @@ public sealed class LiveKitTokenService(IOptions<VoiceOptions> options, ICurrent
                 CanPublish = canPublish,
                 CanSubscribe = canSubscribe,
                 CanPublishData = canPublish,
+                // Raising a hand is an attribute on the participant, not a message: attributes
+                // survive somebody joining late, and clear themselves when the person leaves.
+                CanUpdateOwnMetadata = true,
             })
             .WithTtl(TimeSpan.FromHours(24));
         return token.ToJwt();
@@ -45,10 +48,18 @@ public sealed class LiveKitTokenService(IOptions<VoiceOptions> options, ICurrent
                 CanPublish = true,
                 CanSubscribe = true,
                 // Guests get the full media kit — mic, camera, screen share — because a link
-                // like this exists to pull outsiders INTO a real conversation. The data
-                // channel stays shut: it carries app-level messages, and an anonymous
-                // visitor has no business speaking that protocol.
-                CanPublishData = false,
+                // like this exists to pull outsiders INTO a real conversation.
+                //
+                // The data channel is open to them too, and that is a deliberate reversal: it
+                // used to be shut on the grounds that an anonymous visitor has no business
+                // speaking our protocol. But the only thing that travels on it is a reaction
+                // and a raised hand, the meetings that need them are held on guest links, and
+                // a feature half the room cannot use is not a feature. What makes it safe is
+                // not the grant, it is the receiver: every message is parsed as untrusted,
+                // the emoji must be one of a fixed handful, and anything faster than one every
+                // 700 ms is dropped on the floor. See lib/voiceReactions.ts.
+                CanPublishData = true,
+                CanUpdateOwnMetadata = true,
                 CanPublishSources = { "microphone", "camera", "screen_share", "screen_share_audio" },
             })
             // Short leash: the link page re-requests a token on every join anyway.

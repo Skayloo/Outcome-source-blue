@@ -8,6 +8,7 @@ import {
   enableCamera, disableCamera, enableScreenshare, disableScreenshare,
   setOnRemoteVideo, setOnRemoteVideoRemoved, clearOnRemoteVideo,
   getLocalCameraStream, getLocalScreenshareStream,
+  onVoiceReaction, sendVoiceReaction, setHandRaisedLocal,
 } from "@lib/livekitSession";
 import { Icon } from "@lib/icons";
 import { api } from "@lib/services";
@@ -18,6 +19,8 @@ import { QualityBars } from "@components/QualityBars";
 import { t } from "@lib/i18n";
 import { VoiceUserMenu } from "@components/VoiceUserMenu";
 import { VoiceCtl as Ctl } from "@components/VoiceCtl";
+import { FloatingReactions, VoiceFxControls, useReactionFeed } from "@components/VoiceFx";
+import { type Reaction } from "@lib/voiceReactions";
 
 interface RemoteEntry { userId: number; stream: MediaStream; screenshare: boolean }
 
@@ -44,6 +47,9 @@ export function VoiceStage({ channelId }: { channelId: number }) {
   const me = authUser?.id ?? 0;
   const connectedHere = v.currentChannelId === channelId;
   const [remote, setRemote] = useState<ReadonlyMap<string, RemoteEntry>>(new Map());
+  // Re-subscribed when the connection changes, because the room object behind it is replaced
+  // on every join — a feed bound to the old one delivers nothing and says nothing.
+  const reactions = useReactionFeed<number>((cb) => onVoiceReaction(cb), [connectedHere, v.currentChannelId]);
   const [vMenu, setVMenu] = useState<{ userId: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -118,6 +124,10 @@ export function VoiceStage({ channelId }: { channelId: number }) {
                       color="#5865f2"
                       className="vstage-avatar"
                     />}
+                <FloatingReactions items={reactions.get(u.userId) ?? []} />
+                {v.hands.has(u.userId) && (
+                  <span className="vstage-hand" title={t("voice.handRaised")}>✋</span>
+                )}
                 <div className="vstage-name">
                   <QualityBars quality={v.connQuality.get(u.userId)} size={11} />
                   {u.muted && <span className="vstage-badge muted" title={t("voice.muted")}><Icon name="mic-off" size={12} /></span>}
@@ -135,8 +145,14 @@ export function VoiceStage({ channelId }: { channelId: number }) {
           <>
             <Ctl name={v.localMuted ? "mic-off" : "mic"} label={v.localMuted ? t("voice.unmuteLabel") : t("voice.micLabel")} red={v.localMuted} onClick={toggleMute} />
             <Ctl name={v.localDeafened ? "headphones-off" : "headphones"} label={v.localDeafened ? t("voice.undeafenLabel") : t("voice.soundLabel")} red={v.localDeafened} onClick={toggleDeafen} />
-            <Ctl name={v.localCamera ? "camera-off" : "camera"} label={v.localCamera ? t("voice.stopVideoLabel") : t("voice.videoLabel")} on={v.localCamera} onClick={() => { if (v.localCamera) void disableCamera(); else void enableCamera(); }} />
+            {/* Icon = state, like the microphone: crossed and red while nobody can see you. */}
+            <Ctl name={v.localCamera ? "camera" : "camera-off"} label={v.localCamera ? t("voice.stopVideoLabel") : t("voice.videoLabel")} on={v.localCamera} red={!v.localCamera} onClick={() => { if (v.localCamera) void disableCamera(); else void enableCamera(); }} />
             <Ctl name={v.localScreenshare ? "monitor-off" : "monitor"} label={v.localScreenshare ? t("voice.stopShareLabel") : t("voice.screenLabel")} on={v.localScreenshare} onClick={() => { if (v.localScreenshare) void disableScreenshare(); else void enableScreenshare(); }} />
+            <VoiceFxControls
+              handUp={v.hands.has(me)}
+              onHand={(up) => { void setHandRaisedLocal(up); }}
+              onReact={(emoji: Reaction) => { void sendVoiceReaction(emoji); }}
+            />
             <Ctl name="user-plus" label={t("voice.guestLinkLabel")} onClick={copyGuestLink} />
             <button className="vsc-btn disconnect" title={t("voice.disconnectFromVoice")} onClick={leaveVoiceNow}><Icon name="phone-down" size={18} /> {t("voice.disconnect")}</button>
           </>

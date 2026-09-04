@@ -59,11 +59,16 @@ export interface VoiceState {
   readonly transport: string | null;
   /** The browser refuses to play audio until the user gestures (mobile autoplay policy). */
   readonly audioBlocked: boolean;
+  /** Raised hands: userId → the moment it went up, so a room can be worked in the order people
+   *  asked. Kept in the store rather than a component because a hand outlives the render that
+   *  showed it, and because the source of truth is LiveKit, not React. */
+  readonly hands: ReadonlyMap<number, number>;
 }
 
 const INITIAL_STATE: VoiceState = {
   currentChannelId: null,
   connectedServerId: null,
+  hands: new Map(),
   voiceUsers: new Map(),
   voiceConfigs: new Map(),
   localMuted: false,
@@ -85,6 +90,7 @@ export function resetVoiceStore(): void {
   voiceStore.setState(() => ({
     currentChannelId: null,
     connectedServerId: null,
+    hands: new Map(),
     voiceUsers: new Map(),
     voiceConfigs: new Map(),
     localMuted: false,
@@ -252,7 +258,7 @@ export function getConnectedServerId(): number | null {
 export function leaveVoiceChannel(keepPresence = false): void {
   const currentUserId = authStore.getState().user?.id ?? 0;
   voiceStore.setState((prev) => {
-    const cleared = { ...prev, currentChannelId: null, connectedServerId: null, joinedAt: null };
+    const cleared = { ...prev, currentChannelId: null, connectedServerId: null, joinedAt: null, hands: new Map<number, number>() };
     const channelId = prev.currentChannelId;
     if (keepPresence || channelId === null || currentUserId === 0) return cleared;
     const existingChannel = prev.voiceUsers.get(channelId);
@@ -270,6 +276,15 @@ export function leaveVoiceChannel(keepPresence = false): void {
 }
 
 /** Toggle local mute state. */
+/** Replace the whole set — the truth is LiveKit's participant attributes, and diffing a
+ *  six-entry map is not worth the bugs it would buy. */
+export function setRaisedHands(hands: ReadonlyMap<number, number>): void {
+  voiceStore.setState((prev) => {
+    if (prev.hands.size === hands.size && [...hands].every(([k, v]) => prev.hands.get(k) === v)) return prev;
+    return { ...prev, hands };
+  });
+}
+
 export function setVoiceTransport(transport: string | null): void {
   voiceStore.setState((prev) => (prev.transport === transport ? prev : { ...prev, transport }));
 }

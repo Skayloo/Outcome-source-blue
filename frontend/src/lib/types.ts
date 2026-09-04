@@ -33,6 +33,29 @@ export type WsErrorCode =
   | "VOICE_ERROR"
   | "VIDEO_LIMIT";
 
+/** One message in the support mailbox, as the list shows it. */
+export interface SupportMailSummary {
+  readonly uid: number;
+  readonly from: string;
+  readonly fromName: string;
+  readonly subject: string;
+  readonly date: string;
+  readonly seen: boolean;
+  readonly preview: string;
+}
+
+/** A support message, opened. `body` is always TEXT — an HTML-only mail was converted
+ *  server-side, because this arrives from strangers and is shown to an administrator. */
+export interface SupportMailMessage {
+  readonly uid: number;
+  readonly from: string;
+  readonly fromName: string;
+  readonly subject: string;
+  readonly date: string;
+  readonly body: string;
+  readonly htmlOnly: boolean;
+}
+
 /** REST API error codes. */
 export type ApiErrorCode =
   | "UNAUTHORIZED"

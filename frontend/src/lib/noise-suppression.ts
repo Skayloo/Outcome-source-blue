@@ -122,9 +122,11 @@ async function createWorkletPipeline(
   audioContext: AudioContext,
 ): Promise<ProcessingPipeline> {
   await ensureRunning(audioContext);
+  // The model travels INSIDE the worklet now (see scripts/build-rnnoise-worklet.mjs). Fetching
+  // /rnnoise.wasm and posting the bytes across was the old shape, and it never worked: that
+  // build is closure-minified, its exports are named d/e/f/g, and the worklet's check for
+  // `rnnoise_create` failed on every call — silently, into the main-thread fallback.
   await audioContext.audioWorklet.addModule("/rnnoise-worklet.js");
-  const wasmResponse = await fetch("/rnnoise.wasm");
-  const wasmBytes = await wasmResponse.arrayBuffer();
 
   const source = audioContext.createMediaStreamSource(new MediaStream([inputTrack]));
   const dest = audioContext.createMediaStreamDestination();
@@ -140,7 +142,7 @@ async function createWorkletPipeline(
       else if (event.data.type === "error") reject(new Error(event.data.message));
     };
   });
-  workletNode.port.postMessage({ type: "init", wasmBytes }, [wasmBytes]);
+  workletNode.port.postMessage({ type: "init" });
   await initPromise;
 
   source.connect(workletNode);
