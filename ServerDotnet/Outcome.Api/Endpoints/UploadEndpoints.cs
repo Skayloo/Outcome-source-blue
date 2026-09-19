@@ -219,7 +219,7 @@ public static class UploadEndpoints
 
         // GET /api/v1/files/{id} — no session, but not public: the signed query is the credential.
         app.MapGet("/api/v1/files/{id}", async (string id, HttpContext ctx, IAttachmentRepository attachments,
-            IFileStorage storage, IFileUrlSigner fileUrls, IUserRepository users) =>
+            IFileStorage storage, IFileUrlSigner fileUrls, IUserRepository users, IServerRepository servers) =>
         {
             // The link IS the credential — an <img src> carries no session — so it has to expire.
             // An id alone was a permanent one: anywhere it was ever forwarded, pasted or logged,
@@ -229,8 +229,15 @@ public static class UploadEndpoints
             // and handed out from a dozen DTOs, so it cannot carry a signature that expires — and
             // it is shown to guests, who have no session to sign one with. Signing attachments
             // broke every existing avatar until this was here.
+            // A server's icon is the same kind of thing as an avatar and gets the same exemption:
+            // it is stored on the server row, handed out from every DTO that names a server, and
+            // shown on the sign-in screen of a space to people who have no session at all. It was
+            // stored WITH a signature instead, which expired a week later and took every server
+            // picture with it.
+            var path = $"/api/v1/files/{id}";
             if (!fileUrls.Verify(id, ctx.Request.Query["e"], ctx.Request.Query["s"])
-                && !await users.IsAvatarAsync($"/api/v1/files/{id}", ctx.RequestAborted))
+                && !await users.IsAvatarAsync(path, ctx.RequestAborted)
+                && !await servers.IsIconAsync(path, ctx.RequestAborted))
                 return Results.NotFound();
 
             var att = await attachments.GetByIdAsync(id, ctx.RequestAborted);

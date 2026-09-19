@@ -53,9 +53,10 @@ export interface VoiceState {
   readonly connQuality: ReadonlyMap<number, string>;
   /** Users whose incoming audio rides an enlarged jitter buffer (see setAudioSmoothing). */
   readonly smoothedAudio: ReadonlySet<number>;
-  /** How media actually reaches the SFU: "udp" | "tcp" | "relay", null until measured. A
-   *  carrier that blocks UDP quietly downgrades the call to TCP, which is what "voice is bad
-   *  on mobile" usually turns out to be — so it is visible rather than guessed at. */
+  /** How media actually reaches the SFU: "udp" | "tcp" | "relay", null until measured. Kept
+   *  for diagnostics only — it goes to the log as "Voice transport", deliberately not on
+   *  screen: which path a call took is a thing to ask the logs when someone reports bad audio,
+   *  not something to put in front of a user who only wants to know they are connected. */
   readonly transport: string | null;
   /** The browser refuses to play audio until the user gestures (mobile autoplay policy). */
   readonly audioBlocked: boolean;

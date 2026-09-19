@@ -112,3 +112,36 @@ export function onReaction(room: Room, cb: (identity: string, emoji: Reaction) =
     room.off(RoomEvent.DataReceived, handler);
   };
 }
+
+/**
+ * A short rising blip when somebody raises a hand — everyone in the room hears it, which is the
+ * entire point: a hand nobody notices is a hand that was not raised.
+ *
+ * Synthesised rather than a file for the same reason the join/leave cue is: two oscillators
+ * cost nothing, need no asset pipeline, and cannot 404. It lives here rather than in voice.ts
+ * because livekitSession already imports this module and importing voice.ts back would close a
+ * cycle.
+ */
+let cueCtx: AudioContext | null = null;
+export function playHandCue(): void {
+  try {
+    cueCtx ??= new AudioContext();
+    const ctx = cueCtx;
+    if (ctx.state === "suspended") void ctx.resume();
+    const now = ctx.currentTime;
+    [880, 1174.66].forEach((f, i) => { // A5 → D6, upward: something is being asked for
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sine";
+      osc.connect(g);
+      g.connect(ctx.destination);
+      const t = now + i * 0.12;
+      osc.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.16, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      osc.start(t);
+      osc.stop(t + 0.17);
+    });
+  } catch { /* audio still locked behind a gesture — the badge is enough */ }
+}

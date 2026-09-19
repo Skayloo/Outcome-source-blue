@@ -1170,10 +1170,23 @@
   position: absolute; inset: 0;
   width: 100%; height: 100%; object-fit: cover; display: block; background: #000;
 }
-.guest-tile-audio {
+/* A participant with no camera should still read as a PERSON. The speaker icon that used to sit
+   here told the viewer the one thing they already knew — everyone in a voice call has audio — so
+   a full room was a grid of identical grey glyphs with names underneath. Initials on a disc in a
+   colour that is stably theirs, over a tile tinted from the same colour, is recognisable at a
+   glance and from across the room. --tile-tint is set per tile from the participant's name. */
+.guest-tile-face {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  color: var(--text-muted);
+  background: radial-gradient(circle at 50% 44%,
+    color-mix(in srgb, var(--tile-tint, var(--accent)) 32%, var(--bg-input)) 0%,
+    color-mix(in srgb, var(--tile-tint, var(--accent)) 8%, var(--bg-input)) 72%);
+}
+.guest-tile-avatar { box-shadow: 0 2px 12px rgba(0, 0, 0, .35); }
+/* The speaking ring goes on the disc as well as the tile border — in a crowded grid the border
+   alone is a hairline you have to hunt for. */
+.guest-tile.speaking .guest-tile-avatar {
+  box-shadow: 0 0 0 3px var(--green, #23a55a), 0 2px 12px rgba(0, 0, 0, .35);
 }
 .guest-tile-name {
   position: absolute; left: 8px; bottom: 8px; z-index: 1;

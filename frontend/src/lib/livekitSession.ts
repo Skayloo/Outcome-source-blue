@@ -21,7 +21,7 @@ import {
   DisconnectReason,
 } from "livekit-client";
 import { runtimeLivekitUrl } from "@lib/runtimeConfig";
-import { onReaction, raisedHands, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
+import { onReaction, playHandCue, raisedHands, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
 import { describeMediaError } from "@lib/mediaErrors";
 import { serverOrigin } from "@lib/serverHost";
 import type { WsClient } from "@lib/ws";
@@ -229,6 +229,9 @@ export class LiveKitSession {
     // Hands are participant attributes, so every event that can change the roster or an
     // attribute recomputes the whole set — six entries, and the alternative is a diff nobody
     // can debug at midnight.
+    this.handsSynced = false;
+    this.knownHands.clear();
+    this.attachReactions(newRoom);
     newRoom.on(RoomEvent.ParticipantAttributesChanged, this.syncHands);
     newRoom.on(RoomEvent.LocalTrackPublished, this.syncHands);
     newRoom.on(RoomEvent.ParticipantConnected, this.syncHands);
@@ -444,10 +447,25 @@ export class LiveKitSession {
     const byUser = new Map<number, number>();
     for (const [identity, at] of raisedHands(this.room)) {
       const userId = parseUserId(identity);
-      if (userId > 0) byUser.set(userId, at);
+      // NOT `> 0`. Guests get a stable NEGATIVE id (see parseUserId) precisely so rosters keyed
+      // by number can hold them, and `> 0` threw every one of them away: a guest could see a
+      // member's hand, a member could never see a guest's. Only 0 means "unknown".
+      if (userId !== 0) byUser.set(userId, at);
     }
+    // Chime only for a hand that goes up WHILE WE ARE WATCHING. The first sync after joining
+    // establishes the baseline instead: walking into a room where three hands are already up
+    // must not sound like three people raising them at once.
+    if (this.handsSynced) {
+      for (const userId of byUser.keys()) if (!this.knownHands.has(userId)) { playHandCue(); break; }
+    }
+    this.knownHands = new Set(byUser.keys());
+    this.handsSynced = true;
     setRaisedHands(byUser);
   };
+
+  /** Hands we have already seen up, so only NEW ones ring. */
+  private knownHands = new Set<number>();
+  private handsSynced = false;
 
   /** Raise or lower our own hand; the room hears about it through attributes. */
   async setHandRaised(up: boolean): Promise<void> {
@@ -463,13 +481,32 @@ export class LiveKitSession {
     await sendReaction(this.room, emoji);
   }
 
-  /** Subscribe to reactions, by userId. Returns an unsubscribe; a no-op one when there is no
-   *  room, so callers do not have to care. */
+  /** Listeners survive the room; the room does not survive a rejoin. */
+  private reactionListeners = new Set<(userId: number, emoji: Reaction) => void>();
+  private roomReactionOff: (() => void) | null = null;
+
+  /**
+   * Subscribe to reactions, by userId.
+   *
+   * The listeners live HERE rather than on the room, and that is the fix for "I cannot even see
+   * my own reaction": the component subscribes the moment the store says we are in a channel,
+   * which is a second or two BEFORE the token arrives and the room object exists. The old
+   * version returned a no-op unsubscribe in that window and attached to nothing — so the app
+   * saw no reactions at all, its own included, while the guest page (which subscribes after its
+   * room is built) worked fine.
+   */
   onReaction(cb: (userId: number, emoji: Reaction) => void): () => void {
-    if (this.room === null) return () => { /* not in a call */ };
-    return onReaction(this.room, (identity, emoji) => {
+    this.reactionListeners.add(cb);
+    return () => { this.reactionListeners.delete(cb); };
+  }
+
+  /** Point the new room's data channel at whoever is already listening. */
+  private attachReactions(room: Room): void {
+    this.roomReactionOff?.();
+    this.roomReactionOff = onReaction(room, (identity, emoji) => {
       const userId = parseUserId(identity);
-      if (userId > 0) cb(userId, emoji);
+      if (userId === 0) return; // neither a member nor a guest — nothing to attribute it to
+      for (const listener of [...this.reactionListeners]) listener(userId, emoji);
     });
   }
 
@@ -1030,6 +1067,9 @@ export class LiveKitSession {
         // VAD polling only starts if saved sensitivity < 100.
         this._audioPipeline.setupAudioPipeline();
         this.reapplyMuteGain();
+        // Hands raised BEFORE we joined: ParticipantConnected does not fire for people already
+        // in the room, so without this a latecomer sees a room with every hand down.
+        this.syncHands();
         this.startTokenRefreshTimer();
         log.info("Voice session active", { channelId });
       }
@@ -1086,6 +1126,8 @@ export class LiveKitSession {
     this.releaseWakeLock();
     setVoiceTransport(null);
     setAudioBlocked(false);
+    this.roomReactionOff?.();
+    this.roomReactionOff = null;
     this._audioPipeline.teardownAudioPipeline();
     // The graph goes with the pipeline; the context outlives it by design (the room and the
     // denoiser share it) and is closed only when the call is actually over.

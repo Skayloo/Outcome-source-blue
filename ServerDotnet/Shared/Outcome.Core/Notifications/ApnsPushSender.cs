@@ -130,6 +130,15 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
             // already know is right: the token is garbage. Either way it will never work again.
             HttpStatusCode.Gone => PushOutcome.Gone,
             HttpStatusCode.BadRequest when reason == "BadDeviceToken" => PushOutcome.Gone,
+            // DeviceTokenNotForTopic: the token was issued to a DIFFERENT app. Ours changed its
+            // bundle id (com.outcome.outcome → com.outcome.chat) and every token registered by
+            // the old one stayed in the table, failing on every push forever — two dozen
+            // warnings per notification, which is how this was found.
+            //
+            // Yes, a misconfigured topic would also produce this and would then prune healthy
+            // tokens. That is not a reason to keep the dead ones: with the wrong topic NOTHING
+            // is delivered anyway, and the empty table is the least of the problems.
+            HttpStatusCode.BadRequest when reason == "DeviceTokenNotForTopic" => PushOutcome.Gone,
             _ => PushOutcome.Failed,
         };
     }
@@ -165,6 +174,8 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
             HttpStatusCode.OK => PushOutcome.Sent,
             HttpStatusCode.Gone => PushOutcome.Gone,
             HttpStatusCode.BadRequest when reason == "BadDeviceToken" => PushOutcome.Gone,
+            // Same as above — a VoIP token from the old bundle id is dead for this topic too.
+            HttpStatusCode.BadRequest when reason == "DeviceTokenNotForTopic" => PushOutcome.Gone,
             _ => PushOutcome.Failed,
         };
     }

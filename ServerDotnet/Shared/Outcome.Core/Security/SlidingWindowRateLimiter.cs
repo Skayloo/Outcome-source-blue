@@ -25,8 +25,13 @@ public sealed class SlidingWindowRateLimiter : IRateLimiter
         lock (list)
         {
             list.RemoveAll(t => t < cutoff);
-            list.Add(now);
-            allowed = list.Count <= limit;
+            // Only an ALLOWED request is recorded. Counting the refusals too was the difference
+            // between "wait a minute" and "wait until you give up": every retry pushed the window
+            // forward, so a user who did the obvious thing and clicked again could never come out
+            // of it. A person who has just been told to wait is the most likely person in the
+            // world to retry immediately.
+            allowed = list.Count < limit;
+            if (allowed) list.Add(now);
         }
         // Keys are client addresses. They were never removed, so the dictionary grew by one
         // entry per address seen since boot and never gave any of it back — one IPv6 client is

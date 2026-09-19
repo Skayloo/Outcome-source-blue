@@ -122,9 +122,28 @@ public sealed class ServerRepository(OutcomeDbContext db) : IServerRepository
         await db.Servers.Where(s => s.Id == serverId && !s.Deleted)
             .ExecuteUpdateAsync(u => u.SetProperty(s => s.Name, name), ct) > 0;
 
-    public async Task<bool> SetIconAsync(long serverId, string? icon, CancellationToken ct = default) =>
-        await db.Servers.Where(s => s.Id == serverId && !s.Deleted)
-            .ExecuteUpdateAsync(u => u.SetProperty(s => s.Icon, icon), ct) > 0;
+    /// <summary>
+    /// Store the icon as a BARE path, with any query string cut off.
+    ///
+    /// The client sends back what the upload handed it, and that is a SIGNED url — id, expiry
+    /// and MAC. Stored whole, it stopped working a week later: the column is read verbatim into
+    /// every server DTO, nothing re-signs it, and the picture 404'd on every client at once with
+    /// nothing in the logs to say why. Re-uploading appeared to fix it, which is why it kept
+    /// coming back.
+    ///
+    /// So an icon is treated like an avatar: a long-lived reference that cannot carry an expiry,
+    /// paired with <see cref="IsIconAsync"/>, which is what lets the unsigned path be served.
+    /// </summary>
+    public async Task<bool> SetIconAsync(long serverId, string? icon, CancellationToken ct = default)
+    {
+        var q = icon?.IndexOf('?');
+        var bare = q is > 0 ? icon![..q.Value] : icon;
+        return await db.Servers.Where(s => s.Id == serverId && !s.Deleted)
+            .ExecuteUpdateAsync(u => u.SetProperty(s => s.Icon, bare), ct) > 0;
+    }
+
+    public Task<bool> IsIconAsync(string filePath, CancellationToken ct = default) =>
+        db.Servers.AsNoTracking().AnyAsync(s => s.Icon == filePath, ct);
 
     public async Task<bool> SetCustomDomainAsync(long serverId, long ownerId, string? domain, CancellationToken ct = default) =>
         await db.Servers.Where(s => s.Id == serverId && s.OwnerId == ownerId && !s.Deleted)

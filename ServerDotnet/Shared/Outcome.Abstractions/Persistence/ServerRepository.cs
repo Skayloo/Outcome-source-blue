@@ -43,8 +43,13 @@ public interface IServerRepository
     /// customers a subdomain of ours, and the space is often owned by them, not by us.</summary>
     Task<bool> AdminSetCustomDomainAsync(long serverId, string? domain, CancellationToken ct = default);
 
-    /// <summary>Space logo (an /api/v1/files/{id} url, or null to clear it). Instance-admin path.</summary>
+    /// <summary>Space logo (an /api/v1/files/{id} path, or null to clear it). Instance-admin path.
+    /// Any signature on the path is DROPPED — see the implementation.</summary>
     Task<bool> SetIconAsync(long serverId, string? icon, CancellationToken ct = default);
+
+    /// <summary>Is this file path some server's icon? The signature-free counterpart of
+    /// IsAvatarAsync, and it exists for exactly the same reason — see GET /api/v1/files/{id}.</summary>
+    Task<bool> IsIconAsync(string filePath, CancellationToken ct = default);
 
     /// <summary>The space that owns a custom domain (host-only, lowercase), or null. For Host→space
     /// resolution + the Caddy on-demand-TLS ask endpoint.</summary>

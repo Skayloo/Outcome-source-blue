@@ -72,7 +72,10 @@ public static class GuestEndpoints
         app.MapGet("/api/v1/guest/{code}", async (string code, HttpContext ctx,
             IGuestLinkRepository links, IChannelRepository channels, IServerRepository servers, IRateLimiter limiter) =>
         {
-            if (!limiter.Allow($"guest_info:{ClientIp(ctx)}", 30, TimeSpan.FromMinutes(1)))
+            // The global ceiling is not decoration: behind a NAT that hides every client the
+            // per-client bucket above is shared, so this is what actually bounds the endpoint.
+            if (!ClientRate.Allow(limiter, ctx, "guest_info", 30, TimeSpan.FromMinutes(1))
+                || !limiter.Allow("global:guest_info", 1200, TimeSpan.FromMinutes(1)))
                 throw new DomainException("RATE_LIMITED", 429, "too many requests");
 
             var (link, channel) = await ResolveAsync(code, links, channels);
@@ -84,7 +87,7 @@ public static class GuestEndpoints
             IGuestLinkRepository links, IChannelRepository channels, ILiveKitTokenService livekit, IRateLimiter limiter) =>
         {
             // Strict: minting media tokens for anonymous visitors is the whole attack surface.
-            if (!limiter.Allow($"guest_join:{ClientIp(ctx)}", 5, TimeSpan.FromMinutes(1))
+            if (!ClientRate.Allow(limiter, ctx, "guest_join", 5, TimeSpan.FromMinutes(1))
                 || !limiter.Allow("global:guest_join", 120, TimeSpan.FromMinutes(1)))
                 throw new DomainException("RATE_LIMITED", 429, "too many join attempts, please wait a moment");
 
@@ -141,6 +144,4 @@ public static class GuestEndpoints
         return $"{proto}://{host}";
     }
 
-    private static string ClientIp(HttpContext ctx) =>
-        ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 }

@@ -157,7 +157,7 @@ public static class AuthEndpoints
         async (ctx, next) =>
         {
             var limiter = ctx.HttpContext.RequestServices.GetRequiredService<IRateLimiter>();
-            if (!limiter.Allow($"{prefix}:{ClientIp(ctx.HttpContext)}", limit, window))
+            if (!ClientRate.Allow(limiter, ctx.HttpContext, prefix, limit, window))
                 return Results.Json(
                     new ErrorEnvelope("RATE_LIMITED", "too many requests, please slow down"),
                     statusCode: StatusCodes.Status429TooManyRequests);

@@ -14,10 +14,12 @@ import {
 } from "livekit-client";
 import { BrandMark, useSpaceBrand } from "@components/BrandMark";
 import { Icon } from "@lib/icons";
+import { Avatar } from "@components/Avatar";
+import { avatarColor } from "@lib/format";
 import { VoiceCtl } from "@components/VoiceCtl";
 import { FloatingReactions, VoiceFxControls, useReactionFeed } from "@components/VoiceFx";
 import { describeMediaError } from "@lib/mediaErrors";
-import { onReaction, raisedHands, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
+import { onReaction, playHandCue, raisedHands, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
 import { createLogger } from "@lib/logger";
 import { t } from "@lib/i18n";
 import { createRNNoiseProcessor, MIN_DENOISE_RATE, micInputRate, handBackToBrowser } from "@lib/noise-suppression";
@@ -105,6 +107,10 @@ const GUEST_MIC_KEY = "outcome:guest:micId";
  *  below live out here too, and they need to know whether the Web Audio graph — rather than
  *  the <audio> elements — is what the room is being heard through. */
 let guestSharedCtx: AudioContext | null = null;
+
+/** Hands already seen up, so only new ones ring — see the note in refreshTiles. */
+let guestKnownHands = new Set<string>();
+let guestHandsSynced = false;
 
 /**
  * Receive-side loudness levelling for the guest page.
@@ -382,7 +388,15 @@ export function GuestVoicePage({ code }: { code: string }) {
       });
     }
     setTiles(list);
-    setHands(raisedHands(room));
+    const nowUp = raisedHands(room);
+    // Same rule as the signed-in client: ring for a hand raised in front of us, stay quiet
+    // about the ones that were already up when we walked in.
+    if (guestHandsSynced) {
+      for (const identity of nowUp.keys()) if (!guestKnownHands.has(identity)) { playHandCue(); break; }
+    }
+    guestKnownHands = new Set(nowUp.keys());
+    guestHandsSynced = true;
+    setHands(nowUp);
   };
 
   // Fill the picker while the guest is still deciding to join. Two things happen here, and
@@ -487,6 +501,8 @@ export function GuestVoicePage({ code }: { code: string }) {
       const sharedAudioContext = pipelineRef.current.context;
       guestSharedCtx = sharedAudioContext;
       guestAudioStarted = false; // fresh room, fresh elements: nothing has played yet
+      guestKnownHands = new Set();
+      guestHandsSynced = false;
       const room = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -651,6 +667,10 @@ export function GuestVoicePage({ code }: { code: string }) {
 
   // Screen shares get the big stage; everyone else is a strip of small tiles.
   const shares = tiles.filter((p) => p.screen !== null);
+  // Decided here, not in CSS: Avatar writes width/height as inline style, so a stylesheet rule
+  // for the narrow strip would lose to it without a word. A share on stage pushes everyone into
+  // a 104px-tall strip, where a full-size disc would not fit under the name pill.
+  const faceSize = shares.length > 0 ? 56 : 80;
   const connected = phase === "connected";
 
   // Tiles are laid out on a grid whose column count follows the number of people, so one
@@ -773,19 +793,32 @@ export function GuestVoicePage({ code }: { code: string }) {
             )}
 
             <div className={"guest-tiles" + (shares.length > 0 ? " strip" : "")}>
-              {tiles.map((p) => (
-                <div key={p.id} className={"guest-tile" + (p.speaking ? " speaking" : "")}>
-                  <FloatingReactions items={reactions.get(p.id) ?? []} />
-                  {hands.has(p.id) && <span className="vstage-hand" title={t("voice.handRaised")}>✋</span>}
-                  {p.camera
-                    ? <VideoTile stream={p.camera} mirror={p.isLocal} muted={p.isLocal} />
-                    : <div className="guest-tile-audio"><Icon name="volume-2" size={14} /></div>}
-                  <span className="guest-tile-name">
-                    {p.muted && <Icon name="mic-off" size={11} />}
-                    {p.name}{p.isLocal ? ` ${t("guest.youSuffix")}` : ""}
-                  </span>
-                </div>
-              ))}
+              {tiles.map((p) => {
+                // The server appends "(guest)" to every visitor's name so nobody can pose as a
+                // member. Good for the label, useless for a disc: initials() would read the
+                // bracket as a second word and put "И(" on it.
+                const person = p.name.replace(/\s*\([^)]*\)\s*$/, "").trim() || p.name;
+                const tint = avatarColor(person);
+                return (
+                  <div
+                    key={p.id}
+                    className={"guest-tile" + (p.speaking ? " speaking" : "")}
+                    style={{ "--tile-tint": tint } as React.CSSProperties}
+                  >
+                    <FloatingReactions items={reactions.get(p.id) ?? []} />
+                    {hands.has(p.id) && <span className="vstage-hand" title={t("voice.handRaised")}>✋</span>}
+                    {p.camera
+                      ? <VideoTile stream={p.camera} mirror={p.isLocal} muted={p.isLocal} />
+                      : <div className="guest-tile-face">
+                          <Avatar username={person} size={faceSize} color={tint} className="guest-tile-avatar" />
+                        </div>}
+                    <span className="guest-tile-name">
+                      {p.muted && <Icon name="mic-off" size={11} />}
+                      {p.name}{p.isLocal ? ` ${t("guest.youSuffix")}` : ""}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
             {/* The same controls as the in-app voice bar, from the same component. These were

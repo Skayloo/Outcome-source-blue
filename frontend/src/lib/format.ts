@@ -17,6 +17,23 @@ export function initials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+/** Palette for initials discs. Picked to stay legible as white-on-colour and to look like
+ *  people rather than status: no reds or greens, which in a call already mean muted and
+ *  speaking. */
+const AVATAR_COLORS = [
+  "#5865f2", "#9b59b6", "#e67e22", "#0ea5e9", "#d946a0",
+  "#14b8a6", "#7c5cff", "#c2853a", "#3b82f6", "#a855f7",
+];
+
+/** A stable colour for a name. Stable is the whole point: the same person must be the same
+ *  colour on every screen in the call and after every reconnect, or the disc stops being a way
+ *  to recognise anybody. */
+export function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (Math.imul(h, 31) + name.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]!;
+}
+
 export function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";

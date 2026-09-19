@@ -12,6 +12,7 @@ import { enableCamera, disableCamera, enableScreenshare, disableScreenshare, unl
 import { Avatar } from "@components/Avatar";
 import { QualityBars } from "@components/QualityBars";
 import { Icon } from "@lib/icons";
+import { loadPref, savePref } from "@components/settings/helpers";
 import { t } from "@lib/i18n";
 
 /** Format elapsed milliseconds as m:ss (or h:mm:ss past an hour). */
@@ -47,6 +48,18 @@ export function VoiceWidget() {
     return () => clearInterval(id);
   }, [v.currentChannelId]);
 
+  // Collapsed by choice, remembered. The dock is a quick-access strip that sits ON TOP of the
+  // channel list, and at full height it hides most of the people in the call — the very list
+  // somebody opens the sidebar to read.
+  //
+  // ABOVE the early return, with the other hooks, and that is not a style preference: below it
+  // the hook count changes the moment somebody joins a channel, React tears the tree down and
+  // the whole app goes black. It did exactly that in 1.31.27.
+  const [collapsed, setCollapsed] = useState(() => loadPref<boolean>("voiceDockCollapsed", false));
+  function toggleCollapsed(): void {
+    setCollapsed((was) => { savePref("voiceDockCollapsed", !was); return !was; });
+  }
+
   if (v.currentChannelId == null) return null;
 
   const channelId = v.currentChannelId;
@@ -71,6 +84,29 @@ export function VoiceWidget() {
     closeDrawer();
   }
 
+  if (collapsed) {
+    return (
+      <div className="voice-dock collapsed">
+        <div className="vd-mini">
+          <span className="vd-live-dot" />
+          <span className="vd-mini-name" title={ch?.name ?? ""}>{ch?.name ?? ""}</span>
+          <span className="vd-timer">{fmtElapsed(elapsed)}</span>
+          <button
+            className={v.localMuted ? "active-ctrl" : ""}
+            title={v.localMuted ? t("voice.unmute") : t("voice.mute")}
+            onClick={toggleMute}
+          ><Icon name={v.localMuted ? "mic-off" : "mic"} size={15} /></button>
+          <button className="vd-leave" title={t("voice.disconnect")} onClick={leaveVoiceNow}>
+            <Icon name="phone-down" size={15} />
+          </button>
+          <button className="vd-collapse" title={t("voice.expandDock")} onClick={toggleCollapsed}>
+            <Icon name="chevron-up" size={14} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="voice-dock">
       <div className="vd-header">
@@ -82,17 +118,15 @@ export function VoiceWidget() {
           title={t("voice.openVoiceView")}
           onClick={openStage}
         ><Icon name="external-link" size={13} /></button>
+        <button className="vd-collapse" title={t("voice.collapseDock")} onClick={toggleCollapsed}>
+          <Icon name="chevron-down" size={14} />
+        </button>
       </div>
 
       <div className="vd-channel">
         <Icon name="volume-2" size={13} />
         <span className="vd-channel-name">{ch?.name ?? ""}</span>
         {v.listenOnly && <span className="vd-listen">{t("voice.listenOnly")}</span>}
-        {/* Only worth showing when it is NOT the good path: udp is unremarkable, tcp and relay
-            explain a call that sounds ragged on mobile data. */}
-        {v.transport != null && v.transport !== "udp" && (
-          <span className="vd-transport" title={t("voice.transportHint")}>{v.transport}</span>
-        )}
       </div>
 
       {v.audioBlocked && (

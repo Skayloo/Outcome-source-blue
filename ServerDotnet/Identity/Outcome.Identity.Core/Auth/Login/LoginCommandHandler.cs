@@ -16,7 +16,6 @@ public sealed class LoginCommandHandler(
     IAuditRepository audit,
     IJwtTokenService jwt,
     ISessionRepository sessions,
-    IRateLimiter limiter,
     IPartialAuthStore partialStore,
     IEmailSender emailSender) : IRequestHandler<LoginCommand, AuthResult>
 {
@@ -27,28 +26,29 @@ public sealed class LoginCommandHandler(
             throw DomainException.InvalidInput("email and password are required");
 
         var ip = cmd.Ip;
-        var lockKey = "login_lock:" + ip;
-        if (limiter.IsLockedOut(lockKey))
-            throw DomainException.RateLimited("account temporarily locked due to too many failed attempts");
 
         var user = await userManager.FindByEmailAsync(email);
         // A soft-deleted account behaves as if it does not exist (generic invalid-credentials path).
         if (user is not null && user.Deleted) user = null;
-        var failKey = "login_fail:" + ip;
 
-        // Identity account lockout (per-user, 7 failed attempts) on top of the IP limiter.
+        // There used to be a second lockout here, keyed on the client IP: nine failed attempts
+        // and that address was refused for fifteen minutes. Behind a router that rewrites the
+        // source address every visitor shares one address, so nine wrong passwords by anyone
+        // locked EVERY user out of the product — and each further wrong password re-armed it,
+        // while a successful login never cleared it. It was also redundant: the per-user lockout
+        // below is the protection that actually matters, because brute force targets an account,
+        // not an address. See the ClientRate notes for why an address means nothing here.
+        //
+        // Per-user lockout (Identity, 7 failed attempts):
         if (user is not null && await userManager.IsLockedOutAsync(user))
             throw DomainException.RateLimited("account temporarily locked due to too many failed attempts");
 
         if (user is null || !await userManager.CheckPasswordAsync(user, cmd.Password))
         {
             if (user is not null) await userManager.AccessFailedAsync(user);
-            if (!limiter.Allow(failKey, 9, TimeSpan.FromMinutes(15)))
-                limiter.Lockout(lockKey, TimeSpan.FromMinutes(15));
             throw DomainException.Unauthorized("invalid credentials");
         }
         await userManager.ResetAccessFailedCountAsync(user);
-        limiter.Reset(failKey);
 
         if (IsEffectivelyBanned(user))
         {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, useLayoutEffect } from "react";
 import { Icon } from "@lib/icons";
 import { assetUrl, assetUrlSmall, assetUrlMedium } from "@lib/serverHost";
 import { Avatar } from "@components/Avatar";
@@ -6,7 +6,7 @@ import { VoiceMessage } from "@components/VoiceMessage";
 import { EmojiPicker } from "@components/EmojiPicker";
 import { useStoreState } from "@lib/useStore";
 import { channelsStore } from "@stores/channels.store";
-import { messagesStore, getChannelMessages, isChannelLoaded, setMessages, setMessagePinned, type Message } from "@stores/messages.store";
+import { messagesStore, getChannelMessages, isChannelLoaded, setMessages, prependMessages, hasMoreMessages, setMessagePinned, type Message } from "@stores/messages.store";
 import { membersStore } from "@stores/members.store";
 import { authStore } from "@stores/auth.store";
 import { dmStore } from "@stores/dm.store";
@@ -74,6 +74,43 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       });
     return () => { cancelled = true; };
   }, [channelId, channelLoaded, retry]);
+
+  // Infinite scroll upwards. Without this the web client fetched the last 50 messages ONCE and
+  // never asked for more: a busy conversation simply ended at whatever date the 50th message
+  // fell on, replies pointing above that line rendered as "Deleted message" because their
+  // parent could not be in the store, and the iOS app — which does paginate — showed the same
+  // conversation whole. prependMessages had been sitting in the store with no callers at all.
+  const loadingOlderRef = useRef(false);
+  const keepScrollRef = useRef<number | null>(null);
+  function loadOlder(el: HTMLElement): void {
+    if (channelId == null || loadingOlderRef.current || !hasMoreMessages(channelId)) return;
+    const current = getChannelMessages(channelId);
+    const oldest = current[0];
+    if (oldest === undefined) return;
+    loadingOlderRef.current = true;
+    // Remember the distance from the BOTTOM, not scrollTop: the content above is about to grow
+    // and every pixel of it would otherwise push the reader's place down the screen.
+    keepScrollRef.current = el.scrollHeight - el.scrollTop;
+    const id = channelId;
+    api.getMessages(id, { before: oldest.id, limit: 50 })
+      .then((resp) => {
+        const msgs = resp.messages;
+        prependMessages(id, msgs, resp.has_more);
+        markListenedBulk(msgs.flatMap((m) => m.attachments.filter((a) => a.listened).map((a) => a.id)));
+        markListenedByOthersBulk(msgs.flatMap((m) => m.attachments.filter((a) => a.listened_by_others).map((a) => a.id)));
+      })
+      .catch(() => { /* a failed page is not a broken channel; the next scroll tries again */ })
+      .finally(() => { loadingOlderRef.current = false; });
+  }
+
+  // Restore the reading position after older messages land above it.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    const keep = keepScrollRef.current;
+    if (el === null || keep === null) return;
+    keepScrollRef.current = null;
+    el.scrollTop = el.scrollHeight - keep;
+  });
 
   const messages = channelId != null ? getChannelMessages(channelId) : [];
   // A DM is a conversation between two people; either of them may delete anything in it.
@@ -370,6 +407,9 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       onScroll={(e) => {
         const el = e.currentTarget;
         const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        // Near the top → fetch the page above. 300 px of warning, so it arrives before the
+        // reader hits the ceiling.
+        if (el.scrollTop < 300) loadOlder(el);
         nearBottomRef.current = fromBottom < 80;
         // Scrolling away is the reader taking over; nothing re-pins until they come back.
         stickRef.current = fromBottom < 80;

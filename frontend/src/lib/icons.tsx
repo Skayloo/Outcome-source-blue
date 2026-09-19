@@ -8,7 +8,7 @@ export type IconName =
   | "mic" | "mic-off" | "headphones" | "headphones-off" | "camera" | "camera-off"
   | "monitor" | "monitor-off" | "phone" | "phone-off" | "phone-down" | "volume-2" | "volume-x"
   | "pin" | "pin-off" | "users" | "settings" | "smile" | "send" | "reply" | "pencil"
-  | "trash-2" | "file-text" | "download" | "chevron-down" | "chevron-right" | "x"
+  | "trash-2" | "file-text" | "download" | "chevron-down" | "chevron-up" | "chevron-right" | "x"
   | "eye" | "eye-off" | "flag" | "shield-off" | "play" | "pause" | "check" | "external-link" | "loader"
   | "arrow-right" | "hash" | "triangle-alert" | "user" | "palette" | "bell" | "bell-off"
   | "keyboard" | "scroll-text" | "image" | "signal" | "log-out" | "zap"
@@ -50,6 +50,7 @@ const ICON_PATHS: Record<IconName, string> = {
   "file-text": `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>`,
   download: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>`,
   "chevron-down": `<path d="m6 9 6 6 6-6"/>`,
+  "chevron-up": `<path d="m18 15-6-6-6 6"/>`,
   "chevron-right": `<path d="m9 18 6-6-6-6"/>`,
   x: `<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`,
   eye: `<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>`,

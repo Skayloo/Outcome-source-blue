@@ -5,6 +5,7 @@
  */
 
 import { createStore } from "@lib/store";
+import { windowAfterPrepend } from "@lib/messageWindow";
 import type {
   ChatMessagePayload,
   ChatEditedPayload,
@@ -85,8 +86,10 @@ function messageResponseToMessage(response: MessageResponse): Message {
   };
 }
 
-/** Maximum messages retained per channel. Oldest messages are evicted when exceeded. */
+/** Maximum messages retained per channel from a FRESH load. Oldest are evicted when exceeded. */
 const MAX_MESSAGES_PER_CHANNEL = 500;
+
+
 
 // -----------------------------------------------------------------------------
 // Initial state
@@ -171,18 +174,15 @@ export function prependMessages(
   const converted = messages.map(messageResponseToMessage).reverse();
   messagesStore.setState((prev) => {
     const existing = prev.messagesByChannel.get(channelId) ?? [];
-    let combined = [...converted, ...existing];
-    // Keep newest messages (end of array); drop oldest loaded history when cap exceeded
-    const wasTrimmed = combined.length > MAX_MESSAGES_PER_CHANNEL;
-    if (wasTrimmed) {
-      combined = combined.slice(combined.length - MAX_MESSAGES_PER_CHANNEL);
-    }
+    // See messageWindow.ts — and its check, which fails on the version that shipped.
+    const combined = windowAfterPrepend(converted, existing);
     const updatedMessages = new Map(prev.messagesByChannel);
     updatedMessages.set(channelId, combined);
 
     const updatedHasMore = new Map(prev.hasMore);
-    // If we trimmed older messages, there are definitely more on the server above.
-    updatedHasMore.set(channelId, hasMore || wasTrimmed);
+    // Whether more history exists is the SERVER's answer. It used to be OR-ed with "we trimmed",
+    // which was true forever and hid that nothing was actually being added.
+    updatedHasMore.set(channelId, hasMore);
 
     return {
       ...prev,

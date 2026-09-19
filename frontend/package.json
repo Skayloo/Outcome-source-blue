@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/build-rnnoise-worklet.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/build-rnnoise-worklet.mjs && node scripts/hooks-after-return-check.mjs && tsc --noEmit && vite build",
+    "check": "node --experimental-strip-types scripts/message-window-check.mjs && node --experimental-strip-types scripts/loudness-norm-check.mjs",
+    "hooks": "node scripts/hooks-after-return-check.mjs",
     "worklet": "node scripts/build-rnnoise-worklet.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"

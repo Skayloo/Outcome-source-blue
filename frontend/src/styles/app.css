@@ -461,6 +461,31 @@
 .vstage-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vstage-badge.muted, .vstage-badge.deaf { color: var(--red); }
 
+/* The dock collapsed to a single strip. It stays useful — name, timer, mute, hang up — while
+   giving the channel list back the ~200 px the face grid was taking. */
+.voice-dock.collapsed { padding: 6px 8px; }
+.vd-mini { display: flex; align-items: center; gap: 8px; }
+.vd-mini-name {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: var(--text-primary, #fff);
+}
+.vd-mini button {
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  width: 28px; height: 28px; border: 0; border-radius: 8px;
+  background: var(--bg-input, rgba(255,255,255,.06)); color: inherit; cursor: pointer;
+}
+.vd-mini button:hover { filter: brightness(1.15); }
+.vd-mini .vd-leave { background: var(--red, #f23f43); color: #fff; }
+.vd-collapse {
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  width: 24px; height: 24px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--text-muted, #9aa); cursor: pointer;
+}
+.vd-collapse:hover { background: rgba(255,255,255,.08); color: inherit; }
+
 /* --- Reactions and raised hands ------------------------------------------------------------
    Shared by the signed-in stage and the guest page: the same meeting is held on both, and a
    guest whose applause looks different has been told they are a lesser participant. */
@@ -4046,15 +4071,7 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
 }
 .space-console-tabs { gap: 6px; }
 
-/* Voice dock: the transport badge only appears on a degraded path, and the sound-unlock
-   button only while the browser is refusing to play audio. */
-.vd-transport {
-  margin-left: auto;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--warning, #e0a458);
-}
+/* Voice dock: the sound-unlock button appears only while the browser refuses to play audio. */
 .vd-unblock {
   display: flex;
   align-items: center;

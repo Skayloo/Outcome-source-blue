@@ -1,7 +1,7 @@
 {
   "name": "outcome-desktop",
   "productName": "Outcome",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "Outcome — мессенджер для команды на своём сервере",
   "author": {

@@ -277,11 +277,14 @@ api.MapAdminEndpoints();
 app.Map("/api/v1/ws", async (HttpContext ctx, WebSocketHandler handler, WsConnectionLimiter wsLimit) =>
 {
     if (!ctx.WebSockets.IsWebSocketRequest) { ctx.Response.StatusCode = StatusCodes.Status400BadRequest; return; }
-    // Cap sockets per client IP BEFORE accepting: a single box must not be able to hold
-    // thousands of idle sockets (each costs memory + an fd). The default (64) is roomy
-    // enough for a whole dorm behind one NAT.
-    var clientIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    if (!wsLimit.TryEnter(clientIp)) { ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests; return; }
+    // Cap sockets per client BEFORE accepting: a single box must not be able to hold thousands
+    // of idle sockets (each costs memory + an fd). Only when we know who the client is, though —
+    // behind a router that rewrites the source address of every inbound packet, every visitor on
+    // earth arrives as the gateway, and "64 per client" silently becomes 64 sockets for the whole
+    // platform. That is not flood defence, it is an outage: the app stops connecting for
+    // everybody at once, with a 429 nobody can explain. See ClientRate.
+    var clientIp = Outcome.Api.Endpoints.ClientRate.Of(ctx);
+    if (clientIp is not null && !wsLimit.TryEnter(clientIp)) { ctx.Response.StatusCode = StatusCodes.Status429TooManyRequests; return; }
     try
     {
         using var ws = await ctx.WebSockets.AcceptWebSocketAsync();
@@ -289,7 +292,7 @@ app.Map("/api/v1/ws", async (HttpContext ctx, WebSocketHandler handler, WsConnec
         var space = ctx.RequestServices.GetRequiredService<Outcome.Infrastructure.Tenancy.ICurrentSpace>().Space;
         await handler.RunAsync(ws, space, ctx.RequestAborted);
     }
-    finally { wsLimit.Exit(clientIp); }
+    finally { if (clientIp is not null) wsLimit.Exit(clientIp); }
 });
 
 // Admin live log stream (Server-Sent Events). Mapped on `app` (not the Newtonsoft group) so it can

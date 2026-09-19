@@ -26,6 +26,34 @@ KEY=$(ls "/caddy/caddy/certificates/"*"/$HOST/$HOST.key" 2>/dev/null | head -1)
 
 printf '%s\n' "$LIVEKIT_CONFIG" > /tmp/livekit.yaml
 
+# An external TURN relay, advertised to clients as an ICE server. This is the path that makes
+# voice work at all from outside: the SFU sits behind a router that rewrites the source address
+# of inbound packets, and ICE — a protocol built entirely on address symmetry — cannot survive
+# that. Against a relay both sides open OUTBOUND flows, so the router leaves the media path.
+#
+# It goes INSIDE the existing rtc: block, hence the insert rather than an append: a second
+# top-level rtc: key would either be rejected or silently shadow the first one.
+#
+# Credentials are ephemeral (TURN REST): livekit signs "<expiry>:<participantID>" with the
+# shared secret, so nothing long-lived is handed to a browser.
+if [ -n "$TURN_RELAY_HOST" ]; then
+  awk -v h="$TURN_RELAY_HOST" \
+      -v p="${TURN_RELAY_PORT:-3478}" \
+      -v pr="${TURN_RELAY_PROTOCOL:-udp}" \
+      -v s="$TURN_RELAY_SECRET" '
+    { print }
+    /^rtc:/ && !seen {
+      print "  turn_servers:"
+      print "    - host: " h
+      print "      port: " p
+      print "      protocol: " pr
+      print "      secret: " s
+      seen = 1
+    }
+  ' /tmp/livekit.yaml > /tmp/livekit.yaml.new && mv /tmp/livekit.yaml.new /tmp/livekit.yaml
+  echo "livekit: external TURN relay ${TURN_RELAY_HOST}:${TURN_RELAY_PORT:-3478}/${TURN_RELAY_PROTOCOL:-udp}"
+fi
+
 # A kill switch, because TURN is the one part of this file that can take voice down with it:
 # it hands clients a relay whose media ports are published separately, so a mismatch there
 # fails as "could not establish pc connection" with nothing wrong in the logs.
