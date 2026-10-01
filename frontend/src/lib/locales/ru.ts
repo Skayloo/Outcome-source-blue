@@ -873,6 +873,7 @@ export const ru: Record<string, string> = {
   "sidebar.adminConsole": "Панель администратора",
   "sidebar.ban": "Заблокировать",
   "sidebar.channels": "Каналы",
+  "sidebar.roomChat": "Чат голосовой комнаты {name}",
   "sidebar.createChannel": "Создать канал",
   "sidebar.deleteChannelConfirm": "Удалить #{name}? Это удалит все его сообщения.",
   "sidebar.deleteChannelFailed": "Не удалось удалить канал",

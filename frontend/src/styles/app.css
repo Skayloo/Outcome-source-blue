@@ -149,6 +149,25 @@
   background: white;
 }
 
+/* A voice room's own chat, under the room and joined to it by an elbow — the shape a reply
+   uses to point at the message it answers. Indented so the elbow starts under the room's
+   speaker icon (row margin 8 + padding 10 + half the 20px icon = 28px from the list edge). */
+.channel-item.channel-room-chat { margin-left: 40px; padding: 5px 10px 5px 8px; gap: 6px; }
+.channel-item.channel-room-chat .ch-name { font-size: 14px; }
+.channel-item.channel-room-chat .ch-icon { width: 14px; }
+.ch-room-link {
+  position: absolute; left: -12px; top: -9px;
+  width: 10px; height: calc(50% + 9px);
+  border-left: 2px solid color-mix(in oklab, var(--text-muted) 45%, transparent);
+  border-bottom: 2px solid color-mix(in oklab, var(--text-muted) 45%, transparent);
+  border-bottom-left-radius: 8px;
+  pointer-events: none;
+}
+.channel-item.channel-room-chat.active .ch-room-link,
+.channel-item.channel-room-chat:hover .ch-room-link {
+  border-color: color-mix(in oklab, var(--accent) 70%, transparent);
+}
+
 /* Voice users nested in sidebar */
 .voice-users-list { padding: 2px 0 4px 36px; }
 .voice-user-item {

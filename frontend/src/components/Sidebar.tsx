@@ -37,6 +37,15 @@ export function Sidebar() {
 
   const byCategory = getChannelsByCategory();
   const activeId = channelsStore.getState().activeChannelId;
+  // A voice room's own chat is drawn under the room, joined to it like a reply to the message
+  // above — not as a second "General" further down the list, which read as a duplicate.
+  const allChannels = channelsStore.getState().channels;
+  const chatOfRoom = new Map<number, Channel>();
+  for (const ch of allChannels.values()) {
+    const chat = ch.type === "voice" && ch.chatChannelId != null ? allChannels.get(ch.chatChannelId) : undefined;
+    if (chat) chatOfRoom.set(ch.id, chat);
+  }
+  const roomChatIds = new Set([...chatOfRoom.values()].map((c) => c.id));
   const onlineCount = [...members.members.values()].filter((m) => m.status !== "offline").length;
   const role = (auth.user?.role ?? "").toLowerCase();
   const isGlobalAdmin = role === "owner";
@@ -87,7 +96,8 @@ export function Sidebar() {
         onClick: () => { void copyGuestLink(ch.id); },
       });
     }
-    if (canManage) {
+    // A room's chat goes with the room (the server refuses deleting it alone).
+    if (canManage && !roomChatIds.has(ch.id)) {
       if (items.length > 0) items.push({ separator: true });
       items.push({
         label: t("ctx.deleteChannel"), danger: true, icon: <Icon name="trash-2" size={15} />,
@@ -143,7 +153,8 @@ export function Sidebar() {
               )}
             </div>
             <div className="category-channels" style={collapsed ? { display: "none" } : undefined}>
-              {channels.map((ch) => {
+              {channels.filter((ch) => !roomChatIds.has(ch.id)).map((ch) => {
+                const roomChat = chatOfRoom.get(ch.id);
                 const vUsers = ch.type === "voice" ? (getChannelVoiceUsers(ch.id) ?? []) : [];
                 // The voice channel the user is CURRENTLY connected to (Discord-style green highlight).
                 const connectedHere = ch.type === "voice" && voiceStore.getState().currentChannelId === ch.id;
@@ -171,6 +182,25 @@ export function Sidebar() {
                       {connectedHere && <span className="ch-live-dot" title={t("voice.voiceConnected")} />}
                       {ch.unreadCount > 0 && <span className="unread-badge">{ch.unreadCount}</span>}
                     </div>
+                    {roomChat && (
+                      <div
+                        className={
+                          "channel-item channel-room-chat" +
+                          (roomChat.id === activeId ? " active" : "") +
+                          (roomChat.unreadCount > 0 ? " unread" : "")
+                        }
+                        data-type="room-chat"
+                        title={t("sidebar.roomChat", { name: ch.name })}
+                        onClick={() => { setActiveChannel(roomChat.id); closeDrawer(); }}
+                        onContextMenu={(e) => { e.preventDefault(); setChMenu({ ch: roomChat, x: e.clientX, y: e.clientY }); }}
+                      >
+                        <span className="ch-room-link" aria-hidden="true" />
+                        <span className="ch-icon">#</span>
+                        <span className="ch-name">{roomChat.name}</span>
+                        {mutes.muted.has(roomChat.id) && <span className="ch-muted"><Icon name="bell-off" size={12} /></span>}
+                        {roomChat.unreadCount > 0 && <span className="unread-badge">{roomChat.unreadCount}</span>}
+                      </div>
+                    )}
                     {vUsers.length > 0 && (
                       <div className="voice-users-list">
                         {vUsers.map((u) => (

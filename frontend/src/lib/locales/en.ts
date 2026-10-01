@@ -873,6 +873,7 @@ export const en: Record<string, string> = {
   "sidebar.adminConsole": "Admin console",
   "sidebar.ban": "Ban",
   "sidebar.channels": "Channels",
+  "sidebar.roomChat": "Chat of the voice room {name}",
   "sidebar.createChannel": "Create Channel",
   "sidebar.deleteChannelConfirm": "Delete #{name}? This removes all its messages.",
   "sidebar.deleteChannelFailed": "Failed to delete channel",
