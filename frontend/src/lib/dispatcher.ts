@@ -71,6 +71,8 @@ import type { DmChannelPayload } from "./types";
 import { handleVoiceToken } from "@lib/livekitSession";
 import { api, wsSend } from "./services";
 import { enterDmView } from "./dm";
+import { followRoomLink } from "./roomLink";
+import { onRecordAck } from "./recorder";
 import { notifyIncomingMessage, notifyIncomingCall, stopTitleFlash, closeCallNotification } from "./notifications";
 import { createLogger } from "./logger";
 import { ServerMessageType as S } from "./protocolTypes";
@@ -155,16 +157,14 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
       setMembers(payload.members);
       setVoiceStates(payload.voice_states);
 
-      // Re-announce voice presence after a WS reconnect: the server drops our voice_states
-      // row the moment the socket dies while the LiveKit media session keeps playing, which
-      // turns us into a ghost — audible, but absent from every roster. Idempotent re-join
-      // restores the row (and skips the media reconnect via the session-already-live guard).
+      // Re-announce voice presence after a WS reconnect — always, as the app does. Without it the
+      // server may have dropped our voice_states row (we would be a ghost: audible, absent from
+      // every roster), and even when the row survived — a server restart keeps it — the server
+      // no longer knows which connection holds our call, which is what it checks before passing
+      // on a room key we send. `rejoin` keeps our mute/camera flags as they are, and the media
+      // session is untouched (the session-already-live guard).
       const inVoice = voiceStore.select((s) => s.currentChannelId);
-      if (inVoice !== null && !payload.voice_states.some(
-        (v) => v.channel_id === inVoice && v.user_id === (authStore.getState().user?.id ?? 0),
-      )) {
-        wsSend("voice_join", { channel_id: inVoice });
-      }
+      if (inVoice !== null) wsSend("voice_join", { channel_id: inVoice, rejoin: true });
 
       // A cross-server jump (e.g. voice dock "open" from another space) asked for a specific
       // channel — honor it if this scoped READY actually carries it; else fall back to the
@@ -183,6 +183,9 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
           setActiveChannel(firstText.id);
         }
       }
+
+      // A guest link opened before signing in: into that room now (lib/roomLink.ts).
+      void followRoomLink();
 
       // Populate DM channels if present in the ready payload
       const dmPayloads = payload.dm_channels ?? [];
@@ -367,6 +370,9 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
 
   unsubs.push(
     ws.on(S.TYPING, (payload) => {
+      // The channel broadcast reaches the typer too — and every other device they are signed
+      // in on, so typing on the phone put "you are typing…" under your own nose on the laptop.
+      if (payload.user_id === authStore.getState().user?.id) return;
       setTyping(payload.channel_id, payload.user_id);
     }),
   );
@@ -596,6 +602,13 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
   unsubs.push(
     ws.on(S.VOICE_CONFIG, (payload) => {
       setVoiceConfig(payload);
+    }),
+  );
+
+  // The room has been told we are recording (W3GWG-25 stage 4) — the recorder may start.
+  unsubs.push(
+    ws.on(S.VOICE_RECORD_OK, (payload) => {
+      onRecordAck(payload);
     }),
   );
 

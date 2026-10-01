@@ -124,6 +124,8 @@ export interface ReadyChannel {
   readonly unread_count?: number;
   readonly last_message_id?: number;
   readonly read_by_others?: number;
+  /** A voice room's own text chat (W3GWG-25). */
+  readonly chat_channel_id?: number | null;
 }
 
 /** Member object in the ready payload. */
@@ -181,6 +183,7 @@ export enum Permission {
   SPEAK_VOICE     = 0x400,
   USE_VIDEO       = 0x800,
   SHARE_SCREEN    = 0x1000,
+  RECORD_CALLS    = 0x2000,
   MANAGE_MESSAGES = 0x10000,
   MANAGE_CHANNELS = 0x20000,
   KICK_MEMBERS    = 0x40000,
@@ -234,6 +237,8 @@ export interface ChatMessagePayload {
   readonly content: string;
   readonly reply_to: number | null;
   readonly forwarded_from?: string | null;
+  /** A guest's line in a voice room's chat: the name they typed (`user` is a placeholder). */
+  readonly guest_name?: string | null;
   readonly attachments: readonly Attachment[];
   readonly timestamp: string;
 }
@@ -282,6 +287,7 @@ export interface ChannelCreatePayload {
   readonly type: ChannelType;
   readonly category: string | null;
   readonly position: number;
+  readonly chat_channel_id?: number | null;
 }
 
 export interface ChannelUpdatePayload {
@@ -319,6 +325,14 @@ export interface VoiceConfigPayload {
   readonly mixing_threshold: number;
   readonly top_speakers: number;
   readonly max_users: number;
+  /** Whether this member may record the room (RecordCalls) — the record button's cue. */
+  readonly can_record?: boolean;
+}
+
+/** The server announced (or withdrew) our recording to the room — start (or finish) it now. */
+export interface VoiceRecordOkPayload {
+  readonly channel_id: number;
+  readonly on: boolean;
 }
 
 /** CRITICAL: uses threshold_mode, NOT mode. */
@@ -413,6 +427,9 @@ export interface AuthPayload {
   readonly last_seq?: number;
   /** Scopes the READY payload to the active server (multi-server support). */
   readonly server_id?: number;
+  /** Names this tab as a device: our LiveKit identities carry it (user-<id>.<device>.<conn>) and a
+   *  voice_join evicts only OTHER devices, so the re-join after a reconnect keeps our live session. */
+  readonly device_id?: string;
 }
 
 export interface ChatSendPayload {
@@ -456,6 +473,9 @@ export interface PresenceUpdatePayload {
 
 export interface VoiceJoinPayload {
   readonly channel_id: number;
+  /** Re-announcing a call this device is still in (after a reconnect): the server keeps its
+   *  mute/camera flags instead of resetting them, and learns which connection holds the call. */
+  readonly rejoin?: boolean;
 }
 
 /** Client → Server: leave current voice channel (no payload needed). */
@@ -520,6 +540,7 @@ export type ServerMessage =
   | (WsEnvelope<VoiceStatePayload> & { readonly type: "voice_state" })
   | (WsEnvelope<VoiceLeavePayload> & { readonly type: "voice_leave" })
   | (WsEnvelope<VoiceConfigPayload> & { readonly type: "voice_config" })
+  | (WsEnvelope<VoiceRecordOkPayload> & { readonly type: "voice_record_ok" })
   | (WsEnvelope<VoiceSpeakersPayload> & { readonly type: "voice_speakers" })
   | (WsEnvelope<VoiceTokenPayload> & { readonly type: "voice_token" })
   | (WsEnvelope<MemberJoinPayload> & { readonly type: "member_join" })
@@ -653,6 +674,7 @@ export interface MessageResponse {
   readonly content: string;
   readonly reply_to: number | null;
   readonly forwarded_from?: string | null;
+  readonly guest_name?: string | null;
   readonly attachments: readonly Attachment[];
   readonly reactions: readonly ReactionSummary[];
   readonly pinned: boolean;
@@ -898,7 +920,23 @@ export interface GuestLinkRow {
   readonly channel_name: string;
   readonly code: string | null;
   readonly url: string | null;
+  /** Guests of this link are offered "copy the invite". Off unless someone turned it on. */
+  readonly allow_guest_share?: boolean;
 }
+
+/** One GIF in the user's reaction library: `url` is a bare /api/v1/files path. */
+export interface GifItem {
+  readonly id: number;
+  readonly url: string;
+  readonly mime: string;
+  readonly size: number;
+}
+
+/** `GET /guest/{code}/account`: what a guest link means for the signed-in user. A member of the
+ *  room's server goes in as themselves; anyone else is a guest, and gets no ids. */
+export type GuestAccountResponse =
+  | { readonly member: true; readonly username: string; readonly server_id: number; readonly channel_id: number; readonly channel_name: string }
+  | { readonly member: false; readonly username: string; readonly channel_name: string };
 
 /**
  * A SPACE is a tenant: its own database, users and servers. Not to be confused with a

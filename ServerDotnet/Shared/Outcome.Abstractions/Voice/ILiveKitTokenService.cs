@@ -20,4 +20,16 @@ public interface ILiveKitTokenService
     /// <summary>Short-lived AUDIO-ONLY token for an anonymous guest (identity "guest-{nonce}",
     /// the display name they typed). No Outcome session is ever attached to it.</summary>
     string GenerateGuestToken(string displayName, long channelId);
+
+    /// <summary>
+    /// A guest token this server issued, verified: still in date, a guest identity, and the room
+    /// it admits to. Null for anything else. The only thing a guest holds — they have no account
+    /// and no socket — so it is what proves who is writing in the room chat (W3GWG-25 stage 3).
+    /// </summary>
+    GuestTokenInfo? ReadGuestToken(string jwt);
 }
+
+/// <summary>What a verified guest token says: the LiveKit identity, the name the guest typed
+/// (with the server's " (guest)" suffix), the room, and when it was issued — the moment the guest
+/// joined, from which they may read the room chat.</summary>
+public sealed record GuestTokenInfo(string Identity, string Name, string Room, DateTime IssuedAt);

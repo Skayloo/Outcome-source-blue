@@ -9,6 +9,12 @@ namespace Outcome.Shared.Abstractions.Persistence;
 public interface IUserRepository
 {
     Task<User?> GetByIdAsync(long id, CancellationToken ct = default);
+
+    /// <summary>The space's placeholder author for guest messages in voice-room chats, created on
+    /// first use. Deleted, banned and without a password: it cannot sign in, is not in search,
+    /// and its name ends in an invisible character nobody can register, so it never collides
+    /// with a real "guest".</summary>
+    Task<long> GuestAuthorIdAsync(CancellationToken ct = default);
     /// <summary>Several at once — a page of servers wants its owners without a query each.</summary>
     Task<IReadOnlyList<User>> ListByIdsAsync(IReadOnlyCollection<long> ids, CancellationToken ct = default);
     Task<User?> GetByUsernameAsync(string username, CancellationToken ct = default);

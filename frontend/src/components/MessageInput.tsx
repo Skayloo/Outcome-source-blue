@@ -13,6 +13,8 @@ import { stopVoice } from "@lib/voicePlayer";
 import { Icon } from "@lib/icons";
 import { messagePreview } from "@lib/messagePreview";
 import { EmojiPicker } from "@components/EmojiPicker";
+import { PhotoEditor, isEditablePhoto, type EditDoc, type EditResult } from "@components/PhotoEditor";
+import { PhotoSend } from "@components/PhotoSend";
 import { t } from "@lib/i18n";
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // matches the server's cap in UploadEndpoints
@@ -23,7 +25,14 @@ interface Pending {
    *  Made from the local file, so it appears the instant it is chosen and owes the server
    *  nothing. Must be revoked, or every picture picked in a session stays in memory. */
   preview: string | null;
+  /** The ORIGINAL photo and the edit applied to it, so a click reopens the editor where it
+   *  left off — a crop can be widened again. Null for anything the editor does not open. */
+  source: File | null;
+  doc: EditDoc | null;
 }
+
+/** The photo open in the editor, the tile it replaces, and the tool it opens on. */
+interface Editing { file: File; doc: EditDoc | null; replaceKey: number; mode: "crop" | "draw" }
 
 /** Object URLs are held by the document until revoked; dropping the row is not enough. */
 function releasePreview(p: Pending): void {
@@ -49,6 +58,11 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
   // Photo or file, the way the phone asks. A picture sent as a PHOTO is stored at screen size
   // and the upload is not kept; sent as a FILE it is kept exactly, at whatever it weighs.
   const [attachOpen, setAttachOpen] = useState(false);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  // Telegram's send step for photos, and "Send" pressed there before the uploads finished.
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendQueued, setSendQueued] = useState(false);
+  const submitRef = useRef<() => void>(() => {});
   const taRef = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
   const keySeq = useRef(0);
@@ -67,6 +81,12 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
       taRef.current?.focus();
     }
   }, [composer.editing?.id]);
+
+  // Opening a conversation means you are about to type in it — it should not take a second
+  // click on the field first. Above the early return: a hook below it tears the tree down.
+  useEffect(() => {
+    taRef.current?.focus();
+  }, [ch?.id]);
 
   // Dropping a file anywhere in the window attaches it, not just on the composer strip.
   // Aiming for a 60px-tall box at the bottom of the screen is not how anyone drags a photo
@@ -111,36 +131,82 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
     if (text === "" && taRef.current) taRef.current.style.height = "";
   }, [text]);
 
-  if (!ch || ch.type === "voice") return <div className="message-input-wrap" />;
+  // Pressed early, Send goes the moment the last upload lands. Above the early return like
+  // every hook here, and through a ref because submit is declared past it.
+  useEffect(() => {
+    if (sendQueued && pending.every((p) => p.serverId !== null)) {
+      setSendQueued(false);
+      submitRef.current();
+    }
+  }, [sendQueued, pending]);
+
+  // Voice channels have a composer too: it is the room's own chat (W3GWG-25), shown beside the
+  // call in VoiceStage.
+  if (!ch) return <div className="message-input-wrap" />;
 
   /** asFile: keep the upload byte for byte instead of storing a screen-sized copy of it. */
   function uploadFiles(files: FileList | File[], asFile = false): void {
-    for (const f of Array.from(files)) {
-      if (f.size > MAX_UPLOAD_BYTES) {
-        setTransientError(t("chat.fileTooLarge", { name: f.name }));
-        continue;
-      }
-      const key = keySeq.current++;
-      const preview = f.type.startsWith("image/") ? URL.createObjectURL(f) : null;
-      setPending((p) => [...p, { key, filename: f.name, progress: 0, serverId: null, preview }]);
-      api.uploadFileWithProgress(f, (pct) => {
-        setPending((p) => p.map((x) => (x.key === key ? { ...x, progress: pct } : x)));
-      }, asFile)
-        .then((r) => {
-          setPending((p) => p.map((x) => (x.key === key ? { ...x, progress: 100, serverId: r.id } : x)));
-        })
-        .catch(() => {
-          setTransientError(t("chat.uploadFailed", { name: f.name }));
-          setPending((p) => {
-            const gone = p.find((x) => x.key === key);
-            if (gone) releasePreview(gone);
-            return p.filter((x) => x.key !== key);
-          });
-        });
+    const list = Array.from(files).filter((f) => {
+      if (f.size <= MAX_UPLOAD_BYTES) return true;
+      setTransientError(t("chat.fileTooLarge", { name: f.name }));
+      return false;
+    });
+    // Photos go to Telegram's send step — shown large, captioned, sent from there, with crop
+    // and draw a click away. The upload starts now, so by the time the caption is typed there
+    // is usually nothing left to wait for.
+    if (!asFile && list.length > 0 && list.every(isEditablePhoto)) {
+      for (const f of list) stage(f, false, f, null, null);
+      setSendOpen(true);
+      return;
     }
+    for (const f of list) stage(f, asFile, null, null, null);
+  }
+
+  /** Take entries out of the tray, releasing their previews. */
+  function dropWhere(gone: (p: Pending) => boolean): void {
+    setPending((x) => {
+      x.filter(gone).forEach(releasePreview);
+      return x.filter((y) => !gone(y));
+    });
+  }
+
+  /** Upload one file into the tray — appended, or in replaceKey's place when a staged photo was
+   *  edited again. The superseded upload is simply not waited for: its result finds no tile. */
+  function stage(f: File, asFile: boolean, source: File | null, doc: EditDoc | null, replaceKey: number | null): void {
+    const key = keySeq.current++;
+    const preview = f.type.startsWith("image/") ? URL.createObjectURL(f) : null;
+    const entry: Pending = { key, filename: f.name, progress: 0, serverId: null, preview, source, doc };
+    setPending((p) => {
+      const old = replaceKey === null ? undefined : p.find((x) => x.key === replaceKey);
+      if (!old) return [...p, entry];
+      releasePreview(old);
+      return p.map((x) => (x === old ? entry : x));
+    });
+    api.uploadFileWithProgress(f, (pct) => {
+      setPending((p) => p.map((x) => (x.key === key ? { ...x, progress: pct } : x)));
+    }, asFile)
+      .then((r) => {
+        setPending((p) => p.map((x) => (x.key === key ? { ...x, progress: 100, serverId: r.id } : x)));
+      })
+      .catch(() => {
+        setTransientError(t("chat.uploadFailed", { name: f.name }));
+        setPending((p) => {
+          const gone = p.find((x) => x.key === key);
+          if (gone) releasePreview(gone);
+          return p.filter((x) => x.key !== key);
+        });
+      });
   }
 
   uploadRef.current = uploadFiles;
+
+  function editorDone(r: EditResult): void {
+    const e = editing;
+    setEditing(null);
+    // Nothing changed: what is uploading already is the answer.
+    if (!e || r === "unchanged") return;
+    stage(r.file, false, e.file, r.doc, e.replaceKey);
+  }
 
   function submit() {
     const content = text.trim();
@@ -170,6 +236,7 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
     setPending((p) => { p.forEach(releasePreview); return []; });
     clearComposer();
   }
+  submitRef.current = submit;
 
   async function startRecording() {
     if (recording) return;
@@ -363,6 +430,38 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
           </div>
         </div>
       )}
+      {sendOpen && (() => {
+        const photos = pending.filter((p) => p.source !== null);
+        const close = () => { setSendOpen(false); requestAnimationFrame(() => taRef.current?.focus()); };
+        return (
+          <PhotoSend
+            photos={photos.map((p) => ({ key: p.key, preview: p.preview, filename: p.filename, progress: p.progress, uploaded: p.serverId !== null }))}
+            caption={text}
+            onCaption={setText}
+            onEdit={(key, mode) => {
+              const p = photos.find((x) => x.key === key);
+              if (p?.source) setEditing({ file: p.source, doc: p.doc, replaceKey: key, mode });
+            }}
+            onRemove={(key) => {
+              dropWhere((p) => p.key === key);
+              if (photos.length <= 1) close();
+            }}
+            onSend={() => { close(); setSendQueued(true); }}
+            // Backing out drops the photos; the typed caption stays in the composer.
+            onCancel={() => { dropWhere((p) => p.source !== null); close(); }}
+          />
+        );
+      })()}
+      {editing && (
+        <PhotoEditor
+          key={editing.file.name + editing.file.lastModified + editing.replaceKey}
+          file={editing.file}
+          initial={editing.doc}
+          startMode={editing.mode}
+          onDone={editorDone}
+          onCancel={() => setEditing(null)}
+        />
+      )}
       {composer.replyTo && (
         <div className="reply-bar visible">
           <Icon name="reply" size={17} />
@@ -383,11 +482,7 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
       {pending.length > 0 && (
         <div className="attachment-preview-bar visible">
           {pending.map((p) => {
-            const drop = () => setPending((x) => {
-              const gone = x.find((y) => y.key === p.key);
-              if (gone) releasePreview(gone);
-              return x.filter((y) => y.key !== p.key);
-            });
+            const drop = () => dropWhere((y) => y.key === p.key);
             // A picture shows as a picture. Choosing five and seeing five filenames tells you
             // how many you picked but not WHICH, which is the only thing worth checking before
             // it is sent.

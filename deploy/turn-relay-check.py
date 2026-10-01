@@ -16,9 +16,14 @@ check that matters is a real Allocate with exactly those credentials.
 import base64, hashlib, hmac, os, re, socket, struct, sys, time
 
 MAGIC = 0x2112A442
-SECRET = re.search(r"^static-auth-secret=(.+)$", open("/etc/turnserver.conf").read(), re.M).group(1).strip()
 REALM = "outcome.ru"
-HOST, PORT = "185.42.163.84", 3478
+# Everything below comes from the config rather than from constants here: the address of this
+# machine has changed twice, and a check still pointing at the previous one times out in a way
+# that reads as "the relay is broken". Whatever coturn was told is what gets tested.
+CONF = open("/etc/turnserver.conf").read()
+SECRET = re.search(r"^static-auth-secret=(.+)$", CONF, re.M).group(1).strip()
+HOST = re.search(r"^listening-ip=(.+)$", CONF, re.M).group(1).strip()
+PORT = int(re.search(r"^listening-port=(\d+)$", CONF, re.M).group(1))
 
 user = f"{int(time.time()) + 600}:selfcheck"
 pwd = base64.b64encode(hmac.new(SECRET.encode(), user.encode(), hashlib.sha1).digest()).decode()

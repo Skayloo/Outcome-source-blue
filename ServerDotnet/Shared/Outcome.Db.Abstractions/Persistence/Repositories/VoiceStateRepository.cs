@@ -7,12 +7,16 @@ namespace Outcome.Infrastructure.Persistence.Repositories;
 
 public sealed class VoiceStateRepository(OutcomeDbContext db) : IVoiceStateRepository
 {
-    public async Task UpsertJoinAsync(long userId, long channelId, CancellationToken ct = default)
+    public async Task UpsertJoinAsync(long userId, long channelId, bool keepFlags = false, CancellationToken ct = default)
     {
         var existing = await db.VoiceStates.FirstOrDefaultAsync(v => v.UserId == userId, ct);
         if (existing is null)
         {
             db.VoiceStates.Add(new VoiceState { UserId = userId, ChannelId = channelId });
+        }
+        else if (keepFlags && existing.ChannelId == channelId)
+        {
+            return; // the same call, re-announced: nothing about it has changed
         }
         else
         {
@@ -86,5 +90,5 @@ public sealed class VoiceStateRepository(OutcomeDbContext db) : IVoiceStateRepos
         db.VoiceStates.CountAsync(v => v.ChannelId == channelId, ct);
 
     private static VoiceStateDto Map(VoiceState v, string username) =>
-        new(v.ChannelId, v.UserId, username, v.Muted, v.Deafened, v.Speaking, v.Camera, v.Screenshare);
+        new(v.ChannelId, v.UserId, username, v.Muted, v.Deafened, v.Speaking, v.Camera, v.Screenshare, v.JoinedAt);
 }

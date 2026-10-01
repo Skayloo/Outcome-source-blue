@@ -15,6 +15,11 @@ public sealed class Message
     /// <summary>Display name of the ORIGINAL author when this message was forwarded. A label,
     /// not a reference: the source may be an E2EE DM the server can't see into.</summary>
     public string? ForwardedFrom { get; set; }
+    /// <summary>A message written by a GUEST in a voice room's chat: the name they typed. The row's
+    /// <see cref="UserId"/> is then the space's guest author (IUserRepository.GuestAuthorIdAsync),
+    /// a placeholder account nobody can sign in to, so every query that joins users keeps
+    /// working and an older client shows "guest" rather than somebody else's name.</summary>
+    public string? GuestName { get; set; }
 }
 
 /// <summary>An uploaded file linked (optionally) to a message. <see cref="Id"/> is a UUID string.</summary>

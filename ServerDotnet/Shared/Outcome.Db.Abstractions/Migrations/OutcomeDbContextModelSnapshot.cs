@@ -326,6 +326,10 @@ namespace Outcome.Db.Abstractions.Migrations
                         .HasColumnType("text")
                         .HasColumnName("category");
 
+                    b.Property<long?>("ChatChannelId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("chat_channel_id");
+
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -635,6 +639,10 @@ namespace Outcome.Db.Abstractions.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
+                    b.Property<bool>("AllowGuestShare")
+                        .HasColumnType("boolean")
+                        .HasColumnName("allow_guest_share");
+
                     b.Property<long>("ChannelId")
                         .HasColumnType("bigint")
                         .HasColumnName("channel_id");
@@ -792,6 +800,11 @@ namespace Outcome.Db.Abstractions.Migrations
                     b.Property<string>("ForwardedFrom")
                         .HasColumnType("text")
                         .HasColumnName("forwarded_from");
+
+                    b.Property<string>("GuestName")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("guest_name");
 
                     b.Property<bool>("Pinned")
                         .HasColumnType("boolean")
@@ -1357,6 +1370,53 @@ namespace Outcome.Db.Abstractions.Migrations
                     b.ToTable("user_blocks", (string)null);
                 });
 
+            modelBuilder.Entity("Outcome.Domain.Entities.UserGif", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("FileId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("file_id");
+
+                    b.Property<string>("Mime")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("mime");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("path");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("bigint")
+                        .HasColumnName("size");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Path");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("user_gifs", (string)null);
+                });
+
             modelBuilder.Entity("Outcome.Domain.Entities.VoiceListen", b =>
                 {
                     b.Property<long>("UserId")
@@ -1715,6 +1775,15 @@ namespace Outcome.Db.Abstractions.Migrations
                         .WithMany()
                         .HasForeignKey("RoleId")
                         .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Outcome.Domain.Entities.UserGif", b =>
+                {
+                    b.HasOne("Outcome.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

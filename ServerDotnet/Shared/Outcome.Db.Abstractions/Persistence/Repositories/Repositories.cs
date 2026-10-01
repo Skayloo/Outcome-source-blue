@@ -14,6 +14,40 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
     public Task<User?> GetByIdAsync(long id, CancellationToken ct = default) =>
         db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id, ct);
 
+    // U+2060 WORD JOINER: invisible, and AuthRules.ValidateUsername refuses format characters,
+    // so no sign-up can ever produce this name.
+    private const string GuestAuthorName = "guest\u2060";
+
+    public async Task<long> GuestAuthorIdAsync(CancellationToken ct = default)
+    {
+        var normalized = GuestAuthorName.ToUpperInvariant();
+        var id = await db.Users.AsNoTracking().Where(u => u.NormalizedUserName == normalized).Select(u => u.Id).FirstOrDefaultAsync(ct);
+        if (id != 0) return id;
+        var user = new User
+        {
+            UserName = GuestAuthorName,
+            NormalizedUserName = normalized,
+            SecurityStamp = Guid.NewGuid().ToString("N"),
+            ConcurrencyStamp = Guid.NewGuid().ToString("N"),
+            PasswordSet = false,
+            Deleted = true,
+            Banned = true,
+            BanReason = "placeholder author of guest messages",
+        };
+        db.Users.Add(user);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            return user.Id;
+        }
+        catch (DbUpdateException)
+        {
+            // Two first guest messages at once: the other one created it.
+            db.Entry(user).State = EntityState.Detached;
+            return await db.Users.AsNoTracking().Where(u => u.NormalizedUserName == normalized).Select(u => u.Id).FirstAsync(ct);
+        }
+    }
+
     public async Task<IReadOnlyList<User>> ListByIdsAsync(IReadOnlyCollection<long> ids, CancellationToken ct = default) =>
         ids.Count == 0 ? [] : await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id)).ToListAsync(ct);
 

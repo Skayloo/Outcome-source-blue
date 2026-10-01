@@ -28,13 +28,18 @@ public interface ILiveKitRoomService
     /// <summary>Force-disconnects EVERY session of a user from a channel's room (ban/kick).</summary>
     Task RemoveParticipantAsync(long channelId, long userId, CancellationToken ct = default);
 
-    /// <summary>Drops this user's OTHER sessions from the room, keeping <paramref name="keepIdentity"/>.
-    /// The handover when a second device joins — deterministic, and a lone client re-announcing
-    /// voice_join keeps its own live session because the identity is stable per connection.</summary>
+    /// <summary>Drops this user's sessions on OTHER devices from the room, keeping
+    /// <paramref name="keepIdentity"/> and every session of its device (identities of the form
+    /// user-{id}.{device}.{conn}). The handover when a second device joins; a client re-announcing
+    /// voice_join after a reconnect gets a new identity but keeps its own live session.</summary>
     Task RemoveOtherUserSessionsAsync(long channelId, long userId, string keepIdentity, CancellationToken ct = default);
 
     /// <summary>Is any session of this user still connected to the room?</summary>
     Task<bool> HasUserSessionAsync(long channelId, long userId, CancellationToken ct = default);
+    /// <summary>The members (identity "user-*") with a session connected to the room right now.
+    /// Unlike voice_states — a row can outlive its call when the server restarts inside the
+    /// disconnect grace window — this is who is actually in it. Empty if the room does not exist.</summary>
+    Task<IReadOnlySet<long>> ListConnectedUserIdsAsync(long channelId, CancellationToken ct = default);
 
     /// <summary>Kick every GUEST (identity "guest-*") out of a channel's room — used when a
     /// guest link is revoked, so people already in the call don't just keep talking.</summary>
@@ -43,6 +48,11 @@ public interface ILiveKitRoomService
     /// <summary>The guests (identity "guest-*") currently in a channel's room, as
     /// (identity, display name) pairs — used to rebuild guest presence after a restart.</summary>
     Task<IReadOnlyList<(string Identity, string Name)>> ListGuestsAsync(long channelId, CancellationToken ct = default);
+
+    /// <summary>Set a participant attribute on every session of <paramref name="userId"/> in the
+    /// room ("" clears it) — what everyone in the call reads, guests included. False when the user
+    /// has no session there.</summary>
+    Task<bool> SetUserAttributeAsync(long channelId, long userId, string key, string value, CancellationToken ct = default);
 }
 
 /// <summary>Verifies and parses LiveKit webhook payloads.</summary>

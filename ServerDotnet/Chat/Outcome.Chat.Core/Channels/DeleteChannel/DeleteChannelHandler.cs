@@ -19,6 +19,10 @@ public sealed class DeleteChannelHandler(IChannelRepository channels, ICurrentSe
         // Even a global-admin/owner may only delete channels of their ACTIVE server (membership-validated).
         if (channel.ServerId is { } sid && sid != server.ServerId)
             throw DomainException.Forbidden("channel is not in your active server");
+        // A voice room's chat goes with its room, not on its own: the room would be left with a
+        // chat that no longer exists, and its next recording with nowhere to go.
+        if (await channels.VoiceOfChatAsync(channel.Id, ct) is { } voice)
+            throw DomainException.BadRequest($"this chat belongs to the voice channel \"{voice.Name}\" — delete that channel to remove both");
         if (!await channels.DeleteAsync(cmd.Id, ct))
             throw DomainException.NotFound("channel not found");
     }

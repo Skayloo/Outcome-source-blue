@@ -47,6 +47,8 @@ public interface IVoiceListenRepository
 
 public interface IChannelRepository
 {
+    /// <summary>The voice channel whose chat <paramref name="chatChannelId"/> is, or null.</summary>
+    Task<Channel?> VoiceOfChatAsync(long chatChannelId, CancellationToken ct = default);
     Task<IReadOnlyList<Channel>> ListAsync(long serverId, CancellationToken ct = default);
     Task<Channel?> GetByIdAsync(long id, CancellationToken ct = default);
     Task<long> CreateAsync(Channel channel, CancellationToken ct = default);
@@ -69,6 +71,11 @@ public interface IMessageRepository
     Task<bool> SetPinnedAsync(long channelId, long messageId, bool pinned, CancellationToken ct = default);
     Task<IReadOnlyList<SearchRow>> SearchAsync(string query, long? channelId, int limit, CancellationToken ct = default);
     Task<(long Id, DateTime Timestamp)> CreateAsync(long channelId, long userId, string content, long? replyTo, string? forwardedFrom = null, CancellationToken ct = default);
+    /// <summary>A guest's message in a voice room's chat, authored by the guest author.</summary>
+    Task<(long Id, DateTime Timestamp)> CreateGuestAsync(long channelId, long guestAuthorId, string guestName, string content, CancellationToken ct = default);
+    /// <summary>What a guest may read: the channel's messages after <paramref name="afterId"/> and
+    /// not older than <paramref name="since"/> (their join), oldest first.</summary>
+    Task<IReadOnlyList<GuestChatRow>> ListForGuestAsync(long channelId, long afterId, DateTime since, int limit, CancellationToken ct = default);
     Task<Message?> GetByIdAsync(long id, CancellationToken ct = default);
     Task<DateTime?> EditAsync(long id, long userId, string content, CancellationToken ct = default);
     Task<bool> DeleteAsync(long id, long userId, bool isMod, CancellationToken ct = default);
@@ -114,7 +121,8 @@ public interface IReactionRepository
 
 public interface IVoiceStateRepository
 {
-    Task UpsertJoinAsync(long userId, long channelId, CancellationToken ct = default);
+    /// <param name="keepFlags">Same channel, same call: leave muted/deafened/camera/screenshare as they are.</param>
+    Task UpsertJoinAsync(long userId, long channelId, bool keepFlags = false, CancellationToken ct = default);
     Task ClearAsync(long userId, CancellationToken ct = default);
     Task<bool> ClearIfInChannelAsync(long userId, long channelId, CancellationToken ct = default);
     Task SetFlagAsync(long userId, VoiceFlag flag, bool value, CancellationToken ct = default);

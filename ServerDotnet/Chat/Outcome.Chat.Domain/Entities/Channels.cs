@@ -20,6 +20,10 @@ public sealed class Channel
     public string? VoiceQuality { get; set; }
     public int? MixingThreshold { get; set; }
     public int VoiceMaxVideo { get; set; } = 25;
+    /// <summary>A VOICE channel's own text chat (W3GWG-25): an ordinary text channel of the same
+    /// name, made with it and deleted with it. What people write "in the call" goes there, and
+    /// so do the call's recordings — so it is all still there, readable by everyone, after.</summary>
+    public long? ChatChannelId { get; set; }
 }
 
 /// <summary>

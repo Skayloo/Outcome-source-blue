@@ -36,6 +36,11 @@ public sealed record MessageDto(
     DateTime? EditedAt,
     bool Deleted,
     DateTime Timestamp,
-    string? ForwardedFrom = null);
+    string? ForwardedFrom = null,
+    [property: JsonProperty("guest_name", NullValueHandling = NullValueHandling.Ignore)] string? GuestName = null);
 
 public sealed record ChannelMessagesResponse(IReadOnlyList<MessageDto> Messages, bool HasMore);
+
+/// <summary>One line of a voice room's chat as a guest sees it: who wrote it (a member's name, or
+/// a guest's own), whether that was a guest, and the text. No attachments, no reactions.</summary>
+public sealed record GuestChatRow(long Id, string Author, bool Guest, string? Avatar, string Content, DateTime Timestamp);

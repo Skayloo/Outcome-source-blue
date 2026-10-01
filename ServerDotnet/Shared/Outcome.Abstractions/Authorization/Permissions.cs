@@ -23,6 +23,7 @@ public static class Permissions
     public const string SpeakVoice     = nameof(SpeakVoice);
     public const string UseVideo       = nameof(UseVideo);
     public const string ShareScreen    = nameof(ShareScreen);
+    public const string RecordCalls    = nameof(RecordCalls);
     public const string ManageMessages = nameof(ManageMessages);
     public const string ManageChannels = nameof(ManageChannels);
     public const string KickMembers    = nameof(KickMembers);
@@ -63,7 +64,7 @@ public static class Permissions
     public static readonly string[] All =
     [
         SendMessages, ReadMessages, AttachFiles, AddReactions, UseSoundboard, ConnectVoice,
-        SpeakVoice, UseVideo, ShareScreen, ManageMessages, ManageChannels, KickMembers,
+        SpeakVoice, UseVideo, ShareScreen, RecordCalls, ManageMessages, ManageChannels, KickMembers,
         BanMembers, MuteMembers, ManageRoles, ManageServer, ManageInvites, ViewAuditLog, Administrator,
     ];
 
@@ -81,6 +82,7 @@ public static class Permissions
         [SpeakVoice] = Permission.SpeakVoice,
         [UseVideo] = Permission.UseVideo,
         [ShareScreen] = Permission.ShareScreen,
+        [RecordCalls] = Permission.RecordCalls,
         [ManageMessages] = Permission.ManageMessages,
         [ManageChannels] = Permission.ManageChannels,
         [KickMembers] = Permission.KickMembers,

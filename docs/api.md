@@ -116,13 +116,37 @@ everything else is absolute.
 | `DELETE` | `/api/v1/friends/{userId}` |
 | `POST` | `/api/v1/friends/{userId}/accept` |
 
+### Gif
+
+A user's GIF reaction library. Upload takes one GIF or WebP (by content), at most 5 MB and 50 per
+account, and stores it byte for byte. The returned `url` is a bare `/api/v1/files/<id>` that the
+file endpoint serves unsigned, like an avatar.
+
+| `GET` | `/api/v1/gifs` |
+| `POST` | `/api/v1/gifs` |
+| `DELETE` | `/api/v1/gifs/{id}` |
+
 ### Guest
 
 | `DELETE` | `/api/v1/channels/{id}/guest-link` |
+| `PATCH` | `/api/v1/channels/{id}/guest-link` |
 | `POST` | `/api/v1/channels/{id}/guest-link` |
 | `GET` | `/api/v1/guest/{code}` |
+| `GET` | `/api/v1/guest/{code}/account` |
+| `GET` | `/api/v1/guest/{code}/chat` |
+| `POST` | `/api/v1/guest/{code}/chat` |
 | `POST` | `/api/v1/guest/{code}/join` |
 | `GET` | `/api/v1/servers/guest-links` |
+
+- `PATCH .../guest-link {allow_guest_share}` lets guests of the link copy it on; `GET /guest/{code}`
+  reports it as `can_share`.
+- `GET /guest/{code}/account` (signed in): `{member, username, channel_name}`, plus `server_id`
+  and `channel_id` for a member of the room's server only.
+- `/guest/{code}/chat` is the voice room's chat for a guest. The guest's LiveKit token goes in
+  `X-Guest-Token` (not `Authorization`). `GET ?after=<id>` returns
+  `[{id, author, guest, avatar, content, timestamp}]` written since the token was issued.
+  `POST {content}` posts at most 1000 characters, 5 per 10 s per guest. The message is stored in
+  the voice channel with `guest_name` set and reaches the members as an ordinary `chat_message`.
 
 ### Invite
 

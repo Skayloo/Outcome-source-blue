@@ -22,6 +22,9 @@ public sealed class UpdateChannelHandler(IChannelRepository channels, ICurrentSe
 
         if (!await channels.UpdateAsync(cmd.Id, name, topic, cmd.SlowMode, cmd.Position, cmd.Archived, ct))
             throw DomainException.NotFound("channel not found");
+        // A voice room and its chat keep one name.
+        if (name is not null && existing.ChatChannelId is { } chat)
+            await channels.UpdateAsync(chat, name, null, null, null, null, ct);
 
         var updated = await channels.GetByIdAsync(cmd.Id, ct) ?? throw DomainException.NotFound("channel not found");
         return ChannelMapper.ToDto(updated);

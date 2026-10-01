@@ -19,12 +19,16 @@ import { avatarColor } from "@lib/format";
 import { VoiceCtl } from "@components/VoiceCtl";
 import { FloatingReactions, VoiceFxControls, useReactionFeed } from "@components/VoiceFx";
 import { describeMediaError } from "@lib/mediaErrors";
-import { onReaction, playHandCue, raisedHands, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
+import { onReaction, playHandCue, raisedHands, recordersIn, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
 import { createLogger } from "@lib/logger";
 import { t } from "@lib/i18n";
 import { createRNNoiseProcessor, MIN_DENOISE_RATE, micInputRate, handBackToBrowser } from "@lib/noise-suppression";
 import { AudioPipeline, micCaptureOptions } from "@lib/audioPipeline";
 import { nextNormGain } from "@lib/loudnessNorm";
+import { storedSessionHere } from "@lib/session";
+import { rememberRoomLink } from "@lib/roomLink";
+import { copyText } from "@lib/clipboard";
+import { GuestRoomChat } from "@components/GuestRoomChat";
 
 const log = createLogger("guest-voice");
 
@@ -273,6 +277,18 @@ export function GuestVoicePage({ code }: { code: string }) {
   const [channelName, setChannelName] = useState("");
   const [serverName, setServerName] = useState("");
   const [name, setName] = useState("");
+  /** Whether the link lets a guest hand it on ("copy the invite"). */
+  const [canShare, setCanShare] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  /** Who is looking, when this browser is signed in here: a member of the room's server gets
+   *  their own seat, anyone else stays a guest (with their name filled in). */
+  const [account, setAccount] = useState<{ member: boolean; username: string } | null>(null);
+  /** The LiveKit token from the join — also the guest's pass to the room chat. */
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatUnseen, setChatUnseen] = useState(0);
+  /** Names of whoever is recording the call right now. */
+  const [recording, setRecording] = useState<string[]>([]);
   // Which microphone to publish with. A laptop with a webcam, a headset and a monitor all
   // report a microphone, the browser picks whichever it calls "default", and until now the
   // guest page had no way to disagree — the signed-in client has had a picker all along.
@@ -320,6 +336,43 @@ export function GuestVoicePage({ code }: { code: string }) {
   // On a tenant's domain the card wears their logo and name; the channel stays in the subtitle.
   const brand = useSpaceBrand();
 
+  // Signed in here already? Then the same link is also a way in as yourself. Plain fetch with
+  // the stored token, like the rest of this page — it stays out of the app's session machinery.
+  useEffect(() => {
+    const session = storedSessionHere();
+    if (session === null) return;
+    const c = new AbortController();
+    fetch(`/api/v1/guest/${encodeURIComponent(code)}/account`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      signal: c.signal,
+    })
+      .then(async (r) => {
+        if (!r.ok) return; // expired session or a dead link — the guest form still works
+        const d = await r.json() as { member?: boolean; username?: string };
+        // The server's name for the account: the stored session may hold the e-mail it was
+        // signed in with.
+        const username = d.username || session.username;
+        setAccount({ member: d.member === true, username });
+        if (username) setName((n) => n || username.slice(0, 24));
+      })
+      .catch(() => { /* offline or aborted: stay a guest */ });
+    return () => c.abort();
+  }, [code]);
+
+  /** Into the app, which follows the remembered link once it is signed in (lib/roomLink.ts). */
+  const goToApp = (): void => {
+    rememberRoomLink(code);
+    window.location.assign("/app");
+  };
+
+  const copyInvite = (): void => {
+    void copyText(`${window.location.origin}/guest/${encodeURIComponent(code)}`).then((ok) => {
+      if (!ok) { setError(t("guestAccess.copyFailed")); return; }
+      setShareCopied(true);
+      window.setTimeout(() => setShareCopied(false), 1800);
+    });
+  };
+
   useEffect(() => {
     fetch(`/api/v1/guest/${encodeURIComponent(code)}`)
       .then(async (r) => {
@@ -327,6 +380,7 @@ export function GuestVoicePage({ code }: { code: string }) {
         const d = await r.json();
         setChannelName(d.channel_name);
         setServerName(d.server_name);
+        setCanShare(d.can_share === true);
         setPhase("form");
       })
       .catch(() => setPhase("invalid"));
@@ -397,6 +451,10 @@ export function GuestVoicePage({ code }: { code: string }) {
     guestKnownHands = new Set(nowUp.keys());
     guestHandsSynced = true;
     setHands(nowUp);
+    // Who is recording — guests are told exactly as members are (the server sets "rec").
+    const all = [room.localParticipant, ...room.remoteParticipants.values()];
+    setRecording([...recordersIn(room).keys()].map((id) =>
+      (all.find((p) => p.identity === id)?.name ?? "").replace(/\s*\(guest\)$/, "")));
   };
 
   // Fill the picker while the guest is still deciding to join. Two things happen here, and
@@ -492,6 +550,7 @@ export function GuestVoicePage({ code }: { code: string }) {
         throw new Error(body?.message ?? t("guest.joinFailed"));
       }
       const { token } = await r.json();
+      setGuestToken(token as string);
 
       // Before the Room, and inside the click that started this: the context created here is
       // the one LiveKit hands to the noise suppressor, and one created any later is a context
@@ -719,6 +778,20 @@ export function GuestVoicePage({ code }: { code: string }) {
           </a>
         )}
 
+        {phase === "form" && account?.member === true && (
+          <div className="guest-account">
+            <button className="btn-primary" type="button" onClick={goToApp}>
+              {account.username
+                ? t("guest.joinAsAccount", { name: account.username })
+                : t("guest.joinAsAccountNoName")}
+            </button>
+            <div className="guest-account-or">{t("guest.orAsGuest")}</div>
+          </div>
+        )}
+        {phase === "form" && account?.member === false && (
+          <div className="guest-hint">{t("guest.notMember")}</div>
+        )}
+
         {(phase === "form" || phase === "connecting") && (
           <form
             className="connect-form" onSubmit={join} noValidate
@@ -766,6 +839,14 @@ export function GuestVoicePage({ code }: { code: string }) {
             </button>
           </form>
         )}
+        {/* Not signed in on this browser: the same link takes an account holder in as
+            themselves, after the sign-in, without opening the link again. */}
+        {phase === "form" && account === null && (
+          <div className="guest-hint">
+            {t("guest.haveAccount")}{" "}
+            <button className="form-toggle-action" type="button" onClick={goToApp}>{t("guest.signIn")}</button>
+          </div>
+        )}
 
         {audioBlocked && (
           <button className="vd-unblock" onClick={() => {
@@ -775,6 +856,12 @@ export function GuestVoicePage({ code }: { code: string }) {
               setAudioBlocked(false);
             });
           }}>{t("voice.enableSound")}</button>
+        )}
+
+        {connected && recording.length > 0 && (
+          <div className="vstage-rec-banner" role="status">
+            <span className="vstage-rec-dot" /> {t("rec.banner", { names: recording.join(", ") || t("rec.someone") })}
+          </div>
         )}
 
         {connected && (
@@ -847,11 +934,24 @@ export function GuestVoicePage({ code }: { code: string }) {
                   if (roomRef.current !== null) void sendReaction(roomRef.current, emoji);
                 }}
               />
+              <div className="vsc-badged">
+                <VoiceCtl name="message-circle" label={t("voice.roomChat")} on={chatOpen} onClick={() => setChatOpen((v) => !v)} />
+                {chatUnseen > 0 && <span className="vsc-badge">{chatUnseen > 99 ? "99+" : chatUnseen}</span>}
+              </div>
+              {canShare && (
+                <VoiceCtl name={shareCopied ? "check" : "user-plus"} on={shareCopied}
+                  label={shareCopied ? t("guest.inviteCopied") : t("guest.copyInvite")} onClick={copyInvite} />
+              )}
               <button className="vsc-btn disconnect" title={t("guest.leave")} onClick={leave}>
                 <Icon name="phone-down" size={18} /> {t("guest.leave")}
               </button>
             </div>
           </>
+        )}
+
+        {connected && guestToken !== null && (
+          <GuestRoomChat code={code} token={guestToken} open={chatOpen}
+            onClose={() => setChatOpen(false)} onUnseen={setChatUnseen} />
         )}
 
         {phase === "closed" && (

@@ -9,6 +9,21 @@ import { getActiveServerId } from "@stores/servers.store";
 
 const log = createLogger("ws");
 
+/** This tab's device id (see AuthPayload.device_id). Per tab — two tabs are two devices, and the
+ *  second one joining voice hands the call over as before — and kept across reloads of the tab. */
+function voiceDeviceId(): string | undefined {
+  try {
+    let id = sessionStorage.getItem("outcome:voiceDevice");
+    if (!id) {
+      id = randomUUID().replace(/-/g, "").slice(0, 16);
+      sessionStorage.setItem("outcome:voiceDevice", id);
+    }
+    return id;
+  } catch {
+    return undefined; // storage blocked: the server falls back to a per-connection identity
+  }
+}
+
 export type ConnectionState =
   | "disconnected"
   | "connecting"
@@ -315,7 +330,7 @@ export function createWsClient() {
       if (config === null) return;
       send({
         type: "auth",
-        payload: { token: config.token, last_seq: lastSeq, server_id: getActiveServerId() },
+        payload: { token: config.token, last_seq: lastSeq, server_id: getActiveServerId(), device_id: voiceDeviceId() },
       });
     };
 

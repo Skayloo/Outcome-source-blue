@@ -12,6 +12,7 @@ import { setTransientError, openModal, uiStore, toggleCategory, isCategoryCollap
 import { closeDrawer } from "@stores/mobile.store";
 import { api } from "@lib/services";
 import { joinVoice } from "@lib/voice";
+import { copyGuestLink } from "@lib/guestLink";
 import { Avatar } from "@components/Avatar";
 import { t } from "@lib/i18n";
 import { Icon } from "@lib/icons";
@@ -79,6 +80,12 @@ export function Sidebar() {
           onClick: () => toggleChannelMute(ch.id),
         },
       );
+    } else if (canInvite) {
+      // The link is for people outside the call, so handing it out must not require being in it.
+      items.push({
+        label: t("voice.guestLinkCopy"), icon: <Icon name="user-plus" size={15} />,
+        onClick: () => { void copyGuestLink(ch.id); },
+      });
     }
     if (canManage) {
       if (items.length > 0) items.push({ separator: true });
@@ -149,6 +156,8 @@ export function Sidebar() {
                         (ch.unreadCount > 0 ? " unread" : "") +
                         (connectedHere ? " voice-connected" : "")
                       }
+                      // A voice room and its attached chat share a name; the type tells them apart.
+                      data-type={ch.type}
                       onClick={() => { if (ch.type === "voice") joinVoice(ch.id); setActiveChannel(ch.id); closeDrawer(); }}
                       onContextMenu={(e) => { e.preventDefault(); setChMenu({ ch, x: e.clientX, y: e.clientY }); }}
                     >

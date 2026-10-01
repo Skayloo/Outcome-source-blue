@@ -241,14 +241,35 @@ export function ServerSettingsPanel() {
           {error && <Banner kind="error">{error}</Banner>}
           {saved && !dirty && <Banner kind="success">{t("admin.settingsSaved")}</Banner>}
 
-          <button
-            className="ac-btn"
-            style={{ marginTop: 8 }}
-            disabled={!dirty || saving}
-            onClick={save}
+          {/* The commit control follows the scroll once anything is unsaved.
+              It used to sit at the bottom of a page a screen and a half long, while the
+              switches it commits sit at the top — so flipping "email verification" off, then
+              reloading, brought it back ON, and the panel looked like it was refusing to save.
+              Nothing was refused: nothing had been sent. A switch reads as applied the moment
+              it moves, so the thing that applies it cannot be somewhere the eye never goes. */}
+          <div
+            className="ss-commit"
+            style={{
+              position: "sticky",
+              bottom: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginTop: 8,
+              padding: "12px 0",
+              background: "var(--bg)",
+              borderTop: dirty ? "1px solid var(--border)" : "none",
+            }}
           >
-            {saving ? t("admin.saving") : t("admin.saveChanges")}
-          </button>
+            <button className="ac-btn" disabled={!dirty || saving} onClick={save}>
+              {saving ? t("admin.saving") : t("admin.saveChanges")}
+            </button>
+            {dirty && !saving && (
+              <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
+                {t("admin.unsavedChanges")}
+              </span>
+            )}
+          </div>
         </>
       )}
     </div>

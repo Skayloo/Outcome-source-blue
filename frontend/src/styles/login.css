@@ -1109,6 +1109,38 @@
   gap: 12px;
 }
 .guest-hint { color: var(--text-muted); font-size: 14px; text-align: center; }
+/* The room's chat, for a guest: a column on the right, the whole screen on a phone. */
+.guest-chat {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 360px; z-index: 20;
+  display: flex; flex-direction: column;
+  background: var(--bg-secondary); border-left: 1px solid var(--border);
+}
+@media (max-width: 760px) { .guest-chat { width: 100%; border-left: none; } }
+.guest-chat-list { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.guest-chat-empty { margin: auto; color: var(--text-muted); font-size: 13px; text-align: center; }
+.guest-chat-line {
+  align-self: flex-start; max-width: 85%;
+  padding: 7px 10px; border-radius: 12px; background: var(--bg-input);
+}
+.guest-chat-line.own { align-self: flex-end; background: color-mix(in srgb, var(--accent) 22%, var(--bg-input)); }
+.guest-chat-author { font-size: 12px; font-weight: 600; color: var(--header-primary); margin-bottom: 2px; }
+.guest-chat-text { white-space: pre-wrap; word-break: break-word; color: var(--text-normal); font-size: 14px; }
+.guest-chat-time { margin-top: 2px; font-size: 11px; color: var(--text-muted); text-align: right; }
+.guest-chat-error { padding: 6px 12px; color: var(--red); font-size: 13px; }
+.guest-chat-form {
+  flex-shrink: 0; display: flex; gap: 8px; align-items: center;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border);
+}
+.guest-chat-form .form-input { flex: 1; margin: 0; }
+/* A member's own way in, above the guest form it outranks. */
+.guest-account { display: flex; flex-direction: column; gap: 12px; margin-bottom: 4px; }
+.guest-account-or {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--text-muted); font-size: 13px;
+}
+.guest-account-or::before, .guest-account-or::after {
+  content: ""; flex: 1; height: 1px; background: var(--border);
+}
 
 /* Compact one-line header while in the room — the space belongs to the video. */
 .guest-card.wide .form-logo {
@@ -1274,6 +1306,10 @@
   color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .guest-link-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.guest-link-share {
+  margin-top: 8px; display: flex; align-items: center; gap: 10px;
+  color: var(--text-muted); font-size: 13px; cursor: pointer;
+}
 
 /* The recovery code, shown once. Monospace and widely spaced because it will be copied by
    hand as often as by button, and a code misread off the screen is a code that does not work. */

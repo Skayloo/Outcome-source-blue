@@ -26,6 +26,7 @@ export const ServerMessageType = {
   VOICE_STATE: "voice_state",
   VOICE_LEAVE: "voice_leave",
   VOICE_CONFIG: "voice_config",
+  VOICE_RECORD_OK: "voice_record_ok",
   VOICE_TOKEN: "voice_token",
   VOICE_SPEAKERS: "voice_speakers",
   MEMBER_JOIN: "member_join",

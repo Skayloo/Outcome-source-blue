@@ -21,7 +21,7 @@ import {
   DisconnectReason,
 } from "livekit-client";
 import { runtimeLivekitUrl } from "@lib/runtimeConfig";
-import { onReaction, playHandCue, raisedHands, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
+import { onReaction, playHandCue, raisedHands, recordersIn, sendReaction, sendGif, setHandRaised, type Reaction, type Fx } from "@lib/voiceReactions";
 import { describeMediaError } from "@lib/mediaErrors";
 import { serverOrigin } from "@lib/serverHost";
 import type { WsClient } from "@lib/ws";
@@ -41,6 +41,7 @@ import {
   setAudioBlocked,
   setAudioSmoothed,
   setRaisedHands,
+  setRecorders,
 } from "@stores/voice.store";
 import { loadPref } from "@components/settings/helpers";
 import { showToast } from "@stores/ui.store";
@@ -442,8 +443,20 @@ export class LiveKitSession {
   }
 
   /** Push LiveKit's view of raised hands into the store the tiles read. */
+  /** Who is recording, from the server-set "rec" attribute; runs wherever hands are synced. */
+  private syncRecorders(): void {
+    if (this.room === null) return;
+    const byUser = new Map<number, number>();
+    for (const [identity, at] of recordersIn(this.room)) {
+      const userId = parseUserId(identity);
+      if (userId !== 0) byUser.set(userId, at);
+    }
+    setRecorders(byUser);
+  }
+
   private syncHands = (): void => {
     if (this.room === null) return;
+    this.syncRecorders();
     const byUser = new Map<number, number>();
     for (const [identity, at] of raisedHands(this.room)) {
       const userId = parseUserId(identity);
@@ -481,8 +494,14 @@ export class LiveKitSession {
     await sendReaction(this.room, emoji);
   }
 
+  /** A GIF from the user's library, into the room. */
+  async sendGif(path: string): Promise<void> {
+    if (this.room === null) return;
+    await sendGif(this.room, path);
+  }
+
   /** Listeners survive the room; the room does not survive a rejoin. */
-  private reactionListeners = new Set<(userId: number, emoji: Reaction) => void>();
+  private reactionListeners = new Set<(userId: number, fx: Fx) => void>();
   private roomReactionOff: (() => void) | null = null;
 
   /**
@@ -495,7 +514,7 @@ export class LiveKitSession {
    * saw no reactions at all, its own included, while the guest page (which subscribes after its
    * room is built) worked fine.
    */
-  onReaction(cb: (userId: number, emoji: Reaction) => void): () => void {
+  onReaction(cb: (userId: number, fx: Fx) => void): () => void {
     this.reactionListeners.add(cb);
     return () => { this.reactionListeners.delete(cb); };
   }
@@ -503,10 +522,10 @@ export class LiveKitSession {
   /** Point the new room's data channel at whoever is already listening. */
   private attachReactions(room: Room): void {
     this.roomReactionOff?.();
-    this.roomReactionOff = onReaction(room, (identity, emoji) => {
+    this.roomReactionOff = onReaction(room, (identity, fx) => {
       const userId = parseUserId(identity);
       if (userId === 0) return; // neither a member nor a guest — nothing to attribute it to
-      for (const listener of [...this.reactionListeners]) listener(userId, emoji);
+      for (const listener of [...this.reactionListeners]) listener(userId, fx);
     });
   }
 
@@ -971,8 +990,13 @@ export class LiveKitSession {
   async handleVoiceToken(
     token: string, url: string, channelId: number, directUrl?: string, sharedKey?: string,
   ): Promise<void> {
+    // Connected, or LiveKit recovering the session itself: a token for the same channel is only
+    // a refresh. The signal socket rides our server's /livekit proxy, so a server restart puts
+    // every room into reconnecting — and replacing the room then, on the re-join's token, tore
+    // down sessions LiveKit was about to restore: the whole call went silent.
+    const liveState = this.room?.state;
     if (this.room !== null && this.currentChannelId === channelId
-        && this.room.state === "connected") {
+        && (liveState === "connected" || liveState === "reconnecting" || liveState === "signalReconnecting")) {
       // handleVoiceTokenRefresh internally calls startTokenRefreshTimer,
       // so we must NOT call startTokenRefreshTimer again after this.
       this.handleVoiceTokenRefresh(token);
@@ -987,6 +1011,9 @@ export class LiveKitSession {
     if (this.room !== null) this.leaveVoice(false);
     this.connecting = true;
     let resolvedUrl = "";
+    // The token kept for reconnects — the newest one, if the same room was asked for again
+    // while this connect was under way (see the queued-join check below).
+    let keptToken = token;
     try {
       this.room = this.createRoom();
       this.syncModuleRooms();
@@ -998,6 +1025,17 @@ export class LiveKitSession {
           await this.room.connect(resolvedUrl, token);
           this.seedExistingGuests(channelId);
           const queuedJoin = this.pendingJoin;
+          if (queuedJoin !== null && queuedJoin.channelId === channelId
+              && queuedJoin.url === url && queuedJoin.directUrl === directUrl) {
+            // The SAME room, asked for again while we were connecting: a READY found the join
+            // already under way and re-announced it, and the server answered with a fresh token.
+            // The session just made is that room — keep it, keep the newer token for reconnects.
+            // Treating it as a different join tore this room down to connect a second time, and
+            // the call stayed live in LiveKit while the UI said it was over.
+            this.pendingJoin = null;
+            keptToken = queuedJoin.token;
+            break;
+          }
           if (queuedJoin !== null
               && (queuedJoin.token !== token
                 || queuedJoin.url !== url
@@ -1036,7 +1074,7 @@ export class LiveKitSession {
         log.info("Connected to LiveKit room", { channelId, url: resolvedUrl });
         this.logIceConnectionInfo();
         this.currentChannelId = channelId;
-        this.latestToken = token;
+        this.latestToken = keptToken;
         this.lastUrl = url;
         this.lastDirectUrl = directUrl;
         // Optimistic startAudio — may succeed if the join was triggered by a
@@ -1687,6 +1725,8 @@ export const cleanupAll = session.cleanupAll.bind(session);
 export const setMuted = session.setMuted.bind(session);
 export const setHandRaisedLocal = session.setHandRaised.bind(session);
 export const sendVoiceReaction = session.sendReaction.bind(session);
+export const sendVoiceGif = session.sendGif.bind(session);
+export const getVoiceRoom = session.getRoom.bind(session);
 export const onVoiceReaction = session.onReaction.bind(session);
 export const setDeafened = session.setDeafened.bind(session);
 export const enableCamera = session.enableCamera.bind(session);

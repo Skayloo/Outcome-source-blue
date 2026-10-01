@@ -11,6 +11,10 @@ public sealed class LiveKitTokenService(IOptions<VoiceOptions> options, ICurrent
 {
     private readonly VoiceOptions _opt = options.Value;
 
+    /// <summary>A guest token's lifetime. Also how ReadGuestToken finds the moment it was issued
+    /// (expiry minus this) — exact, whatever the SDK writes or backdates in iat/nbf.</summary>
+    private static readonly TimeSpan GuestTokenTtl = TimeSpan.FromHours(6);
+
     public bool IsConfigured => !string.IsNullOrEmpty(_opt.LiveKitApiKey) && !string.IsNullOrEmpty(_opt.LiveKitApiSecret);
 
     public string Url => _opt.LiveKitUrl;
@@ -63,7 +67,43 @@ public sealed class LiveKitTokenService(IOptions<VoiceOptions> options, ICurrent
                 CanPublishSources = { "microphone", "camera", "screen_share", "screen_share_audio" },
             })
             // Short leash: the link page re-requests a token on every join anyway.
-            .WithTtl(TimeSpan.FromHours(6));
+            .WithTtl(GuestTokenTtl);
         return token.ToJwt();
+    }
+
+    // The same HS256 check the webhook receiver does by hand, on a token we minted ourselves.
+    public GuestTokenInfo? ReadGuestToken(string jwt)
+    {
+        if (!IsConfigured || string.IsNullOrEmpty(jwt)) return null;
+        try
+        {
+            var parts = jwt.Split('.');
+            if (parts.Length != 3) return null;
+            using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(_opt.LiveKitApiSecret));
+            var expected = hmac.ComputeHash(System.Text.Encoding.ASCII.GetBytes(parts[0] + "." + parts[1]));
+            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(Base64Url(parts[2]), expected)) return null;
+
+            using var doc = System.Text.Json.JsonDocument.Parse(Base64Url(parts[1]));
+            var c = doc.RootElement;
+            if (!c.TryGetProperty("iss", out var iss) || iss.GetString() != _opt.LiveKitApiKey) return null;
+            if (!c.TryGetProperty("exp", out var exp) || DateTimeOffset.FromUnixTimeSeconds(exp.GetInt64()) < DateTimeOffset.UtcNow) return null;
+            var identity = c.TryGetProperty("sub", out var sub) ? sub.GetString() ?? "" : "";
+            if (!identity.StartsWith("guest-", StringComparison.Ordinal)) return null;
+            var name = c.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+            var room = c.TryGetProperty("video", out var v) && v.TryGetProperty("room", out var r) ? r.GetString() ?? "" : "";
+            if (room.Length == 0) return null;
+            var issued = DateTimeOffset.FromUnixTimeSeconds(exp.GetInt64()) - GuestTokenTtl;
+            return new GuestTokenInfo(identity, name, room, issued.UtcDateTime);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static byte[] Base64Url(string s)
+    {
+        var b = s.Replace('-', '+').Replace('_', '/');
+        return Convert.FromBase64String(b.PadRight(b.Length + (4 - b.Length % 4) % 4, '='));
     }
 }

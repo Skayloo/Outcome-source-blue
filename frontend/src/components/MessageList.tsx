@@ -11,6 +11,7 @@ import { membersStore } from "@stores/members.store";
 import { authStore } from "@stores/auth.store";
 import { dmStore } from "@stores/dm.store";
 import { setReply, setEditing } from "@stores/composer.store";
+import { quotesStore, claimQuoteLookup, releaseQuoteLookup, setQuoteFound, setQuoteMissing } from "@stores/quotes.store";
 import { prompt } from "@components/ConfirmDialog";
 import { setTransientSuccess, setTransientError } from "@stores/ui.store";
 import { api, wsSend } from "@lib/services";
@@ -33,6 +34,7 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   useStoreState(messagesStore);
   useStoreState(membersStore);
   const ch = useStoreState(channelsStore);
+  const quotes = useStoreState(quotesStore);
   const channelId = forced ?? ch.activeChannelId;
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +76,27 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       });
     return () => { cancelled = true; };
   }, [channelId, channelLoaded, retry]);
+
+  // A reply whose parent is older than the loaded page: fetch that one message (quotes.store).
+  // `before` is exclusive, so a single message before id+1 is exactly the parent — or, if it
+  // was deleted, the next older one, which is why the id is checked before it is kept.
+  const loadedForQuotes = channelId != null ? getChannelMessages(channelId) : undefined;
+  useEffect(() => {
+    if (channelId == null || loadedForQuotes === undefined) return;
+    const id = channelId;
+    for (const m of loadedForQuotes) {
+      const parentId = m.replyTo;
+      if (parentId == null || loadedForQuotes.some((x) => x.id === parentId)) continue;
+      if (!claimQuoteLookup(parentId)) continue;
+      api.getMessages(id, { before: parentId + 1, limit: 1 })
+        .then((resp) => {
+          const got = resp.messages[0];
+          if (got?.id === parentId) setQuoteFound(got);
+          else setQuoteMissing(parentId);
+        })
+        .catch(() => releaseQuoteLookup(parentId));
+    }
+  }, [channelId, loadedForQuotes]);
 
   // Infinite scroll upwards. Without this the web client fetched the last 50 messages ONCE and
   // never asked for more: a busy conversation simply ended at whatever date the 50th message
@@ -193,7 +216,7 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
     selfName != null && new RegExp(`@${selfName.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")}(?![\\w.\\-])`, "i").test(content);
   const react = (m: Message, emoji: string, mine: boolean) =>
     wsSend(mine ? "reaction_remove" : "reaction_add", { message_id: m.id, emoji });
-  const byId = (id: number) => messages.find((x) => x.id === id);
+  const byId = (id: number) => messages.find((x) => x.id === id) ?? quotes.found.get(id);
   /** File a report: the reason is optional context for the moderator; the server snapshots
    *  the message content itself, so an edit or delete afterwards can't scrub the evidence. */
   async function reportMessage(m: Message) {
@@ -236,13 +259,23 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       );
       prev = null;
     }
-    const grouped = !!prev && prev.user.id === m.user.id &&
+    // Guests all share one placeholder account, so their NAME is part of who wrote it: two
+    // guests in a row are two people, not one person's run of lines.
+    const grouped = !!prev && prev.user.id === m.user.id && (prev.guestName ?? null) === (m.guestName ?? null) &&
       new Date(m.timestamp).getTime() - new Date(prev.timestamp).getTime() < GROUP_WINDOW_MS;
 
     const own = me?.id === m.user.id;
     const replyRef = m.replyTo != null && (() => {
       const parent = byId(m.replyTo);
-      // Parent missing (not loaded / purged) or soft-deleted → show the deleted placeholder.
+      // Not here yet: the effect above is fetching it. "Deleted" is only for what the server
+      // said is gone — saying it of a message that merely was not loaded is the bug this replaced.
+      if (!parent && !quotes.missing.has(m.replyTo)) {
+        return (
+          <div className="msg-reply-ref">
+            <span className="rr-text">…</span>
+          </div>
+        );
+      }
       if (!parent || parent.deleted) {
         return (
           <div className="msg-reply-ref">
@@ -318,6 +351,19 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
 
         {m.attachments.filter((a) => !isImage(a.mime)).map((att) => isVoice(att) ? (
           <VoiceMessage key={att.id} att={att} channelId={m.channelId} messageId={m.id} sender={m.user.username} own={own} />
+        ) : att.mime.startsWith("video/") || att.mime.startsWith("audio/") ? (
+          // Watched or listened to right here — a call's recording is meant to be looked at, and
+          // downloading an hour of video to find out what it is would be a strange first step.
+          <div className="msg-media" key={att.id}>
+            {att.mime.startsWith("video/")
+              ? <video className="msg-media-video" src={assetUrl(att.url)} controls preload="metadata" playsInline />
+              : <audio className="msg-media-audio" src={assetUrl(att.url)} controls preload="metadata" />}
+            <div className="msg-media-meta">
+              <span className="msg-file-name">{att.filename}</span>
+              <span className="msg-file-size">{formatFileSize(att.size)}</span>
+              <a className="msg-file-download" href={assetUrl(att.url)} download={att.filename} title={t("chat.download")}>⤓</a>
+            </div>
+          </div>
         ) : (
           <div className="msg-file" key={att.id}>
             <div className="msg-file-inner">
@@ -380,15 +426,19 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       <div id={`msg-${m.id}`} className={"message dm-row" + (own ? " own" : " theirs") + (grouped ? " grouped" : "") + (pickerFor === m.id ? " picker-open" : "") + (flashId === m.id ? " flash" : "") + (!own && mentionsMe(m.content) ? " mention-me" : "")} key={m.id}>
         {!own && (grouped
           ? <span className="dm-ava-spacer" />
-          : <Avatar username={m.user.username} avatar={m.user.avatar} size={30} color={colorFor(m.user.id)} className="dm-ava" />)}
+          : m.guestName
+            ? <Avatar username={m.guestName} avatar={null} size={30} color="#6b7280" className="dm-ava" />
+            : <Avatar username={m.user.username} avatar={m.user.avatar} size={30} color={colorFor(m.user.id)} className="dm-ava" />)}
         {own && <span className="dm-time" title={new Date(m.timestamp).toLocaleString()}>{ticks(m)}{formatTime(m.timestamp)}</span>}
         <div className={"dm-bubble" + (
           !m.content.trim() && m.attachments.length > 0 && m.attachments.every((a) => isImage(a.mime))
             ? " photo-only" : "")}>
-          {!isDm && !own && !grouped && (
-            <div className="dm-author clickable" style={{ color: colorFor(m.user.id) }}
-              onClick={() => setProfile({ id: m.user.id, username: m.user.username, avatar: m.user.avatar })}
-            >{m.user.username}</div>
+          {!isDm && !own && !grouped && (m.guestName
+            // A guest has no profile to open — the account behind the line is a placeholder.
+            ? <div className="dm-author">{m.guestName} <span className="dm-guest-tag">{t("chat.guestTag")}</span></div>
+            : <div className="dm-author clickable" style={{ color: colorFor(m.user.id) }}
+                onClick={() => setProfile({ id: m.user.id, username: m.user.username, avatar: m.user.avatar })}
+              >{m.user.username}</div>
           )}
           {replyRef}
           {body}

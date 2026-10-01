@@ -220,7 +220,11 @@ services:
 
 
   minio:
-    image: minio/minio:latest
+    # quay.io, НЕ Docker Hub: там тега latest у MinIO больше нет, и попытка его скачать
+    # отвечает «pull access denied … repository does not exist», что читается как проблема с
+    # доступом, а не как «тега не существует». На проде образ до сих пор жив только потому, что
+    # лежит в локальном кеше с тех времён, когда тег был, — и исчезнет при первой же чистке.
+    image: quay.io/minio/minio:latest
     command: server /data --console-address ":9001"
     restart: unless-stopped
     <<: *logging

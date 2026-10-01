@@ -48,7 +48,7 @@ internal static class WsFrames
     public static byte[] ChatSendOk(string? reqId, long messageId, DateTime timestamp) =>
         Serialize(new { type = "chat_send_ok", id = reqId, payload = new { message_id = messageId, timestamp } });
 
-    public static byte[] ChatMessage(long id, long channelId, long userId, string username, string? avatar, string role, string content, long? replyTo, DateTime timestamp, long seq, IReadOnlyList<AttachmentDto>? attachments = null, string? forwardedFrom = null) =>
+    public static byte[] ChatMessage(long id, long channelId, long userId, string username, string? avatar, string role, string content, long? replyTo, DateTime timestamp, long seq, IReadOnlyList<AttachmentDto>? attachments = null, string? forwardedFrom = null, string? guestName = null) =>
         Serialize(new
         {
             type = "chat_message",
@@ -61,6 +61,8 @@ internal static class WsFrames
                 content,
                 reply_to = replyTo,
                 forwarded_from = forwardedFrom,
+                // Set on a guest's message in a voice room's chat; `user` is then the placeholder.
+                guest_name = guestName,
                 timestamp,
                 attachments = (attachments ?? Array.Empty<AttachmentDto>())
                     .Select(a => new { id = a.Id, filename = a.Filename, size = a.Size, mime = a.Mime, url = a.Url, width = a.Width, height = a.Height, duration_ms = a.DurationMs, waveform = a.Waveform })
@@ -90,8 +92,8 @@ internal static class WsFrames
     public static byte[] MemberUpdate(long userId, string role) =>
         Serialize(new { type = "member_update", payload = new { user_id = userId, role } });
 
-    public static byte[] ChannelCreate(long id, string name, string type, string? category, int position) =>
-        Serialize(new { type = "channel_create", payload = new { id, name, type, category, position } });
+    public static byte[] ChannelCreate(long id, string name, string type, string? category, int position, long? chatChannelId = null) =>
+        Serialize(new { type = "channel_create", payload = new { id, name, type, category, position, chat_channel_id = chatChannelId } });
 
     public static byte[] ChannelUpdate(long id, string name, int position) =>
         Serialize(new { type = "channel_update", payload = new { id, name, position } });
@@ -117,11 +119,13 @@ internal static class WsFrames
     public static byte[] VoiceToken(long channelId, string token, string url, string directUrl) =>
         Serialize(new { type = "voice_token", payload = new { channel_id = channelId, token, url, direct_url = directUrl } });
 
-    public static byte[] VoiceConfig(long channelId, string quality, int bitrate, int maxUsers) =>
+    public static byte[] VoiceConfig(long channelId, string quality, int bitrate, int maxUsers, bool canRecord = false) =>
         Serialize(new
         {
             type = "voice_config",
-            payload = new { channel_id = channelId, quality, bitrate, max_users = maxUsers, threshold_mode = "top_speakers", mixing_threshold = 0, top_speakers = 5 },
+            // can_record: whether THIS member may record the room (RecordCalls) — the button's cue;
+            // the server checks again when a recording is announced.
+            payload = new { channel_id = channelId, quality, bitrate, max_users = maxUsers, threshold_mode = "top_speakers", mixing_threshold = 0, top_speakers = 5, can_record = canRecord },
         });
 
     public static byte[] VoiceState(VoiceStateDto v) =>

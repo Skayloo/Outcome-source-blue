@@ -17,12 +17,13 @@ public sealed record ChannelDto(
     int VoiceMaxUsers,
     [property: JsonProperty(NullValueHandling = NullValueHandling.Ignore)] string? VoiceQuality,
     [property: JsonProperty(NullValueHandling = NullValueHandling.Ignore)] int? MixingThreshold,
-    int VoiceMaxVideo);
+    int VoiceMaxVideo,
+    [property: JsonProperty("chat_channel_id", NullValueHandling = NullValueHandling.Ignore)] long? ChatChannelId = null);
 
 public static class ChannelMapper
 {
     public static ChannelDto ToDto(Channel c) => new(
         c.Id, c.Name, c.Type, c.Category ?? string.Empty, c.Topic ?? string.Empty,
         c.Position, c.SlowMode, c.Archived, c.CreatedAt, c.VoiceMaxUsers,
-        c.VoiceQuality, c.MixingThreshold, c.VoiceMaxVideo);
+        c.VoiceQuality, c.MixingThreshold, c.VoiceMaxVideo, c.ChatChannelId);
 }

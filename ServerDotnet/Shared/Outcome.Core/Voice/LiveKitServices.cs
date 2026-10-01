@@ -53,21 +53,56 @@ public sealed class LiveKitRoomService : ILiveKitRoomService
     public Task RemoveOtherUserSessionsAsync(long channelId, long userId, string keepIdentity, CancellationToken ct = default) =>
         RemoveUserSessionsAsync(channelId, userId, keepIdentity);
 
+    /// <summary>"user-{id}.{device}." for an identity that names its device (user-{id}.{device}.{conn}),
+    /// null for the older "user-{id}.{conn}" and "user-{id}" forms.</summary>
+    private static string? DevicePrefix(string? identity)
+    {
+        if (identity is null) return null;
+        var last = identity.LastIndexOf('.');
+        return last > 0 && identity.IndexOf('.') < last ? identity[..(last + 1)] : null;
+    }
+
     private async Task RemoveUserSessionsAsync(long channelId, long userId, string? keepIdentity)
     {
         if (_client is null) return;
         var room = LiveKitRooms.Name(space.Space.Id, channelId);
+        // The joining device's other sessions are its own — a live one the client is still using
+        // (the re-join after a socket blip keeps its media) or a dead one LiveKit is about to time
+        // out. Only OTHER devices hand over.
+        var sameDevice = DevicePrefix(keepIdentity);
         try
         {
             var res = await _client.ListParticipants(new ListParticipantsRequest { Room = room });
             foreach (var p in res.Participants)
             {
                 if (!IsUserSession(p.Identity, userId) || p.Identity == keepIdentity) continue;
+                if (sameDevice is not null && p.Identity.StartsWith(sameDevice, StringComparison.Ordinal)) continue;
                 try { await _client.RemoveParticipant(new RoomParticipantIdentity { Room = room, Identity = p.Identity }); }
                 catch { /* one session failing must not stop the rest */ }
             }
         }
         catch { /* room may not exist (nobody connected) — nothing to remove */ }
+    }
+
+    public async Task<bool> SetUserAttributeAsync(long channelId, long userId, string key, string value, CancellationToken ct = default)
+    {
+        if (_client is null) return false;
+        var room = LiveKitRooms.Name(space.Space.Id, channelId);
+        try
+        {
+            var res = await _client.ListParticipants(new ListParticipantsRequest { Room = room });
+            var any = false;
+            foreach (var p in res.Participants.Where(p => IsUserSession(p.Identity, userId)))
+            {
+                // Only the attributes named here change; metadata and grants are left as they are.
+                var req = new UpdateParticipantRequest { Room = room, Identity = p.Identity };
+                req.Attributes[key] = value;
+                await _client.UpdateParticipant(req);
+                any = true;
+            }
+            return any;
+        }
+        catch { return false; } // the room may not exist: nobody of theirs is in it
     }
 
     public async Task<bool> HasUserSessionAsync(long channelId, long userId, CancellationToken ct = default)
@@ -79,6 +114,26 @@ public sealed class LiveKitRoomService : ILiveKitRoomService
             return res.Participants.Any(p => IsUserSession(p.Identity, userId));
         }
         catch { return false; }
+    }
+
+    public async Task<IReadOnlySet<long>> ListConnectedUserIdsAsync(long channelId, CancellationToken ct = default)
+    {
+        var ids = new HashSet<long>();
+        if (_client is null) return ids;
+        try
+        {
+            var res = await _client.ListParticipants(new ListParticipantsRequest { Room = LiveKitRooms.Name(space.Space.Id, channelId) });
+            foreach (var p in res.Participants)
+            {
+                // "user-<id>" or "user-<id>.<session>"; guests ("guest-*") are not members.
+                if (!p.Identity.StartsWith("user-", StringComparison.Ordinal)) continue;
+                var rest = p.Identity.AsSpan(5);
+                var dot = rest.IndexOf('.');
+                if (long.TryParse(dot < 0 ? rest : rest[..dot], out var id)) ids.Add(id);
+            }
+        }
+        catch { /* room may not exist — nobody is connected */ }
+        return ids;
     }
 
     public async Task RemoveGuestsAsync(long channelId, CancellationToken ct = default)

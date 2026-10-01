@@ -21,8 +21,28 @@ public sealed class ChannelRepository(OutcomeDbContext db) : IChannelRepository
     {
         db.Channels.Add(channel);
         await db.SaveChangesAsync(ct);
+        // A voice channel never comes alone: its chat, same name and place, made AFTER it so that
+        // in a list ordered by position and then id the chat sits right under its room.
+        if (channel.Type == "voice" && channel.ChatChannelId is null)
+        {
+            var chat = ChatFor(channel);
+            db.Channels.Add(chat);
+            await db.SaveChangesAsync(ct);
+            channel.ChatChannelId = chat.Id;
+            await db.SaveChangesAsync(ct);
+        }
         return channel.Id;
     }
+
+    /// <summary>The text chat a voice channel is born with.</summary>
+    public static Channel ChatFor(Channel voice) => new()
+    {
+        ServerId = voice.ServerId, Name = voice.Name, Type = "text",
+        Category = voice.Category, Position = voice.Position, Topic = "",
+    };
+
+    public Task<Channel?> VoiceOfChatAsync(long chatChannelId, CancellationToken ct = default) =>
+        db.Channels.AsNoTracking().FirstOrDefaultAsync(c => c.ChatChannelId == chatChannelId && c.Type == "voice" && !c.Deleted, ct);
 
     public async Task<bool> UpdateAsync(long id, string? name, string? topic, int? slowMode, int? position, bool? archived, CancellationToken ct = default) =>
         await db.Channels.Where(c => c.Id == id).ExecuteUpdateAsync(s => s
@@ -34,10 +54,20 @@ public sealed class ChannelRepository(OutcomeDbContext db) : IChannelRepository
 
     // Soft delete: the channel and all its rows (messages, overrides, …) stay in the DB but the
     // channel is excluded from listings and lookups, so it disappears from every client.
-    public async Task<bool> DeleteAsync(long id, CancellationToken ct = default) =>
-        await db.Channels.Where(c => c.Id == id && !c.Deleted).ExecuteUpdateAsync(s => s
+    // A voice channel takes its chat with it.
+    public async Task<bool> DeleteAsync(long id, CancellationToken ct = default)
+    {
+        var chat = await db.Channels.Where(c => c.Id == id).Select(c => c.ChatChannelId).FirstOrDefaultAsync(ct);
+        var now = DateTime.UtcNow;
+        var done = await db.Channels.Where(c => c.Id == id && !c.Deleted).ExecuteUpdateAsync(s => s
             .SetProperty(c => c.Deleted, true)
-            .SetProperty(c => c.DeletedAt, DateTime.UtcNow), ct) > 0;
+            .SetProperty(c => c.DeletedAt, now), ct) > 0;
+        if (done && chat is { } chatId)
+            await db.Channels.Where(c => c.Id == chatId && !c.Deleted).ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Deleted, true)
+                .SetProperty(c => c.DeletedAt, now), ct);
+        return done;
+    }
 }
 
 public sealed class EmojiRepository(OutcomeDbContext db) : IEmojiRepository
@@ -94,7 +124,7 @@ public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUr
             .Join(db.Users.AsNoTracking(), m => m.UserId, u => u.Id, (m, u) => new
             {
                 m.Id, m.ChannelId, m.UserId, Username = u.UserName!, u.Avatar,
-                m.Content, m.ReplyTo, m.ForwardedFrom, m.EditedAt, m.Deleted, m.Pinned, m.Timestamp,
+                m.Content, m.ReplyTo, m.ForwardedFrom, m.EditedAt, m.Deleted, m.Pinned, m.Timestamp, m.GuestName,
             })
             .ToListAsync(ct);
         if (msgs.Count == 0) return [];
@@ -148,9 +178,10 @@ public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUr
         IReadOnlyList<ReactionInfoDto> noReacts = [];
 
         return msgs.Select(m => new MessageDto(
-            m.Id, m.ChannelId, new UserPublicDto(m.UserId, m.Username, m.Avatar), m.Content, m.ReplyTo,
+            // A guest's line names the guest, for a client that predates guest_name as well.
+            m.Id, m.ChannelId, new UserPublicDto(m.UserId, m.GuestName is null ? m.Username : $"{m.GuestName} (guest)", m.Avatar), m.Content, m.ReplyTo,
             attByMsg.GetValueOrDefault(m.Id, noAtts), reactByMsg.GetValueOrDefault(m.Id, noReacts),
-            m.Pinned, m.EditedAt, m.Deleted, m.Timestamp, m.ForwardedFrom)).ToList();
+            m.Pinned, m.EditedAt, m.Deleted, m.Timestamp, m.ForwardedFrom, m.GuestName)).ToList();
     }
 
     public async Task<(long Id, DateTime Timestamp)> CreateAsync(long channelId, long userId, string content, long? replyTo, string? forwardedFrom = null, CancellationToken ct = default)
@@ -160,6 +191,23 @@ public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUr
         await db.SaveChangesAsync(ct);
         return (msg.Id, msg.Timestamp);
     }
+
+    public async Task<(long Id, DateTime Timestamp)> CreateGuestAsync(long channelId, long guestAuthorId, string guestName, string content, CancellationToken ct = default)
+    {
+        var msg = new Message { ChannelId = channelId, UserId = guestAuthorId, GuestName = guestName, Content = content };
+        db.Messages.Add(msg);
+        await db.SaveChangesAsync(ct);
+        return (msg.Id, msg.Timestamp);
+    }
+
+    public async Task<IReadOnlyList<GuestChatRow>> ListForGuestAsync(long channelId, long afterId, DateTime since, int limit, CancellationToken ct = default) =>
+        await db.Messages.AsNoTracking()
+            .Where(m => m.ChannelId == channelId && m.Id > afterId && m.Timestamp >= since && !m.Deleted)
+            .OrderBy(m => m.Id)
+            .Take(limit)
+            .Join(db.Users.AsNoTracking(), m => m.UserId, u => u.Id, (m, u) => new GuestChatRow(
+                m.Id, m.GuestName ?? u.UserName!, m.GuestName != null, m.GuestName == null ? u.Avatar : null, m.Content, m.Timestamp))
+            .ToListAsync(ct);
 
     public Task<Message?> GetByIdAsync(long id, CancellationToken ct = default) =>
         db.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == id, ct);

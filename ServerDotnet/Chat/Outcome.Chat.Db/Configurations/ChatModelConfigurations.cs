@@ -61,6 +61,7 @@ public sealed class MessageConfiguration : IEntityTypeConfiguration<Message>
         b.HasOne<User>().WithMany().HasForeignKey(m => m.UserId).OnDelete(DeleteBehavior.NoAction);
         b.HasOne<Message>().WithMany().HasForeignKey(m => m.ReplyTo).OnDelete(DeleteBehavior.SetNull);
         b.HasIndex(m => new { m.ChannelId, m.Id });
+        b.Property(m => m.GuestName).HasMaxLength(40);
     }
 }
 

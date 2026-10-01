@@ -219,7 +219,8 @@ public static class UploadEndpoints
 
         // GET /api/v1/files/{id} — no session, but not public: the signed query is the credential.
         app.MapGet("/api/v1/files/{id}", async (string id, HttpContext ctx, IAttachmentRepository attachments,
-            IFileStorage storage, IFileUrlSigner fileUrls, IUserRepository users, IServerRepository servers) =>
+            IFileStorage storage, IFileUrlSigner fileUrls, IUserRepository users, IServerRepository servers,
+            IUserGifRepository gifs) =>
         {
             // The link IS the credential — an <img src> carries no session — so it has to expire.
             // An id alone was a permanent one: anywhere it was ever forwarded, pasted or logged,
@@ -234,10 +235,13 @@ public static class UploadEndpoints
             // shown on the sign-in screen of a space to people who have no session at all. It was
             // stored WITH a signature instead, which expired a week later and took every server
             // picture with it.
+            // A library GIF is the third of the kind: fired into calls by its bare path for as long
+            // as its owner keeps it, and shown to the guests in those calls (GifEndpoints).
             var path = $"/api/v1/files/{id}";
             if (!fileUrls.Verify(id, ctx.Request.Query["e"], ctx.Request.Query["s"])
                 && !await users.IsAvatarAsync(path, ctx.RequestAborted)
-                && !await servers.IsIconAsync(path, ctx.RequestAborted))
+                && !await servers.IsIconAsync(path, ctx.RequestAborted)
+                && !await gifs.IsGifPathAsync(path, ctx.RequestAborted))
                 return Results.NotFound();
 
             var att = await attachments.GetByIdAsync(id, ctx.RequestAborted);

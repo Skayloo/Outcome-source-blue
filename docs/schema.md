@@ -57,6 +57,7 @@ nothing redefines them, least of all the client.
 | `SpeakVoice` | `1L << 10` | `0x00000400` |
 | `UseVideo` | `1L << 11` | `0x00000800` |
 | `ShareScreen` | `1L << 12` | `0x00001000` |
+| `RecordCalls` | `1L << 13` | `0x00002000` |
 | `ManageMessages` | `1L << 16` | `0x00010000` |
 | `ManageChannels` | `1L << 17` | `0x00020000` |
 | `KickMembers` | `1L << 18` | `0x00040000` |

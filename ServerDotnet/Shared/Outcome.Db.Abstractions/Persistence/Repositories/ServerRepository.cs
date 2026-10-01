@@ -101,7 +101,14 @@ public sealed class ServerRepository(OutcomeDbContext db) : IServerRepository
         await db.SaveChangesAsync(ct);
 
         db.Channels.Add(new Channel { ServerId = server.Id, Name = "general", Type = "text", Category = "Text Channels", Topic = "Welcome!" });
-        db.Channels.Add(new Channel { ServerId = server.Id, Name = "General", Type = "voice", Category = "Voice Channels" });
+        var voice = new Channel { ServerId = server.Id, Name = "General", Type = "voice", Category = "Voice Channels" };
+        db.Channels.Add(voice);
+        await db.SaveChangesAsync(ct);
+        // The voice room's own chat (W3GWG-25), made after it as ChannelRepository.CreateAsync does.
+        var voiceChat = ChannelRepository.ChatFor(voice);
+        db.Channels.Add(voiceChat);
+        await db.SaveChangesAsync(ct);
+        voice.ChatChannelId = voiceChat.Id;
         db.ServerMembers.Add(new ServerMember { ServerId = server.Id, UserId = ownerId, RoleId = null });
         await db.SaveChangesAsync(ct);
 

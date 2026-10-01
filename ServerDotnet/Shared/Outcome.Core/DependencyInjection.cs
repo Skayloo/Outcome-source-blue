@@ -151,6 +151,7 @@ public static class DependencyInjection
         services.AddScoped<IBlockRepository, BlockRepository>();
         services.AddScoped<IMessageReportRepository, MessageReportRepository>();
         services.AddScoped<IGuestLinkRepository, GuestLinkRepository>();
+        services.AddScoped<IUserGifRepository, UserGifRepository>();
 
         // Scoped, not singleton: room names carry the tenant, so these need the request's space.
         services.AddScoped<Shared.Abstractions.Voice.ILiveKitTokenService, Voice.LiveKitTokenService>();

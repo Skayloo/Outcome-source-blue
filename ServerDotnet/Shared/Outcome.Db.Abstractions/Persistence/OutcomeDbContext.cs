@@ -43,6 +43,7 @@ public sealed class OutcomeDbContext(DbContextOptions<OutcomeDbContext> options)
     public DbSet<MessageReport> MessageReports => Set<MessageReport>();
     public DbSet<GuestLink> GuestLinks => Set<GuestLink>();
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
+    public DbSet<UserGif> UserGifs => Set<UserGif>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder b)
     {
@@ -88,6 +89,7 @@ public sealed class OutcomeDbContext(DbContextOptions<OutcomeDbContext> options)
         mb.Entity<MessageReport>().ToTable("message_reports");
         mb.Entity<GuestLink>().ToTable("guest_links");
         mb.Entity<DeviceToken>().ToTable("device_tokens");
+        mb.Entity<UserGif>().ToTable("user_gifs");
 
         // Keys for entities without a single Id.
         mb.Entity<Setting>().HasKey(s => s.Key);
@@ -105,6 +107,11 @@ public sealed class OutcomeDbContext(DbContextOptions<OutcomeDbContext> options)
         // Guests resolve by code on a public endpoint — must be an index, and codes are unique.
         mb.Entity<GuestLink>().HasIndex(g => g.Code).IsUnique();
         mb.Entity<GuestLink>().HasIndex(g => g.ChannelId);
+        // The library is always read whole, per user.
+        mb.Entity<UserGif>().HasIndex(g => g.UserId);
+        mb.Entity<UserGif>().HasOne<User>().WithMany().HasForeignKey(g => g.UserId).OnDelete(DeleteBehavior.Cascade);
+        // The file endpoint asks "is this path a library GIF?" for unsigned requests.
+        mb.Entity<UserGif>().HasIndex(g => g.Path);
 
         // Notification previews are on unless the user says otherwise — including for accounts
         // that already existed when the column was added, which is what the DB default decides.
@@ -138,6 +145,7 @@ public sealed class OutcomeDbContext(DbContextOptions<OutcomeDbContext> options)
         DefaultNow(mb.Entity<GuestLink>().Property(g => g.CreatedAt));
         DefaultNow(mb.Entity<DeviceToken>().Property(d => d.CreatedAt));
         DefaultNow(mb.Entity<DeviceToken>().Property(d => d.LastSeen));
+        DefaultNow(mb.Entity<UserGif>().Property(g => g.CreatedAt));
         DefaultNow(mb.Entity<BugReport>().Property(b => b.UpdatedAt));
 
         // Per-module FK / index / default configuration lives in the module .Db projects.

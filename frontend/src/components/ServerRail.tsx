@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 import { ModalPortal } from "@components/ModalPortal";
 import { useStoreState } from "@lib/useStore";
 import { serversStore, setServers, setActiveServer } from "@stores/servers.store";
+import { authStore } from "@stores/auth.store";
 import { channelsStore, setActiveChannel } from "@stores/channels.store";
 import { dmStore } from "@stores/dm.store";
 import { friendsStore } from "@stores/friends.store";
@@ -16,6 +17,8 @@ import { Icon } from "@lib/icons";
 import { Logo } from "@components/Logo";
 import { ExploreModal } from "@components/ExploreModal";
 import { BugReportModal } from "@components/BugReportModal";
+import { ContextMenu } from "@components/ContextMenu";
+import { ServerSettingsModal } from "@components/ServerSettingsModal";
 import { initials } from "@lib/format";
 import { t } from "@lib/i18n";
 import { assetUrlSmall } from "@lib/serverHost";
@@ -46,6 +49,16 @@ export function ServerRail() {
   const [showCreate, setShowCreate] = useState(false);
   const [showExplore, setShowExplore] = useState(false);
   const [showBug, setShowBug] = useState(false);
+  const [menu, setMenu] = useState<{ serverId: number; x: number; y: number } | null>(null);
+  const [settingsFor, setSettingsFor] = useState<number | null>(null);
+  const me = useStoreState(authStore).user;
+  const globalRole = (me?.role ?? "").toLowerCase();
+
+  /** Who may open a server's settings straight from the rail. Owner or instance admin only: a
+   *  ManageServer grant is per server and the server answers it from the ACTIVE one, so for any
+   *  other server it would open a panel whose every save is refused. */
+  const canManageFromRail = (ownerId: number): boolean =>
+    ownerId === me?.id || globalRole === "owner" || globalRole === "admin";
 
   const homeActive = ui.sidebarMode === "dms";
   const dmUnread = dm.channels.reduce((sum, c) => sum + c.unreadCount, 0) + friends.incoming.length;
@@ -105,6 +118,11 @@ export function ServerRail() {
             className={`rail-server${active ? " active" : ""}`}
             title={server.name}
             onClick={() => goServer(server.id)}
+            onContextMenu={(e) => {
+              if (!canManageFromRail(server.owner_id)) return;
+              e.preventDefault();
+              setMenu({ serverId: server.id, x: e.clientX, y: e.clientY });
+            }}
           >
             {/* The picture first, whichever server this is. The brand mark and the initials are
                 both FALLBACKS for a server with no picture — the primary one used to be checked
@@ -143,6 +161,30 @@ export function ServerRail() {
       {showCreate && <CreateServerModal onClose={() => setShowCreate(false)} />}
       {showExplore && <ExploreModal onClose={() => setShowExplore(false)} />}
       {showBug && <BugReportModal onClose={() => setShowBug(false)} />}
+      {menu && (
+        <ContextMenu
+          x={menu.x} y={menu.y} onClose={() => setMenu(null)}
+          items={[{
+            label: t("srvset.title"), icon: <Icon name="settings" size={15} />,
+            onClick: () => setSettingsFor(menu.serverId),
+          }]}
+        />
+      )}
+      {settingsFor !== null && (() => {
+        const s = servers.find((x) => x.id === settingsFor);
+        const isOwner = s?.owner_id === me?.id;
+        return (
+          <ServerSettingsModal
+            serverId={settingsFor}
+            canDelete={isOwner || globalRole === "owner"}
+            canModerate={settingsFor === activeServerId}
+            // The other tabs read the channel, member and invite stores, and those hold the
+            // ACTIVE server. For any other server they would show — and edit — the wrong one.
+            overviewOnly={settingsFor !== activeServerId}
+            onClose={() => setSettingsFor(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

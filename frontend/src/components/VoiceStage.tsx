@@ -8,12 +8,10 @@ import {
   enableCamera, disableCamera, enableScreenshare, disableScreenshare,
   setOnRemoteVideo, setOnRemoteVideoRemoved, clearOnRemoteVideo,
   getLocalCameraStream, getLocalScreenshareStream,
-  onVoiceReaction, sendVoiceReaction, setHandRaisedLocal,
+  onVoiceReaction, sendVoiceReaction, sendVoiceGif, setHandRaisedLocal,
 } from "@lib/livekitSession";
 import { Icon } from "@lib/icons";
-import { api } from "@lib/services";
-import { copyText } from "@lib/clipboard";
-import { setTransientSuccess, showToast } from "@stores/ui.store";
+import { copyGuestLink } from "@lib/guestLink";
 import { Avatar } from "@components/Avatar";
 import { QualityBars } from "@components/QualityBars";
 import { t } from "@lib/i18n";
@@ -21,6 +19,15 @@ import { VoiceUserMenu } from "@components/VoiceUserMenu";
 import { VoiceCtl as Ctl } from "@components/VoiceCtl";
 import { FloatingReactions, VoiceFxControls, useReactionFeed } from "@components/VoiceFx";
 import { type Reaction } from "@lib/voiceReactions";
+import { messagesStore } from "@stores/messages.store";
+import { channelsStore } from "@stores/channels.store";
+import { MessageList } from "@components/MessageList";
+import { MessageInput } from "@components/MessageInput";
+import { TypingIndicator } from "@components/TypingIndicator";
+
+import { recorderStore, startRecording, stopRecording, type RecordMode } from "@lib/recorder";
+
+const CHAT_OPEN_KEY = "outcome:voiceChatOpen";
 
 interface RemoteEntry { userId: number; stream: MediaStream; screenshare: boolean }
 
@@ -30,17 +37,6 @@ interface RemoteEntry { userId: number; stream: MediaStream; screenshare: boolea
  * dedicated tiles for screenshares, and a bottom control bar with a prominent Disconnect.
  */
 export function VoiceStage({ channelId }: { channelId: number }) {
-  // Mint (or fetch) the channel's no-login guest link and drop it in the clipboard.
-  // Permission (ManageInvites) is enforced server-side — a 403 lands in the toast.
-  const copyGuestLink = (): void => {
-    void api.createGuestLink(channelId)
-      .then(async (r) => {
-        if (await copyText(r.url)) setTransientSuccess(t("voice.guestLinkCopied"));
-        else showToast(r.url, "info"); // clipboard blocked — at least show it
-      })
-      .catch((e: unknown) => showToast(e instanceof Error ? e.message : t("voice.guestLinkFailed"), "error"));
-  };
-
   const v = useStoreState(voiceStore);
   useStoreState(membersStore);
   const authUser = useStoreState(authStore).user;
@@ -51,6 +47,26 @@ export function VoiceStage({ channelId }: { channelId: number }) {
   // on every join — a feed bound to the old one delivers nothing and says nothing.
   const reactions = useReactionFeed<number>((cb) => onVoiceReaction(cb), [connectedHere, v.currentChannelId]);
   const [vMenu, setVMenu] = useState<{ userId: number; x: number; y: number } | null>(null);
+
+  // The room's own chat (W3GWG-25): the voice channel's messages, beside the call. Remembered
+  // per browser, open or shut — a per-viewer convenience, nothing more.
+  const [chatOpen, setChatOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(CHAT_OPEN_KEY) === "1"; } catch { return false; }
+  });
+  const toggleChat = (): void => setChatOpen((v) => {
+    try { localStorage.setItem(CHAT_OPEN_KEY, v ? "0" : "1"); } catch { /* private mode */ }
+    return !v;
+  });
+  // New lines while the chat is shut: the badge on its button. The stage IS the active channel,
+  // so the channel's own unread count never moves here — it is read the moment it arrives.
+  // The room's chat is its attached text channel (W3GWG-25) — an ordinary channel of the same
+  // name, so what is written here is there for everyone after the call, too.
+  const chatId = useStoreState(channelsStore).channels.get(channelId)?.chatChannelId ?? channelId;
+  const roomMsgs = useStoreState(messagesStore).messagesByChannel.get(chatId);
+  const latestId = roomMsgs && roomMsgs.length > 0 ? roomMsgs[roomMsgs.length - 1]!.id : 0;
+  const [seenId, setSeenId] = useState(latestId);
+  useEffect(() => { if (chatOpen) setSeenId(latestId); }, [chatOpen, latestId]);
+  const unseen = chatOpen ? 0 : (roomMsgs ?? []).filter((m) => m.id > seenId && m.user.id !== me && !m.deleted).length;
 
   useEffect(() => {
     setOnRemoteVideo((userId, stream, isSs) =>
@@ -94,12 +110,35 @@ export function VoiceStage({ channelId }: { channelId: number }) {
     ? Math.min(Math.max(users.length, 1), 6)
     : Math.min(Math.ceil(Math.sqrt(Math.max(users.length, 1))), 4);
 
+  const recUpload = useStoreState(recorderStore).uploading;
+  // Who is recording this call — read by everyone, guests included (see lib/recorder.ts).
+  const recNames = [...v.recorders.keys()].map((uid) =>
+    users.find((u) => u.userId === uid)?.username ?? (uid === me ? authUser?.username ?? "" : t("rec.someone")));
+
   return (
     <div className="voice-stage">
+      {connectedHere && v.recorders.size > 0 && (
+        <div className="vstage-rec-banner" role="status">
+          <span className="vstage-rec-dot" /> {t("rec.banner", { names: recNames.join(", ") })}
+        </div>
+      )}
+      {recUpload !== null && (
+        <div className="vstage-rec-banner uploading" role="status">
+          {t("rec.uploading", { pct: Math.round(recUpload * 100) })}
+        </div>
+      )}
+      <div className="voice-stage-main">
       <div className="voice-stage-body">
         {screens.length > 0 && (
           <div className="vstage-screens">
-            {screens.map((s) => <VideoBox key={s.key} label={s.label} stream={s.stream} contain expandable />)}
+            {screens.map((s) => (
+              <VideoBox
+                key={s.key} label={s.label} stream={s.stream} contain expandable
+                // Fullscreen covers the stage's own bar, and leaving fullscreen just to unmute
+                // and answer a question is what people asked us to stop making them do.
+                overlay={connectedHere ? <FullscreenControls /> : undefined}
+              />
+            ))}
           </div>
         )}
         <div
@@ -139,6 +178,20 @@ export function VoiceStage({ channelId }: { channelId: number }) {
           })}
         </div>
       </div>
+      {chatOpen && (
+        <aside className="vstage-chat" aria-label={t("voice.roomChat")}>
+          <div className="vstage-chat-head">
+            <span>{t("voice.roomChat")}</span>
+            <button className="vstage-chat-close" title={t("common.close")} aria-label={t("common.close")} onClick={toggleChat}>
+              <Icon name="x" size={16} />
+            </button>
+          </div>
+          <MessageList channelId={chatId} />
+          <TypingIndicator channelId={chatId} />
+          <MessageInput channelId={chatId} />
+        </aside>
+      )}
+      </div>
 
       <div className="vstage-controls">
         {connectedHere ? (
@@ -152,12 +205,19 @@ export function VoiceStage({ channelId }: { channelId: number }) {
               handUp={v.hands.has(me)}
               onHand={(up) => { void setHandRaisedLocal(up); }}
               onReact={(emoji: Reaction) => { void sendVoiceReaction(emoji); }}
+              onGif={(path) => { void sendVoiceGif(path); }}
             />
-            <Ctl name="user-plus" label={t("voice.guestLinkLabel")} onClick={copyGuestLink} />
+            <Ctl name="user-plus" label={t("voice.guestLinkLabel")} onClick={() => { void copyGuestLink(channelId); }} />
+            <ChatToggle open={chatOpen} unseen={unseen} onClick={toggleChat} />
+            {v.voiceConfigs.get(channelId)?.can_record === true && <RecordControl />}
             <button className="vsc-btn disconnect" title={t("voice.disconnectFromVoice")} onClick={leaveVoiceNow}><Icon name="phone-down" size={18} /> {t("voice.disconnect")}</button>
           </>
         ) : (
-          <button className="vsc-join" onClick={() => joinVoice(channelId)}><Icon name="volume-2" size={18} /> {t("voice.joinVoice")}</button>
+          <>
+            <button className="vsc-join" onClick={() => joinVoice(channelId)}><Icon name="volume-2" size={18} /> {t("voice.joinVoice")}</button>
+            {/* Readable from outside the call too: it is the channel's chat, not the call's. */}
+            <ChatToggle open={chatOpen} unseen={unseen} onClick={toggleChat} />
+          </>
         )}
       </div>
       {vMenu && (
@@ -167,11 +227,98 @@ export function VoiceStage({ channelId }: { channelId: number }) {
   );
 }
 
-/** A captioned circular control button (icon + label) for the voice control bar. */
-function VideoBox({ label, stream, fill, contain, mirror, expandable }: { label: string; stream: MediaStream; fill?: boolean; contain?: boolean; mirror?: boolean; expandable?: boolean }) {
+/** Start a recording in one of the agreed modes, or stop the one running. Shown only to those
+ *  the server says may record (voice_config.can_record). */
+function RecordControl() {
+  const rec = useStoreState(recorderStore);
+  const [menu, setMenu] = useState(false);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (rec.active === null) return;
+    const id = window.setInterval(() => tick((n) => n + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [rec.active]);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (): void => setMenu(false);
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menu]);
+
+  if (rec.active !== null) {
+    const secs = Math.floor((Date.now() - rec.active.startedAt) / 1000);
+    const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+    return <Ctl glyph="■" label={t("rec.stop", { time: clock })} red onClick={() => { void stopRecording(); }} />;
+  }
+  const modes: { mode: RecordMode; label: string }[] = [
+    { mode: "audio", label: t("rec.modeAudio") },
+    { mode: "video", label: t("rec.modeVideo") },
+    { mode: "both", label: t("rec.modeBoth") },
+    { mode: "separate", label: t("rec.modeSeparate") },
+  ];
+  return (
+    <div className="vfx-picker-wrap" onPointerDown={(e) => e.stopPropagation()}>
+      <Ctl glyph="⏺" label={rec.busy ? t("rec.starting") : t("rec.record")} on={menu} onClick={() => { if (!rec.busy) setMenu((m) => !m); }} />
+      {menu && (
+        <div className="vfx-picker rec-menu" role="menu">
+          {modes.map((m) => (
+            <button key={m.mode} className="rec-menu-item" role="menuitem"
+              onClick={() => { setMenu(false); void startRecording(m.mode); }}>{m.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The chat button of the control bar, with a count of what arrived while it was shut. */
+function ChatToggle({ open, unseen, onClick }: { open: boolean; unseen: number; onClick: () => void }) {
+  return (
+    <div className="vsc-badged">
+      <Ctl name="message-circle" label={t("voice.roomChat")} on={open} onClick={onClick} />
+      {unseen > 0 && <span className="vsc-badge">{unseen > 99 ? "99+" : unseen}</span>}
+    </div>
+  );
+}
+
+/** The bar shown over a fullscreen screen share: what you reach for while watching one. */
+function FullscreenControls() {
+  const v = useStoreState(voiceStore);
+  return (
+    <div className="vstage-full-controls" onDoubleClick={(e) => e.stopPropagation()}>
+      <Ctl name={v.localMuted ? "mic-off" : "mic"} label={v.localMuted ? t("voice.unmuteLabel") : t("voice.micLabel")} red={v.localMuted} onClick={toggleMute} />
+      <Ctl name={v.localDeafened ? "headphones-off" : "headphones"} label={v.localDeafened ? t("voice.undeafenLabel") : t("voice.soundLabel")} red={v.localDeafened} onClick={toggleDeafen} />
+      <Ctl name={v.localCamera ? "camera" : "camera-off"} label={v.localCamera ? t("voice.stopVideoLabel") : t("voice.videoLabel")} on={v.localCamera} red={!v.localCamera} onClick={() => { if (v.localCamera) void disableCamera(); else void enableCamera(); }} />
+      <Ctl name={v.localScreenshare ? "monitor-off" : "monitor"} label={v.localScreenshare ? t("voice.stopShareLabel") : t("voice.screenLabel")} on={v.localScreenshare} onClick={() => { if (v.localScreenshare) void disableScreenshare(); else void enableScreenshare(); }} />
+      <button
+        className="vsc-btn disconnect"
+        title={t("voice.disconnectFromVoice")}
+        // Out of fullscreen first: the stage is about to unmount, and a fullscreen element
+        // that disappears can leave some browsers on a black screen until Escape.
+        onClick={() => { if (document.fullscreenElement !== null) void document.exitFullscreen().catch(() => {}); leaveVoiceNow(); }}
+      >
+        <Icon name="phone-down" size={18} /> {t("voice.disconnect")}
+      </button>
+    </div>
+  );
+}
+
+function VideoBox(
+  { label, stream, fill, contain, mirror, expandable, overlay }:
+  { label: string; stream: MediaStream; fill?: boolean; contain?: boolean; mirror?: boolean; expandable?: boolean; overlay?: React.ReactNode },
+) {
   const ref = useRef<HTMLVideoElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState(false);
+  // In fullscreen the controls sit on the picture, so they step aside once the pointer rests.
+  const [chrome, setChrome] = useState(true);
+  const chromeTimer = useRef<number | undefined>(undefined);
+  const wake = (): void => {
+    setChrome(true);
+    window.clearTimeout(chromeTimer.current);
+    chromeTimer.current = window.setTimeout(() => setChrome(false), 2500);
+  };
+  useEffect(() => () => window.clearTimeout(chromeTimer.current), []);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -191,7 +338,11 @@ function VideoBox({ label, stream, fill, contain, mirror, expandable }: { label:
   // browser's own fullscreen is the widest it can get and costs no layout surgery — the
   // whole display, on any monitor, and Escape gets you out.
   useEffect(() => {
-    const onChange = () => setFull(document.fullscreenElement === boxRef.current);
+    const onChange = () => {
+      const on = document.fullscreenElement === boxRef.current;
+      setFull(on);
+      if (on) wake();
+    };
     document.addEventListener("fullscreenchange", onChange);
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
@@ -207,8 +358,10 @@ function VideoBox({ label, stream, fill, contain, mirror, expandable }: { label:
   return (
     <div
       ref={boxRef}
-      className={"vstage-video" + (fill ? " fill" : "") + (expandable === true ? " expandable" : "")}
+      className={"vstage-video" + (fill ? " fill" : "") + (expandable === true ? " expandable" : "") + (full && !chrome ? " chrome-off" : "")}
       onDoubleClick={expandable === true ? toggleFull : undefined}
+      onMouseMove={full ? wake : undefined}
+      onTouchStart={full ? wake : undefined}
     >
       <video
         ref={ref}
@@ -228,6 +381,7 @@ function VideoBox({ label, stream, fill, contain, mirror, expandable }: { label:
         </button>
       )}
       {label && <div className="vstage-video-label">{label}</div>}
+      {full && overlay}
     </div>
   );
 }

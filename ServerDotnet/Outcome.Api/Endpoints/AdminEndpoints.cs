@@ -216,7 +216,11 @@ public static class AdminEndpoints
             RequireAdmin(current);
             var ch = await channels.GetByIdAsync(id) ?? throw DomainException.NotFound("channel not found");
             if (!await channels.DeleteAsync(id)) throw DomainException.NotFound("channel not found");
-            if (ch.ServerId is { } sid) await registry.BroadcastToServerAsync(sid, WsFrames.ChannelDelete(id));
+            if (ch.ServerId is { } sid)
+            {
+                await registry.BroadcastToServerAsync(sid, WsFrames.ChannelDelete(id));
+                if (ch.ChatChannelId is { } chat) await registry.BroadcastToServerAsync(sid, WsFrames.ChannelDelete(chat));
+            }
             return Results.NoContent();
         });
 
@@ -226,25 +230,37 @@ public static class AdminEndpoints
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             var dto = await mediator.Send(new CreateChannelCommand(
                 body.Name, body.Type, body.Category ?? string.Empty, body.Topic ?? string.Empty, body.Position ?? 0, current.Permissions));
+            var category = string.IsNullOrEmpty(dto.Category) ? null : dto.Category;
+            // A voice room's chat was made with it — announce the chat first, so a client that sees
+            // the room already knows where its chat is.
+            if (dto.ChatChannelId is { } chat)
+                await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelCreate(chat, dto.Name, "text", category, dto.Position));
             await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelCreate(
-                dto.Id, dto.Name, dto.Type, string.IsNullOrEmpty(dto.Category) ? null : dto.Category, dto.Position));
+                dto.Id, dto.Name, dto.Type, category, dto.Position, dto.ChatChannelId));
             return dto;
         });
 
-        group.MapPatch("/channels/{id:long}", async (long id, UpdateChannelBody body, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, ISender mediator) =>
+        group.MapPatch("/channels/{id:long}", async (long id, UpdateChannelBody body, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, ISender mediator, IChannelRepository channels) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             var dto = await mediator.Send(new UpdateChannelCommand(
                 id, body.Name, body.Topic, body.SlowMode, body.Position, body.Archived, current.Permissions));
             await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelUpdate(dto.Id, dto.Name, dto.Position));
+            if (dto.ChatChannelId is { } chat && body.Name is not null)
+            {
+                var c = await channels.GetByIdAsync(chat);
+                if (c is not null) await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelUpdate(c.Id, c.Name, c.Position));
+            }
             return dto;
         });
 
-        group.MapDelete("/channels/{id:long}", async (long id, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, ISender mediator) =>
+        group.MapDelete("/channels/{id:long}", async (long id, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, ISender mediator, IChannelRepository channels) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
+            var chat = (await channels.GetByIdAsync(id))?.ChatChannelId;
             await mediator.Send(new DeleteChannelCommand(id, current.Permissions));
             await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelDelete(id));
+            if (chat is { } c) await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelDelete(c));
             return Results.NoContent();
         });
 

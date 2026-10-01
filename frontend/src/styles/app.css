@@ -362,6 +362,54 @@
 }
 /* Meet-style: the body never scrolls — the stage (screenshares) and the participant grid
    split the viewport dynamically instead of rendering at fixed thumbnail sizes. */
+/* Someone is recording: everyone sees it, nobody can hide it. */
+.vstage-rec-banner {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 6px 12px; font-size: 13px; font-weight: 600;
+  background: color-mix(in srgb, var(--red) 18%, var(--bg-secondary)); color: var(--header-primary);
+}
+.vstage-rec-banner.uploading { background: color-mix(in srgb, var(--accent) 16%, var(--bg-secondary)); }
+.vstage-rec-dot {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--red);
+  animation: vstage-rec-pulse 1.6s ease-in-out infinite;
+}
+@keyframes vstage-rec-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .vstage-rec-dot { animation: none; } }
+.rec-menu { display: flex; flex-direction: column; gap: 2px; min-width: 200px; }
+.rec-menu-item {
+  border: 0; background: transparent; cursor: pointer; text-align: left;
+  padding: 8px 12px; border-radius: 8px; color: var(--text-normal); font-size: 14px;
+}
+.rec-menu-item:hover { background: var(--bg-hover); }
+/* The call and, beside it, the room's chat. */
+.voice-stage-main { flex: 1; min-height: 0; display: flex; position: relative; }
+.voice-stage-main > .voice-stage-body { min-width: 0; }
+.vstage-chat {
+  flex: 0 0 360px; min-height: 0; display: flex; flex-direction: column;
+  border-left: 1px solid var(--border); background: var(--bg-secondary);
+}
+.vstage-chat-head {
+  flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--border);
+  font-weight: 600; color: var(--header-primary);
+}
+.vstage-chat-close {
+  width: 28px; height: 28px; border-radius: var(--radius-sm); border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--text-muted);
+}
+.vstage-chat-close:hover { background: var(--bg-hover); color: var(--text-normal); }
+/* On a narrow screen the chat covers the call rather than squeezing it to nothing. */
+@media (max-width: 760px) {
+  .vstage-chat { position: absolute; inset: 0; z-index: 6; flex-basis: auto; border-left: none; }
+}
+.vsc-badged { position: relative; display: flex; }
+.vsc-badge {
+  position: absolute; top: -4px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: var(--red); color: #fff;
+  font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+  pointer-events: none;
+}
 .voice-stage-body {
   flex: 1; min-height: 0; overflow: hidden;
   display: flex; flex-direction: column; gap: 14px;
@@ -408,6 +456,17 @@
 /* Fullscreen paints its own black backdrop; the video should fill it, not sit in a card. */
 .vstage-video:fullscreen { border-radius: 0; background: #000; }
 .vstage-video:fullscreen video { object-fit: contain; }
+.vstage-full-controls {
+  position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+  border-radius: 20px; background: rgba(20, 20, 24, .78);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.vstage-full-controls .vsc-ctl-label { color: rgba(255, 255, 255, .7); }
+.vstage-video.chrome-off .vstage-full-controls:not(:hover),
+.vstage-video.chrome-off .vstage-expand:not(:hover) { opacity: 0; }
+.vstage-video.chrome-off { cursor: none; }
 
 .vstage-empty {
   grid-column: 1 / -1; align-self: center; text-align: center;
@@ -512,6 +571,12 @@
   animation: vfx-rise 3.2s ease-out forwards;
   will-change: transform, opacity;
 }
+/* A GIF reaction: big enough to see what it is across a grid, never bigger than the tile. */
+.vfx-float-gif {
+  width: auto; height: auto; max-width: min(160px, 70%); max-height: min(120px, 60%);
+  border-radius: 10px; object-fit: contain;
+  animation-duration: 5s;
+}
 @keyframes vfx-rise {
   0%   { transform: translateY(10%) scale(.7); opacity: 0; }
   12%  { transform: translateY(-10%) scale(1.15); opacity: 1; }
@@ -521,18 +586,50 @@
 /* Reduced motion still needs the reaction to be SEEN — it just must not fly across the tile. */
 @media (prefers-reduced-motion: reduce) {
   .vfx-float-item { animation: vfx-fade 3.2s ease-out forwards; }
+  .vfx-float-gif { animation-duration: 5s; }
   @keyframes vfx-fade { 0%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; transform: none; } }
 }
 
 .vfx-picker-wrap { position: relative; display: flex; }
 .vfx-picker {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-  display: flex; gap: 2px; padding: 6px;
+  padding: 6px;
   border-radius: 14px; border: 1px solid var(--border);
   background: var(--bg-float, var(--bg-elevated, #1e1f22));
   box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
   z-index: 20;
 }
+/* Six across, the same rows as the phone's sheet. */
+.vfx-emoji-grid { display: grid; grid-template-columns: repeat(6, auto); gap: 2px; }
+.vfx-tabs { display: flex; gap: 4px; padding: 0 2px 6px; }
+.vfx-tabs button {
+  flex: 1; border: 0; border-radius: 8px; padding: 5px 8px; cursor: pointer;
+  background: transparent; color: var(--text-muted); font-weight: 600; font-size: 13px;
+}
+.vfx-tabs button.on { background: var(--bg-active); color: var(--header-primary); }
+.vfx-gif-tab { width: 312px; max-width: calc(100vw - 36px); }
+.vfx-gif-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+  max-height: 260px; overflow-y: auto; padding: 2px;
+}
+.vfx-gif, .vfx-gif-add { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; }
+.vfx-gif-add {
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  border: 1px dashed var(--border); color: var(--text-muted);
+}
+.vfx-gif-add:hover { color: var(--text-normal); background: var(--bg-hover); }
+.vfx-gif-add.busy { cursor: progress; opacity: .6; }
+.vfx-gif-send { width: 100%; height: 100%; padding: 0; border: 0; cursor: pointer; background: var(--bg-active); }
+.vfx-gif-send img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vfx-gif-del {
+  position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  background: rgba(0, 0, 0, .6); color: #fff; opacity: 0; transition: opacity 120ms ease-out;
+}
+.vfx-gif:hover .vfx-gif-del, .vfx-gif-del:focus-visible { opacity: 1; }
+@media (hover: none) { .vfx-gif-del { opacity: 1; } }
+.vfx-gif-hint, .vfx-gif-error { padding: 8px 4px 2px; font-size: 12px; color: var(--text-muted); }
+.vfx-gif-error { color: var(--red); }
 .vfx-pick {
   border: 0; background: transparent; cursor: pointer;
   font-size: 24px; line-height: 1; padding: 6px 7px; border-radius: 10px;
@@ -552,10 +649,7 @@
      traded an off-screen picker for a control bar that slides away. */
   .vstage-controls { position: relative; }
   .vfx-picker-wrap { position: static; }
-  .vfx-picker {
-    max-width: calc(100vw - 24px);
-    flex-wrap: wrap; justify-content: center;
-  }
+  .vfx-picker { max-width: calc(100vw - 24px); }
 }
 
 /* A glyph where the meaning IS the character — see VoiceCtl. */
@@ -1078,6 +1172,12 @@
   margin-bottom: 2px; cursor: pointer;
 }
 .dm-author:hover { text-decoration: underline; }
+.dm-author:not(.clickable):hover { text-decoration: none; }
+.dm-guest-tag {
+  margin-left: 4px; padding: 0 6px; border-radius: 6px;
+  font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  background: var(--bg-active); color: var(--text-muted);
+}
 /* One photo: fills the bubble, keeps its own shape, capped so a tall shot cannot take
    over the column. No inner frame — the bubble's corners are the frame. */
 .msg-photo { margin-top: 4px; }
@@ -4088,3 +4188,188 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
   font-weight: 600;
   cursor: pointer;
 }
+
+/* ── Photo editor ───────────────────────────────────────────────────────────
+   Telegram's shape: the picture in the middle on black, the active tool's options under it,
+   the two tools at the very bottom, cancel / undo·redo / done across the top. Always dark,
+   whatever the app theme — a crop judged against a white frame is judged against the frame.
+   Below .modal-overlay (1200) so the "discard?" confirm lands on top of it. */
+.pe {
+  position: fixed; inset: 0; z-index: 1100;
+  display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: #0c0b0f; color: #f3f1f7;
+  animation: pe-in 200ms cubic-bezier(.23, 1, .32, 1);
+}
+@keyframes pe-in { from { opacity: 0; transform: scale(.985); } }
+.pe button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.pe button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pe-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px;
+}
+.pe-history { display: flex; gap: 2px; }
+.pe-stage { position: relative; flex: 1; min-height: 0; }
+.pe-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.pe-stage canvas.drawing { cursor: crosshair; }
+.pe-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #8e889a; }
+.pe-panel { display: flex; flex-direction: column; gap: 8px; padding: 8px 14px 12px; }
+.pe-row {
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+  min-height: 44px;
+}
+.pe-icon-btn {
+  width: 40px; height: 40px; display: grid; place-items: center;
+  border: none; border-radius: 10px; background: none;
+  transition: background 140ms ease-out, transform 140ms ease-out;
+}
+.pe-icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
+.pe-icon-btn:active:not(:disabled) { transform: scale(.94); }
+.pe-icon-btn:disabled { opacity: .28; cursor: default; }
+.pe-text-btn {
+  padding: 9px 12px; border: none; border-radius: 10px; background: none;
+  font-size: 15px; font-weight: 500;
+  transition: background 140ms ease-out;
+}
+.pe-text-btn:hover { background: rgba(255, 255, 255, .08); }
+.pe-done {
+  min-width: 92px; height: 38px; padding: 0 18px;
+  display: grid; place-items: center;
+  border: none; border-radius: 10px;
+  background: var(--accent); color: #fff !important; font-size: 15px; font-weight: 600;
+  transition: background 140ms ease-out, transform 140ms ease-out;
+}
+.pe-done:hover:not(:disabled) { background: var(--accent-hover); }
+.pe-done:active:not(:disabled) { transform: scale(.97); }
+.pe-done:disabled { opacity: .5; cursor: default; }
+/* Aspect ratios scroll sideways on a phone instead of wrapping into a second row. */
+.pe-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+.pe-chips::-webkit-scrollbar { display: none; }
+.pe-chip {
+  flex: none; padding: 7px 12px; border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, .14); background: none;
+  font-size: 13px; font-variant-numeric: tabular-nums; color: #cbc6d4 !important;
+  transition: background 140ms ease-out, color 140ms ease-out;
+}
+.pe-chip:hover { background: rgba(255, 255, 255, .06); }
+.pe-chip[aria-pressed="true"] { background: #f3f1f7; border-color: transparent; color: #0c0b0f !important; }
+.pe-tool {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  min-width: 64px; padding: 6px 8px; border: none; border-radius: 10px; background: none;
+  font-size: 11.5px; color: #8e889a !important;
+  transition: background 140ms ease-out, color 140ms ease-out;
+}
+.pe-tool:hover { background: rgba(255, 255, 255, .06); }
+.pe-tool[aria-pressed="true"] { color: #f3f1f7 !important; background: rgba(255, 255, 255, .1); }
+.pe-colors { display: flex; gap: 8px; }
+.pe-swatch {
+  width: 24px; height: 24px; padding: 0; border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .22);
+  transition: transform 140ms ease-out, box-shadow 140ms ease-out;
+}
+.pe-swatch:hover { transform: scale(1.1); }
+.pe-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px #0c0b0f, 0 0 0 4px #f3f1f7; }
+.pe-size { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #8e889a; }
+.pe-size input { width: 150px; accent-color: var(--accent); }
+.pe-tabs { display: flex; justify-content: center; gap: 8px; padding-top: 4px; border-top: 1px solid rgba(255, 255, 255, .06); }
+.pe-tab {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  min-width: 96px; padding: 8px 14px; border: none; border-radius: 10px; background: none;
+  font-size: 12px; color: #8e889a !important;
+  transition: color 140ms ease-out;
+}
+.pe-tab[aria-selected="true"] { color: #f3f1f7 !important; }
+.pe-tab[aria-selected="true"] .icon { color: var(--accent-hover); }
+/* Five tools on a phone: one row, shared equally. Wrapped, "Eraser" sat alone on a second line. */
+@media (max-width: 560px) {
+  .pe-tools { flex-wrap: nowrap; gap: 2px; }
+  .pe-tool { flex: 1 1 auto; min-width: 0; padding: 6px 2px; font-size: 11px; }
+  .pe-tool span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pe-size input { width: 120px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pe { animation: none; }
+}
+
+/* ── Send photo ─────────────────────────────────────────────────────────────
+   Telegram's send step: the pictures as they will go, crop / draw / remove on each, a caption,
+   Send. The app's own surface, not the editor's black — this is still the conversation.
+   Between the app (and its menus) and the editor (1100), which opens on top of it. */
+.ps-overlay {
+  position: fixed; inset: 0; z-index: 1050;
+  display: grid; place-items: center; padding: 16px;
+  background: var(--bg-overlay);
+  animation: ps-fade 160ms ease-out;
+}
+@keyframes ps-fade { from { opacity: 0; } }
+.ps-card {
+  width: min(480px, 100%); max-height: calc(100dvh - 32px);
+  display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 14px;
+  background: var(--bg-floating, var(--bg-secondary));
+  border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
+  animation: ps-in 200ms cubic-bezier(.23, 1, .32, 1);
+}
+@keyframes ps-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }
+.ps-head { display: flex; align-items: center; gap: 8px; }
+.ps-title { font-size: 16px; font-weight: 600; color: var(--header-primary); }
+.ps-icon {
+  width: 34px; height: 34px; display: grid; place-items: center;
+  border: none; border-radius: 8px; background: none; color: var(--interactive-normal); cursor: pointer;
+  transition: background 140ms ease-out, color 140ms ease-out;
+}
+.ps-icon:hover { background: var(--bg-modifier-hover); color: var(--interactive-hover); }
+.ps-media { min-height: 0; overflow-y: auto; display: grid; gap: 6px; }
+.ps-media.grid { grid-template-columns: repeat(2, 1fr); }
+.ps-item {
+  position: relative; margin: 0; overflow: hidden; border-radius: 10px;
+  background: #0c0b0f; display: grid; place-items: center;
+}
+.ps-item img { display: block; max-width: 100%; max-height: 56vh; object-fit: contain; }
+/* One photo: the full width, and never shorter than its tools. Sized to the picture, a
+   panorama made a 20px strip and its crop / draw / remove buttons were cut off below it;
+   a very narrow one did the same sideways. The picture sits centred on the dark tile. */
+.ps-media:not(.grid) .ps-item { min-height: 140px; }
+/* Several: square tiles. The picture is out of flow — in flow, a tall one stretched its tile. */
+.ps-media.grid .ps-item { aspect-ratio: 1; }
+.ps-media.grid .ps-item img { position: absolute; inset: 0; width: 100%; height: 100%; max-height: none; object-fit: cover; }
+.ps-item .att-progress { position: absolute; left: 10px; right: 10px; bottom: 10px; width: auto; margin: 0; background: rgba(0, 0, 0, .55); }
+/* Always visible, not on hover: there is no hover on a phone, and these are the whole point. */
+.ps-tools { position: absolute; top: 8px; right: 8px; z-index: 1; display: flex; gap: 4px; }
+.ps-tools button {
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border: none; border-radius: 8px; cursor: pointer;
+  background: rgba(0, 0, 0, .55); color: #fff;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  transition: background 140ms ease-out, transform 140ms ease-out;
+}
+.ps-tools button:hover { background: rgba(0, 0, 0, .75); }
+.ps-tools button:active { transform: scale(.94); }
+.ps-foot { display: flex; align-items: flex-end; gap: 8px; }
+.ps-caption {
+  flex: 1; min-width: 0; max-height: 140px; padding: 10px 12px; resize: none;
+  field-sizing: content;
+  border: 1px solid transparent; border-radius: 10px; outline: none;
+  background: var(--bg-input); color: var(--text-normal); font: inherit; font-size: 15px; line-height: 1.4;
+}
+.ps-caption:focus { border-color: var(--accent); }
+.ps-send {
+  height: 42px; padding: 0 18px; flex: none;
+  border: none; border-radius: 10px; cursor: pointer;
+  background: var(--accent); color: #fff; font: inherit; font-size: 15px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: background 140ms ease-out, transform 140ms ease-out;
+}
+.ps-send:hover { background: var(--accent-hover); }
+.ps-send:active { transform: scale(.97); }
+.ps-overlay button:focus-visible, .ps-caption:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .ps-overlay, .ps-card { animation: none; }
+}
+
+/* A video or audio attachment, played in place (a call's recording, mostly). */
+.msg-media { margin-top: 6px; max-width: min(520px, 100%); }
+.msg-media-video { width: 100%; max-height: 360px; border-radius: 10px; background: #000; display: block; }
+.msg-media-audio { width: 100%; display: block; }
+.msg-media-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--text-muted); }
+.msg-media-meta .msg-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

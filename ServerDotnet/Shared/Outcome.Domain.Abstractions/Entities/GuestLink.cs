@@ -14,4 +14,8 @@ public sealed class GuestLink
     public long CreatedBy { get; set; }
     public bool Revoked { get; set; }
     public DateTime CreatedAt { get; set; }
+    /// <summary>Whether a guest in the room is offered "copy the invite" — i.e. may hand this same
+    /// link on. Off unless someone who manages the link turns it on: the people a link was given to
+    /// are not the people who decide who else gets it.</summary>
+    public bool AllowGuestShare { get; set; }
 }

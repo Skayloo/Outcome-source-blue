@@ -35,6 +35,8 @@ export interface Message {
   readonly timestamp: string;
   /** Original author's display name when this message was forwarded. */
   readonly forwardedFrom: string | null;
+  /** Set when a GUEST wrote this in a voice room's chat: their name; `user` is a placeholder. */
+  readonly guestName?: string | null;
 }
 
 export interface MessagesState {
@@ -66,10 +68,11 @@ function chatPayloadToMessage(payload: ChatMessagePayload): Message {
     deleted: false,
     timestamp: payload.timestamp,
     forwardedFrom: payload.forwarded_from ?? null,
+    guestName: payload.guest_name ?? null,
   };
 }
 
-function messageResponseToMessage(response: MessageResponse): Message {
+export function messageResponseToMessage(response: MessageResponse): Message {
   return {
     id: response.id,
     channelId: response.channel_id,
@@ -83,6 +86,7 @@ function messageResponseToMessage(response: MessageResponse): Message {
     deleted: response.deleted,
     timestamp: response.timestamp,
     forwardedFrom: response.forwarded_from ?? null,
+    guestName: response.guest_name ?? null,
   };
 }
 

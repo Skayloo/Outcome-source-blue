@@ -19,11 +19,13 @@ public sealed class GuestLinkRepository(OutcomeDbContext db) : IGuestLinkReposit
         var ids = channels.Select(c => c.Id).ToList();
         var links = await db.GuestLinks.AsNoTracking()
             .Where(g => ids.Contains(g.ChannelId) && !g.Revoked)
-            .Select(g => new { g.ChannelId, g.Code })
-            .ToDictionaryAsync(x => x.ChannelId, x => x.Code, ct);
+            .Select(g => new { g.ChannelId, g.Code, g.AllowGuestShare })
+            .ToDictionaryAsync(x => x.ChannelId, ct);
 
         return channels
-            .Select(c => new GuestLinkInfo(c.Id, c.Name, links.GetValueOrDefault(c.Id)))
+            .Select(c => links.TryGetValue(c.Id, out var l)
+                ? new GuestLinkInfo(c.Id, c.Name, l.Code, l.AllowGuestShare)
+                : new GuestLinkInfo(c.Id, c.Name, null))
             .ToList();
     }
 
@@ -65,4 +67,8 @@ public sealed class GuestLinkRepository(OutcomeDbContext db) : IGuestLinkReposit
     public async Task<bool> RevokeAsync(long channelId, CancellationToken ct = default) =>
         await db.GuestLinks.Where(g => g.ChannelId == channelId && !g.Revoked)
             .ExecuteUpdateAsync(s => s.SetProperty(g => g.Revoked, true), ct) > 0;
+
+    public async Task<bool> SetGuestShareAsync(long channelId, bool allow, CancellationToken ct = default) =>
+        await db.GuestLinks.Where(g => g.ChannelId == channelId && !g.Revoked)
+            .ExecuteUpdateAsync(s => s.SetProperty(g => g.AllowGuestShare, allow), ct) > 0;
 }

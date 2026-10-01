@@ -22,6 +22,8 @@ export interface Channel {
   /** Furthest message id read by anyone ELSE — drives own-message ✓✓ ticks. */
   readonly othersReadUpTo: number;
   readonly lastMessageId: number | null;
+  /** A voice room's own text chat — where its chat panel and its recordings go (W3GWG-25). */
+  readonly chatChannelId?: number | null;
 }
 
 export interface ChannelsState {
@@ -66,6 +68,7 @@ export function setChannels(channels: readonly ReadyChannel[]): void {
       unreadCount: ch.unread_count ?? 0,
       lastMessageId: ch.last_message_id ?? null,
       othersReadUpTo: ch.read_by_others ?? 0,
+      chatChannelId: ch.chat_channel_id ?? null,
     });
   }
   channelsStore.setState((prev) => ({
@@ -99,6 +102,7 @@ export function addChannel(channel: ChannelCreatePayload): void {
       unreadCount: 0,
       othersReadUpTo: 0,
       lastMessageId: null,
+      chatChannelId: channel.chat_channel_id ?? null,
     });
     return { ...prev, channels: next };
   });

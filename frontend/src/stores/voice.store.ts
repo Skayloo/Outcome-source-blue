@@ -33,6 +33,7 @@ export interface VoiceConfig {
   readonly mixing_threshold: number;
   readonly top_speakers: number;
   readonly max_users: number;
+  readonly can_record: boolean;
 }
 
 export interface VoiceState {
@@ -64,12 +65,16 @@ export interface VoiceState {
    *  asked. Kept in the store rather than a component because a hand outlives the render that
    *  showed it, and because the source of truth is LiveKit, not React. */
   readonly hands: ReadonlyMap<number, number>;
+  /** Who is recording the call: userId → since when. From the "rec" LiveKit attribute, which only
+   *  the server sets (voice_record), and which every participant — guests too — can read. */
+  readonly recorders: ReadonlyMap<number, number>;
 }
 
 const INITIAL_STATE: VoiceState = {
   currentChannelId: null,
   connectedServerId: null,
   hands: new Map(),
+  recorders: new Map(),
   voiceUsers: new Map(),
   voiceConfigs: new Map(),
   localMuted: false,
@@ -92,6 +97,7 @@ export function resetVoiceStore(): void {
     currentChannelId: null,
     connectedServerId: null,
     hands: new Map(),
+    recorders: new Map(),
     voiceUsers: new Map(),
     voiceConfigs: new Map(),
     localMuted: false,
@@ -259,7 +265,7 @@ export function getConnectedServerId(): number | null {
 export function leaveVoiceChannel(keepPresence = false): void {
   const currentUserId = authStore.getState().user?.id ?? 0;
   voiceStore.setState((prev) => {
-    const cleared = { ...prev, currentChannelId: null, connectedServerId: null, joinedAt: null, hands: new Map<number, number>() };
+    const cleared = { ...prev, currentChannelId: null, connectedServerId: null, joinedAt: null, hands: new Map<number, number>(), recorders: new Map<number, number>() };
     const channelId = prev.currentChannelId;
     if (keepPresence || channelId === null || currentUserId === 0) return cleared;
     const existingChannel = prev.voiceUsers.get(channelId);
@@ -279,6 +285,13 @@ export function leaveVoiceChannel(keepPresence = false): void {
 /** Toggle local mute state. */
 /** Replace the whole set — the truth is LiveKit's participant attributes, and diffing a
  *  six-entry map is not worth the bugs it would buy. */
+export function setRecorders(recorders: ReadonlyMap<number, number>): void {
+  voiceStore.setState((prev) => {
+    if (prev.recorders.size === recorders.size && [...recorders].every(([k, v]) => prev.recorders.get(k) === v)) return prev;
+    return { ...prev, recorders };
+  });
+}
+
 export function setRaisedHands(hands: ReadonlyMap<number, number>): void {
   voiceStore.setState((prev) => {
     if (prev.hands.size === hands.size && [...hands].every(([k, v]) => prev.hands.get(k) === v)) return prev;
@@ -364,6 +377,7 @@ export function setVoiceConfig(payload: VoiceConfigPayload): void {
       mixing_threshold: payload.mixing_threshold,
       top_speakers: payload.top_speakers,
       max_users: payload.max_users,
+      can_record: payload.can_record === true,
     });
     return { ...prev, voiceConfigs: nextConfigs };
   });

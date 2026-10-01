@@ -11,7 +11,7 @@ import { confirm } from "@components/ConfirmDialog";
 import { setTransientSuccess } from "@stores/ui.store";
 import { Icon } from "@lib/icons";
 import { t } from "@lib/i18n";
-import { Banner } from "@components/settings/controls";
+import { Banner, Toggle } from "@components/settings/controls";
 import type { GuestLinkRow } from "@lib/types";
 
 function errMsg(e: unknown, f: string): string {
@@ -51,7 +51,7 @@ export function GuestAccessModal({ onClose }: { onClose: () => void }) {
     void api
       .createGuestLink(row.channel_id)
       .then((r) => setRows((prev) => (prev ?? []).map((x) =>
-        x.channel_id === row.channel_id ? { ...x, code: r.code, url: r.url } : x)))
+        x.channel_id === row.channel_id ? { ...x, code: r.code, url: r.url, allow_guest_share: false } : x)))
       .catch((e: unknown) => setError(errMsg(e, t("guestAccess.createFailed"))))
       .finally(() => setBusy(null));
   };
@@ -70,6 +70,18 @@ export function GuestAccessModal({ onClose }: { onClose: () => void }) {
       .then(() => setRows((prev) => (prev ?? []).map((x) =>
         x.channel_id === row.channel_id ? { ...x, code: null, url: null } : x)))
       .catch((e: unknown) => setError(errMsg(e, t("guestAccess.revokeFailed"))))
+      .finally(() => setBusy(null));
+  };
+
+  /** Whether the people this link was given to may pass it on from the guest screen. */
+  const setShare = (row: GuestLinkRow, allow: boolean): void => {
+    setBusy(row.channel_id);
+    setError(null);
+    void api
+      .setGuestShare(row.channel_id, allow)
+      .then((r) => setRows((prev) => (prev ?? []).map((x) =>
+        x.channel_id === row.channel_id ? { ...x, allow_guest_share: r.allow_guest_share } : x)))
+      .catch((e: unknown) => setError(errMsg(e, t("guestAccess.shareFailed"))))
       .finally(() => setBusy(null));
   };
 
@@ -113,7 +125,17 @@ export function GuestAccessModal({ onClose }: { onClose: () => void }) {
                       <Icon name="volume-2" size={15} /> {row.channel_name}
                     </div>
                     {row.url !== null ? (
-                      <div className="guest-link-url" title={row.url}>{row.url}</div>
+                      <>
+                        <div className="guest-link-url" title={row.url}>{row.url}</div>
+                        <label className="guest-link-share">
+                          <Toggle
+                            on={row.allow_guest_share === true}
+                            disabled={busy === row.channel_id}
+                            onChange={(v) => setShare(row, v)}
+                          />
+                          <span>{t("guestAccess.allowShare")}</span>
+                        </label>
+                      </>
                     ) : (
                       <div className="setting-desc">{t("guestAccess.noLink")}</div>
                     )}

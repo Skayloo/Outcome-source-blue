@@ -44,6 +44,8 @@ import type {
   MessageReportDto,
   ReportStatus,
   GuestLinkRow,
+  GuestAccountResponse,
+  GifItem,
   AdminSpace,
   AdminSpaceMember,
   SpaceServer,
@@ -653,6 +655,68 @@ export function createApiClient(
 
     // ── File Uploads ──────────────────────────────────────
 
+    /**
+     * A call recording into storage, in parts (the server joins them): one request may carry at
+     * most a hundred-odd megabytes through the proxies, and a recording is often several times
+     * that. A part that fails is tried again before the whole upload gives up.
+     */
+    async uploadRecording(
+      file: Blob, filename: string, mime: string, onProgress?: (sent: number, total: number) => void,
+    ): Promise<{ id: string; url: string; size: number }> {
+      const PART = 16 * 1024 * 1024;
+      const upload = crypto.randomUUID();
+      const h: Record<string, string> = {};
+      if (config.token) h["Authorization"] = `Bearer ${config.token}`;
+      const parts = Math.max(1, Math.ceil(file.size / PART));
+      for (let i = 0; i < parts; i++) {
+        const chunk = file.slice(i * PART, Math.min(file.size, (i + 1) * PART));
+        for (let attempt = 1; ; attempt++) {
+          const res = await platformFetch(`${baseUrl()}/recordings/${upload}/parts/${i}`, { method: "PUT", headers: h, body: chunk } as RequestInit)
+            .catch(() => null);
+          if (res?.ok) break;
+          if (attempt >= 3) {
+            const err = res ? await parseError(res) : { error: "NETWORK", message: "network error" };
+            throw new ApiClientError(res?.status ?? 0, err.error, err.message);
+          }
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+        }
+        onProgress?.(Math.min(file.size, (i + 1) * PART), file.size);
+      }
+      const res = await platformFetch(`${baseUrl()}/recordings/${upload}/complete`, {
+        method: "POST",
+        headers: { ...h, "Content-Type": "application/json" },
+        body: JSON.stringify({ parts, filename, mime }),
+      } as RequestInit);
+      if (!res.ok) {
+        const err = await parseError(res);
+        throw new ApiClientError(res.status, err.error, err.message);
+      }
+      return (await res.json()) as { id: string; url: string; size: number };
+    },
+
+    /** The signed-in user's GIF reaction library, newest first. */
+    listGifs(signal?: AbortSignal): Promise<GifItem[]> {
+      return request<GifItem[]>("GET", "/gifs", undefined, signal);
+    },
+
+    /** Add a GIF (or WebP) to the library — stored byte for byte, unlike a chat picture. */
+    async uploadGif(file: File, signal?: AbortSignal): Promise<GifItem> {
+      const formData = new FormData();
+      formData.append("file", file);
+      const h: Record<string, string> = {};
+      if (config.token) h["Authorization"] = `Bearer ${config.token}`;
+      const res = await platformFetch(`${baseUrl()}/gifs`, { method: "POST", headers: h, body: formData, signal } as RequestInit);
+      if (!res.ok) {
+        const err = await parseError(res);
+        throw new ApiClientError(res.status, err.error, err.message);
+      }
+      return (await res.json()) as GifItem;
+    },
+
+    deleteGif(id: number, signal?: AbortSignal): Promise<void> {
+      return request<void>("DELETE", `/gifs/${id}`, undefined, signal);
+    },
+
     async uploadFile(
       file: File,
       signal?: AbortSignal,
@@ -813,6 +877,16 @@ export function createApiClient(
     /** Mint (or fetch) the shareable no-login guest link for a voice channel. */
     createGuestLink(channelId: number, signal?: AbortSignal): Promise<{ code: string; url: string }> {
       return request<{ code: string; url: string }>("POST", `/channels/${channelId}/guest-link`, undefined, signal);
+    },
+
+    /** Let guests of the channel's link copy it on, or stop them. */
+    setGuestShare(channelId: number, allow: boolean, signal?: AbortSignal): Promise<{ allow_guest_share: boolean }> {
+      return request<{ allow_guest_share: boolean }>("PATCH", `/channels/${channelId}/guest-link`, { allow_guest_share: allow }, signal);
+    },
+
+    /** What a guest link means for the signed-in user: their own seat in the room, or a guest one. */
+    getGuestAccount(code: string, signal?: AbortSignal): Promise<GuestAccountResponse> {
+      return request<GuestAccountResponse>("GET", `/guest/${encodeURIComponent(code)}/account`, undefined, signal);
     },
 
     /** Kill the channel's link — the code stops working immediately; a new one can be minted. */

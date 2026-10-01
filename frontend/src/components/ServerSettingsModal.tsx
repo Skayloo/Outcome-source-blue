@@ -10,7 +10,7 @@ import { confirm } from "@components/ConfirmDialog";
 import { useStoreState } from "@lib/useStore";
 import { membersStore } from "@stores/members.store";
 import { channelsStore } from "@stores/channels.store";
-import { serversStore } from "@stores/servers.store";
+import { serversStore, getActiveServerId } from "@stores/servers.store";
 import { setTransientError } from "@stores/ui.store";
 import { assetUrl } from "@lib/serverHost";
 import { loadServers, switchServer } from "@lib/session";
@@ -33,7 +33,10 @@ const TABS: { id: Tab; icon: string; label: () => string }[] = [
 // queue you can read and not answer is worse than not having one.
 const REPORTS_TAB = { id: "reports" as Tab, icon: "flag", label: () => t("srvset.reports") };
 
-export function ServerSettingsModal({ serverId, canDelete, canModerate, onClose }: { serverId: number; canDelete: boolean; canModerate: boolean; onClose: () => void }) {
+export function ServerSettingsModal(
+  { serverId, canDelete, canModerate, overviewOnly = false, onClose }:
+  { serverId: number; canDelete: boolean; canModerate: boolean; overviewOnly?: boolean; onClose: () => void },
+) {
   const [tab, setTab] = useState<Tab>("overview");
   // SUBSCRIBED, not sampled. `select` reads once: uploading an icon refreshed the store and
   // the rail redrew, while the panel doing the uploading went on showing the old one — the one
@@ -46,7 +49,7 @@ export function ServerSettingsModal({ serverId, canDelete, canModerate, onClose 
         <div className="srvset-modal" onClick={(e) => e.stopPropagation()}>
           <aside className="srvset-nav">
             <div className="srvset-nav-title">{server?.name ?? t("srvset.title")}</div>
-            {[...TABS, ...(canModerate ? [REPORTS_TAB] : [])].map((it) => (
+            {(overviewOnly ? TABS.slice(0, 1) : [...TABS, ...(canModerate ? [REPORTS_TAB] : [])]).map((it) => (
               <button key={it.id} className={"srvset-nav-item" + (tab === it.id ? " active" : "")} onClick={() => setTab(it.id)}>
                 <Icon name={it.icon as never} size={16} /> <span>{it.label()}</span>
               </button>
@@ -116,6 +119,8 @@ function OverviewTab({ serverId, canDelete, onClose }: { serverId: number; canDe
       await loadServers();
       const rest = serversStore.select((s) => s.servers);
       onClose();
+      // Deleted from the rail while sitting in another server: stay where you are.
+      if (serverId !== getActiveServerId()) return;
       if (rest.length > 0) switchServer(rest[0]!.id); else window.location.reload();
     } catch (e) { setTransientError(e instanceof Error ? e.message : t("server.deleteFailed")); setBusy(false); }
   }

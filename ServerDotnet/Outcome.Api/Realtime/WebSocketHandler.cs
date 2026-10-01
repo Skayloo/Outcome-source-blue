@@ -40,7 +40,31 @@ public sealed class WebSocketHandler(
 
     private sealed record AuthInfo(
         long UserId, string Username, string? Avatar, long RoleId, string Role, long Permissions, string ServerName, string Motd, long LastSeq, long ServerId,
-        Space Space);
+        Space Space, string? DeviceId);
+
+    /// <summary>The session half of a LiveKit identity: <c>user-{id}.{device}.{conn}</c> when the
+    /// client names its device, <c>user-{id}.{conn}</c> when it does not. voice_join drops the
+    /// account's sessions on OTHER devices only (see ILiveKitRoomService.RemoveOtherUserSessionsAsync),
+    /// so the re-join a phone sends after every socket blip no longer throws out its own live session.
+    /// The identity itself stays unique per connection on purpose: reusing one across a leave and a
+    /// quick re-join let the old session's "disconnected" reach the others after the new session
+    /// arrived, and the SDK — which tracks participants by identity — removed the new one: silence.</summary>
+    private static string VoiceSessionFor(AuthInfo auth, Guid connId)
+    {
+        var conn = connId.ToString("N")[..8];
+        return auth.DeviceId is { } device ? $"{device}.{conn}" : conn;
+    }
+
+    /// <summary>The connection that holds each user's voice session — the one that sent their last
+    /// voice_join. Relayed key requests reach every device of the account, and one that is not in
+    /// the call (a phone left open on the desk) may hold a stale key from an earlier call; once a
+    /// user's voice connection is known, only the key IT sends is passed on. In memory, so empty
+    /// after a restart until each user joins again.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(long Space, long User), Guid> voiceConnections = new();
+
+    /// <summary>Only what is safe inside a LiveKit identity; anything else is ignored, not rejected.</summary>
+    private static string? ParseDeviceId(string? raw) =>
+        raw is { Length: >= 8 and <= 32 } && raw.All(char.IsAsciiLetterOrDigit) ? raw : null;
 
     /// <param name="space">Resolved from the upgrade request's Host and pinned for the whole
     /// connection — a socket cannot wander between tenants mid-stream.</param>
@@ -192,6 +216,9 @@ public sealed class WebSocketHandler(
                 break;
             case "voice_token_refresh":
                 await HandleVoiceTokenRefreshAsync(auth, connId, send, ct);
+                break;
+            case "voice_record":
+                await HandleVoiceRecordAsync(auth, payload, send, ct);
                 break;
 
             case "read":
@@ -527,8 +554,11 @@ public sealed class WebSocketHandler(
         {
             await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+            // rejoin: the client re-announces a call it is still in (after a reconnect) — see JoinVoiceCommand.
+            var rejoin = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("rejoin", out var rj) && rj.ValueKind == JsonValueKind.True;
             var res = await sender.Send(new JoinVoiceCommand(
-                ch, auth.UserId, auth.Username, auth.Permissions, auth.RoleId, connId.ToString("N")[..8]), ct);
+                ch, auth.UserId, auth.Username, auth.Permissions, auth.RoleId, VoiceSessionFor(auth, connId), rejoin), ct);
+            voiceConnections[(auth.Space.Id, auth.UserId)] = connId;
             if (res.PreviousChannelId is { } prev)
                 await BroadcastVoiceAsync(auth.Space, prev, WsFrames.VoiceLeave(prev, auth.UserId), ct);
 
@@ -536,7 +566,9 @@ public sealed class WebSocketHandler(
             await BroadcastVoiceAsync(auth.Space, ch, WsFrames.VoiceState(res.JoinerState), ct);
             foreach (var vs in res.ExistingStates)
                 await send(WsFrames.VoiceState(vs));
-            await send(WsFrames.VoiceConfig(ch, res.Quality, res.Bitrate, res.MaxUsers));
+            // Whether this person may record the room — so a client offers the button only to them.
+            var canRecord = await CanRecordAsync(auth, ch, scope.ServiceProvider, ct);
+            await send(WsFrames.VoiceConfig(ch, res.Quality, res.Bitrate, res.MaxUsers, canRecord));
 
             // ONE live voice presence per account: the other devices hand the session over.
             // LAST, and it has to stay last — a voice_state about yourself makes a client mark
@@ -548,6 +580,52 @@ public sealed class WebSocketHandler(
             }));
         }
         catch (DomainException ex) { await send(WsFrames.Error(ex.Code, ex.Message)); }
+    }
+
+    /// <summary>
+    /// A recording starts or stops (W3GWG-25 stage 4). The recording itself happens on the
+    /// recorder's computer — the server never sees the media — so what this governs is the
+    /// ANNOUNCEMENT: for holders of RecordCalls (or either side of a DM call) it sets "rec" on their
+    /// LiveKit sessions in the room, which every participant reads, guests included, and which goes
+    /// away by itself if the recorder leaves. The client starts recording only on voice_record_ok.
+    /// </summary>
+    private async Task HandleVoiceRecordAsync(AuthInfo auth, JsonElement payload, Func<byte[], ValueTask> send, CancellationToken ct)
+    {
+        if (!TryGetLong(payload, "channel_id", out var ch) || ch <= 0)
+        {
+            await send(WsFrames.Error("BAD_REQUEST", "channel_id must be a positive integer"));
+            return;
+        }
+        var on = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("on", out var o) && o.ValueKind == JsonValueKind.True;
+        await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
+        var sp = scope.ServiceProvider;
+        if (on && !await CanRecordAsync(auth, ch, sp, ct))
+        {
+            await send(WsFrames.Error("FORBIDDEN", "you may not record calls here"));
+            return;
+        }
+        var announced = await sp.GetRequiredService<ILiveKitRoomService>().SetUserAttributeAsync(
+            ch, auth.UserId, "rec", on ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() : "", ct);
+        if (on && !announced)
+        {
+            await send(WsFrames.Error("NOT_IN_CALL", "join the call before recording it"));
+            return;
+        }
+        await send(WsFrames.Serialize(new { type = "voice_record_ok", payload = new { channel_id = ch, on } }));
+    }
+
+    /// <summary>RecordCalls in the ROOM's server — not the one on screen, since someone in a call may
+    /// be browsing elsewhere — with the server owner's grant; either side of a DM call.</summary>
+    private static async Task<bool> CanRecordAsync(AuthInfo auth, long channelId, IServiceProvider sp, CancellationToken ct)
+    {
+        var channel = await sp.GetRequiredService<IChannelRepository>().GetByIdAsync(channelId, ct);
+        if (channel is null || channel.Type is not ("voice" or "dm")) return false;
+        if (channel.ServerId is not { } sid)
+            return await sp.GetRequiredService<IDmRepository>().IsParticipantAsync(auth.UserId, channelId, ct);
+        var names = new HashSet<string>(await sp.GetRequiredService<IPermissionRepository>().GetEffectiveForServerAsync(auth.UserId, sid, ct));
+        if ((await sp.GetRequiredService<IServerRepository>().GetAsync(sid, ct))?.OwnerId == auth.UserId)
+            names.UnionWith(Permissions.FromBits(Outcome.Domain.Permissions.Permission.ServerOwnerGrant));
+        return Permissions.Grants(names, Permissions.RecordCalls);
     }
 
     private async Task HandleVoiceLeaveAsync(AuthInfo auth, CancellationToken ct)
@@ -575,7 +653,7 @@ public sealed class WebSocketHandler(
     {
         await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
         var sender = scope.ServiceProvider.GetRequiredService<ISender>();
-        var res = await sender.Send(new RefreshVoiceTokenCommand(auth.UserId, auth.Username, auth.Permissions, auth.RoleId, connId.ToString("N")[..8]), ct);
+        var res = await sender.Send(new RefreshVoiceTokenCommand(auth.UserId, auth.Username, auth.Permissions, auth.RoleId, VoiceSessionFor(auth, connId)), ct);
         if (res is not null) await send(WsFrames.VoiceToken(res.ChannelId, res.Token, "/livekit", res.Url));
         else await send(WsFrames.Error("BAD_REQUEST", "not in voice"));
     }
@@ -594,6 +672,7 @@ public sealed class WebSocketHandler(
         string? token;
         long lastSeq = 0;
         long requestedServer = 0;
+        string? deviceId = null;
         try
         {
             using var doc = JsonDocument.Parse(raw);
@@ -608,6 +687,7 @@ public sealed class WebSocketHandler(
                 token = pl.TryGetProperty("token", out var tk) ? tk.GetString() : null;
                 if (pl.TryGetProperty("last_seq", out var ls) && ls.TryGetInt64(out var lv)) lastSeq = lv;
                 if (pl.TryGetProperty("server_id", out var sv) && sv.TryGetInt64(out var svv)) requestedServer = svv;
+                if (pl.TryGetProperty("device_id", out var dv) && dv.ValueKind == JsonValueKind.String) deviceId = ParseDeviceId(dv.GetString());
             }
             else token = null;
         }
@@ -691,7 +771,7 @@ public sealed class WebSocketHandler(
         }
 
         return new AuthInfo(user.Id, user.Username, user.Avatar, effectiveRole,
-            (role?.Name ?? "member").ToLowerInvariant(), permBits, serverName, motd, lastSeq, activeServer, space);
+            (role?.Name ?? "member").ToLowerInvariant(), permBits, serverName, motd, lastSeq, activeServer, space, deviceId);
     }
 
     /// <summary>Persist "everything in this channel is read" and fan the marker out: to EVERY
@@ -787,6 +867,8 @@ public sealed class WebSocketHandler(
             type = ch.Type,
             category = ch.Category ?? "",
             position = ch.Position,
+            // A voice room's own text chat (W3GWG-25): where its chat panel and recordings go.
+            chat_channel_id = ch.ChatChannelId,
             unread_count = unreadByChannel.TryGetValue(ch.Id, out var uc) ? uc : 0,
             last_message_id = 0L,
             read_by_others = otherReadByChannel.TryGetValue(ch.Id, out var ro) ? ro : 0L,

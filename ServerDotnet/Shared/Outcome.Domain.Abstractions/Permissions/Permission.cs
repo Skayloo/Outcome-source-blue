@@ -18,6 +18,10 @@ public static class Permission
     public const long SpeakVoice     = 1L << 10;  // 0x0400
     public const long UseVideo       = 1L << 11;  // 0x0800
     public const long ShareScreen    = 1L << 12;  // 0x1000
+    /// <summary>Record a call in this server's voice rooms (W3GWG-25 stage 4). The recording is made
+    /// on the recorder's own computer; what the server governs is the announcement every
+    /// participant sees, which it makes only for holders of this bit.</summary>
+    public const long RecordCalls    = 1L << 13;  // 0x2000
     public const long ManageMessages = 1L << 16;  // 0x10000
     public const long ManageChannels = 1L << 17;  // 0x20000
     public const long KickMembers    = 1L << 18;  // 0x40000
@@ -45,7 +49,7 @@ public static class Permission
     /// Nothing may be added here without checking what ELSE gates on that bit. A bit that any
     /// instance-wide handler accepts does not belong in this set.
     /// </summary>
-    public const long ServerOwnerGrant = ManageChannels | ManageInvites | ManageMessages;
+    public const long ServerOwnerGrant = ManageChannels | ManageInvites | ManageMessages | RecordCalls;
 }
 
 /// <summary>Default role IDs inserted on first run (must match Go).</summary>

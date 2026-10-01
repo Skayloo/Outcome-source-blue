@@ -3,7 +3,7 @@ using Outcome.Domain.Entities;
 namespace Outcome.Shared.Abstractions.Persistence;
 
 /// <summary>A voice channel of the server plus its active guest link (null when none).</summary>
-public sealed record GuestLinkInfo(long ChannelId, string ChannelName, string? Code);
+public sealed record GuestLinkInfo(long ChannelId, string ChannelName, string? Code, bool AllowGuestShare = false);
 
 /// <summary>Shareable no-login voice links (see <see cref="GuestLink"/>). One active per channel.</summary>
 public interface IGuestLinkRepository
@@ -24,6 +24,10 @@ public interface IGuestLinkRepository
 
     /// <summary>Revoke the channel's active link. False when there was none.</summary>
     Task<bool> RevokeAsync(long channelId, CancellationToken ct = default);
+
+    /// <summary>Let guests of the channel's active link pass it on, or stop them. False when the
+    /// channel has no active link.</summary>
+    Task<bool> SetGuestShareAsync(long channelId, bool allow, CancellationToken ct = default);
 
     /// <summary>Ids of every channel with an active guest link — the channels whose LiveKit rooms
     /// may hold guests (used to rebuild the guest-presence registry after a server restart).</summary>

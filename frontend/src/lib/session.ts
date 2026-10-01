@@ -15,7 +15,7 @@ import { dmStore, clearDmUnread } from "@stores/dm.store";
 import { setFriendsList } from "@stores/friends.store";
 import { uiStore, setSidebarMode } from "@stores/ui.store";
 import { armNotificationPermissionPrompt } from "@lib/notifications";
-import { setServerHost, rememberLastHost } from "@lib/serverHost";
+import { setServerHost, rememberLastHost, originForHost } from "@lib/serverHost";
 
 // The signed-in session lives in localStorage, NOT sessionStorage: the latter is wiped the
 // moment the browser closes, which is exactly why closing it forced a fresh login. The token
@@ -223,6 +223,17 @@ export function logout(): void {
 export function hasStoredSession(): boolean {
   const s = readStoredSession();
   return typeof s?.token === "string" && s.token.length > 0;
+}
+
+/**
+ * The stored sign-in, when it belongs to the instance serving this page. The guest page asks
+ * the server about it; a session for a FOREIGN instance (the login screen's server field) has
+ * a token this server would only reject.
+ */
+export function storedSessionHere(): { token: string; username: string } | null {
+  const s = readStoredSession();
+  if (!s?.token || originForHost(s.host ?? "") !== window.location.origin) return null;
+  return { token: s.token, username: s.username ?? "" };
 }
 
 /** Restore a saved session (page reload, or a fresh browser start). Returns true if restored. */

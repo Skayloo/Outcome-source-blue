@@ -16,16 +16,41 @@
 // the token is not the defence; this is.
 import { RoomEvent, type Room, type RemoteParticipant, type Participant } from "livekit-client";
 
-/** The set Meet settled on, and the reason to keep it short: a picker with forty faces is a
- *  menu, and a menu is slower than saying the word out loud. */
-export const REACTIONS = ["👍", "❤️", "😂", "😮", "👏", "🎉"] as const;
+/** Four rows of six — the first row is the original set, so the everyday ones stay where
+ *  hands expect them. Still one glance, not a menu: past this a picker becomes a search.
+ *
+ *  MUST equal VoiceService.reactions in the iOS app, in order. Each side drops what is not on
+ *  its own list, so a face added on one side alone is silently invisible on the other. Single
+ *  code points only: a ZWJ sequence falls apart into pieces on an older system font. */
+export const REACTIONS = [
+  "👍", "❤️", "😂", "😮", "👏", "🎉",
+  "🤡", "🔥", "👎", "😢", "🤔", "🙏",
+  "💯", "👀", "🤯", "😡", "😱", "😍",
+  "🥳", "💩", "🗿", "😎", "💀", "🤝",
+] as const;
 export type Reaction = (typeof REACTIONS)[number];
+
+/** A GIF reaction: a path to one of OUR files (the sender's library, see lib/gifs.ts). A path, not
+ *  a URL — a link to anywhere would make every participant's client fetch from a server of the
+ *  sender's choosing, which is a tracking pixel aimed at a whole meeting. */
+export interface GifFx { readonly gif: string }
+/** What can float out of a tile: one of the emoji, or a GIF. */
+export type Fx = Reaction | GifFx;
+
+/** Our own file paths only: `/api/v1/files/<id>`, optionally with the signature query the
+ *  server puts on it. Anything else — a scheme, a host, `..` — is not a GIF reaction. */
+const GIF_PATH = /^\/api\/v1\/files\/[A-Za-z0-9_-]{1,80}(\?[A-Za-z0-9=&%._-]{0,400})?$/;
+export function isGifPath(value: unknown): value is string {
+  return typeof value === "string" && GIF_PATH.test(value);
+}
 
 const TOPIC = "fx";
 const HAND_ATTR = "hand";
 /** One reaction per sender per this many ms. Not a fairness rule — a defence: the sender can
  *  be anyone with the link. */
 const MIN_GAP_MS = 700;
+/** GIFs are heavier: every participant downloads the file. One per sender per this many ms. */
+const GIF_MIN_GAP_MS = 2500;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -37,7 +62,7 @@ const decoder = new TextDecoder();
  * only. Everyone else saw the reaction and the person who sent it did not, which reads as a
  * broken button. So the sender is told directly, and subscribers cannot tell the difference.
  */
-const localListeners = new Set<(identity: string, emoji: Reaction) => void>();
+const localListeners = new Set<(identity: string, fx: Fx) => void>();
 
 function isReaction(value: unknown): value is Reaction {
   return typeof value === "string" && (REACTIONS as readonly string[]).includes(value);
@@ -51,6 +76,17 @@ export async function sendReaction(room: Room, emoji: Reaction): Promise<void> {
   for (const listener of localListeners) listener(identity, emoji);
   await room.localParticipant.publishData(
     encoder.encode(JSON.stringify({ k: "r", e: emoji })),
+    { reliable: false, topic: TOPIC },
+  );
+}
+
+/** Fire a GIF from the sender's library at the room. Same lossy channel as the emoji. */
+export async function sendGif(room: Room, path: string): Promise<void> {
+  if (!isGifPath(path)) return;
+  const identity = room.localParticipant.identity;
+  for (const listener of localListeners) listener(identity, { gif: path });
+  await room.localParticipant.publishData(
+    encoder.encode(JSON.stringify({ k: "g", u: path })),
     { reliable: false, topic: TOPIC },
   );
 }
@@ -69,6 +105,20 @@ export function handRaisedAt(p: Participant): number | null {
   return Number.isFinite(ms) && ms > 0 ? ms : null;
 }
 
+/** "rec" is set by the SERVER (voice_record) on whoever is recording the call, never by a
+ *  client, so a banner built on it cannot be faked away by the recorder. */
+const REC_ATTR = "rec";
+
+/** Everyone recording the call right now: participant identity → since when. */
+export function recordersIn(room: Room): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const p of [room.localParticipant, ...room.remoteParticipants.values()] as Participant[]) {
+    const ms = Number(p.attributes?.[REC_ATTR] ?? "");
+    if (Number.isFinite(ms) && ms > 0) out.set(p.identity, ms);
+  }
+  return out;
+}
+
 /** Every hand currently up, keyed by participant identity, oldest first. */
 export function raisedHands(room: Room): Map<string, number> {
   const out = new Map<string, number>();
@@ -85,13 +135,13 @@ export function raisedHands(room: Room): Map<string, number> {
  * unsubscribe. Own reactions arrive through the local echo above — you should see your own
  * applause, and LiveKit will not send it back to you.
  */
-export function onReaction(room: Room, cb: (identity: string, emoji: Reaction) => void): () => void {
+export function onReaction(room: Room, cb: (identity: string, fx: Fx) => void): () => void {
   const lastAt = new Map<string, number>();
+  const lastGifAt = new Map<string, number>();
   const handler = (payload: Uint8Array, participant?: RemoteParticipant, _k?: unknown, topic?: string): void => {
     if (topic !== TOPIC) return;
     const identity = participant?.identity ?? room.localParticipant.identity;
     const now = Date.now();
-    if (now - (lastAt.get(identity) ?? 0) < MIN_GAP_MS) return;
     let parsed: unknown;
     try {
       parsed = JSON.parse(decoder.decode(payload));
@@ -99,12 +149,18 @@ export function onReaction(room: Room, cb: (identity: string, emoji: Reaction) =
       return; // not ours, or not JSON — either way, not our problem
     }
     if (typeof parsed !== "object" || parsed === null) return;
-    const msg = parsed as { k?: unknown; e?: unknown };
-    if (msg.k !== "r" || !isReaction(msg.e)) return;
-    lastAt.set(identity, now);
-    cb(identity, msg.e);
+    const msg = parsed as { k?: unknown; e?: unknown; u?: unknown };
+    if (msg.k === "r" && isReaction(msg.e)) {
+      if (now - (lastAt.get(identity) ?? 0) < MIN_GAP_MS) return;
+      lastAt.set(identity, now);
+      cb(identity, msg.e);
+    } else if (msg.k === "g" && isGifPath(msg.u)) {
+      if (now - (lastGifAt.get(identity) ?? 0) < GIF_MIN_GAP_MS) return;
+      lastGifAt.set(identity, now);
+      cb(identity, { gif: msg.u });
+    }
   };
-  const localHandler = (identity: string, emoji: Reaction): void => cb(identity, emoji);
+  const localHandler = (identity: string, fx: Fx): void => cb(identity, fx);
   localListeners.add(localHandler);
   room.on(RoomEvent.DataReceived, handler);
   return () => {
