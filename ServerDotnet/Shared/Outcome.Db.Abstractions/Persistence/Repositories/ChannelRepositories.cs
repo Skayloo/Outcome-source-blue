@@ -221,6 +221,18 @@ public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUr
         return rows > 0 ? now : null;
     }
 
+    public async Task<Message?> LatestSeenByAsync(long authorId, long viewerId, CancellationToken ct = default)
+    {
+        var servers = db.ServerMembers.Where(m => m.UserId == viewerId).Select(m => m.ServerId);
+        var dms = db.DmParticipants.Where(p => p.UserId == viewerId).Select(p => p.ChannelId);
+        return await db.Messages.AsNoTracking()
+            .Where(m => m.UserId == authorId && !m.Deleted)
+            .Where(m => db.Channels.Any(c => c.Id == m.ChannelId && !c.Deleted &&
+                ((c.ServerId != null && servers.Contains(c.ServerId.Value)) || dms.Contains(c.Id))))
+            .OrderByDescending(m => m.Id)
+            .FirstOrDefaultAsync(ct);
+    }
+
     public async Task<bool> DeleteAsync(long id, long userId, bool isMod, CancellationToken ct = default)
     {
         var q = db.Messages.Where(m => m.Id == id && !m.Deleted);

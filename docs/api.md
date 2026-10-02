@@ -175,6 +175,12 @@ file endpoint serves unsigned, like an avatar.
 | `DELETE` | `/api/v1/users/{id}/block` |
 | `PUT` | `/api/v1/users/{id}/block` |
 
+`PUT /users/{id}/block` takes an optional `{"message_id": …}` — the message the block was made
+from. A block also lands in the moderators' report inbox (App Review guideline 1.2: blocking must
+notify the developer of the content), with reason "Blocked the author", on that message or, with
+no body, on the newest message of theirs the blocker could see; nothing is filed when there is
+none. Throttled together with reports, and never fails the block.
+
 ### OAuth
 
 | `GET` | `/providers` |

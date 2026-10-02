@@ -77,6 +77,11 @@ public interface IMessageRepository
     /// not older than <paramref name="since"/> (their join), oldest first.</summary>
     Task<IReadOnlyList<GuestChatRow>> ListForGuestAsync(long channelId, long afterId, DateTime since, int limit, CancellationToken ct = default);
     Task<Message?> GetByIdAsync(long id, CancellationToken ct = default);
+
+    /// <summary>The newest live message by <paramref name="authorId"/> that
+    /// <paramref name="viewerId"/> can see — in a server they share, or a DM between them.
+    /// What a block from someone's profile is "about" when it tells the moderators.</summary>
+    Task<Message?> LatestSeenByAsync(long authorId, long viewerId, CancellationToken ct = default);
     Task<DateTime?> EditAsync(long id, long userId, string content, CancellationToken ct = default);
     Task<bool> DeleteAsync(long id, long userId, bool isMod, CancellationToken ct = default);
 

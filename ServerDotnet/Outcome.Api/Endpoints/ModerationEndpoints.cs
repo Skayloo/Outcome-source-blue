@@ -15,6 +15,8 @@ namespace Outcome.Api.Endpoints;
 public static class ModerationEndpoints
 {
     public sealed record ReportBody(string? Reason);
+    /// <summary>Optional: the message the block was made from ("Block" in a message's menu).</summary>
+    public sealed record BlockBody(long? MessageId);
     public sealed record SetReportStatusBody(string Status);
     /// <summary>hide | delete | dismiss, plus the note sent to the reporter when dismissing.</summary>
     public sealed record ReportActionBody(string? Action, string? Note);
@@ -24,8 +26,10 @@ public static class ModerationEndpoints
     public static void MapModerationEndpoints(this IEndpointRouteBuilder app)
     {
         // ── Blocks ───────────────────────────────────────────────────────────────
-        app.MapPut("/api/v1/users/{id:long}/block", async (long id, ICurrentUser current,
-            IBlockRepository blocks, IUserRepository users, IFriendRepository friends) =>
+        app.MapPut("/api/v1/users/{id:long}/block", async (long id, BlockBody? body, ICurrentUser current,
+            IBlockRepository blocks, IUserRepository users, IFriendRepository friends,
+            IMessageRepository messages, IChannelRepository channels, IDmRepository dms,
+            IServerRepository servers, IMessageReportRepository reports, IRateLimiter limiter) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             if (id == current.UserId) throw DomainException.BadRequest("cannot block yourself");
@@ -34,6 +38,36 @@ public static class ModerationEndpoints
             // Blocking also severs an existing friendship / pending request — being "friends"
             // with someone you blocked is a contradiction every platform resolves this way.
             await friends.RemoveAsync(current.UserId, id);
+
+            // App Review 1.2: a block must also tell the developer what it was about. It lands in
+            // the moderators' inbox like a report, on the message it was made from — or, from a
+            // profile, the newest one of theirs this person could see. Someone who never wrote
+            // anything visible leaves nothing to show, and the block alone stands. Throttled with
+            // reports, and never fails the block itself: the block is what the person asked for.
+            if (limiter.Allow($"report:{current.UserId}", 10, TimeSpan.FromMinutes(5)))
+            {
+                var msg = body?.MessageId is { } mid ? await messages.GetByIdAsync(mid) : null;
+                if (msg is null || msg.UserId != id || msg.Deleted)
+                    msg = await messages.LatestSeenByAsync(id, current.UserId);
+                var channel = msg is null ? null : await channels.GetByIdAsync(msg.ChannelId);
+                var canSee = channel is not null && (channel.Type == "dm"
+                    ? await dms.IsParticipantAsync(current.UserId, channel.Id)
+                    : channel.ServerId is { } sid && await servers.IsMemberAsync(sid, current.UserId));
+                if (msg is not null && channel is not null && canSee)
+                {
+                    await reports.CreateAsync(new MessageReport
+                    {
+                        ReporterId = current.UserId,
+                        MessageId = msg.Id,
+                        AuthorId = msg.UserId,
+                        ChannelId = msg.ChannelId,
+                        ServerId = channel.ServerId,
+                        Content = msg.Content,
+                        Reason = "Blocked the author",
+                        CreatedAt = DateTime.UtcNow,
+                    });
+                }
+            }
             return Results.NoContent();
         });
 
