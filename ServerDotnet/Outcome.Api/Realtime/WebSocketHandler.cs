@@ -40,7 +40,7 @@ public sealed class WebSocketHandler(
 
     private sealed record AuthInfo(
         long UserId, string Username, string? Avatar, long RoleId, string Role, long Permissions, string ServerName, string Motd, long LastSeq, long ServerId,
-        Space Space, string? DeviceId);
+        Space Space, string? DeviceId, string Origin = "");
 
     /// <summary>The session half of a LiveKit identity: <c>user-{id}.{device}.{conn}</c> when the
     /// client names its device, <c>user-{id}.{conn}</c> when it does not. voice_join drops the
@@ -68,10 +68,12 @@ public sealed class WebSocketHandler(
 
     /// <param name="space">Resolved from the upgrade request's Host and pinned for the whole
     /// connection — a socket cannot wander between tenants mid-stream.</param>
-    public async Task RunAsync(WebSocket ws, Space space, CancellationToken ct)
+    /// <param name="origin">https://host this socket came in on — see the WS route in Program.cs.</param>
+    public async Task RunAsync(WebSocket ws, Space space, string origin, CancellationToken ct)
     {
         var auth = await AuthenticateAsync(ws, space, ct);
         if (auth is null) { await CloseQuietly(ws); return; }
+        auth = auth with { Origin = origin };
 
         var connId = Guid.NewGuid();
         using var connCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -363,14 +365,17 @@ public sealed class WebSocketHandler(
             }
 
             // Whoever has no socket open hears about it from Apple instead.
-            // The first picture, if there is one, rides along so the banner can show it instead of
-            // the word "attachment". The URL is already signed and already expiring — it is the
-            // same one the app would fetch, handed over a little earlier.
+            // The first picture, if there is one, rides along so the banner can show it, the way
+            // Telegram does. The URL is already signed and already expiring — it is the same one
+            // the app would fetch, handed over a little earlier — and made absolute, because the
+            // notification extension that fetches it has no host to resolve a path against.
             var pushImage = created.Attachments
                 .FirstOrDefault(a => a.Mime.StartsWith("image/", StringComparison.Ordinal))?.Url;
+            if (pushImage is not null && pushImage.StartsWith('/') && auth.Origin.Length > 0) pushImage = auth.Origin + pushImage;
             pushNotifier.QueueMessage(auth.Space, channelId, auth.UserId, auth.Username, created.Content,
                 pushImage,
-                created.DmParticipantIds, created.DmParticipantIds is null ? created.ServerId ?? auth.ServerId : null);
+                created.DmParticipantIds, created.DmParticipantIds is null ? created.ServerId ?? auth.ServerId : null,
+                PushNotifier.AttachmentLabel(created.Attachments));
         }
         catch (DomainException ex)
         {

@@ -28,7 +28,10 @@ public sealed record PushMessage(
     long RecipientId,
     /// <summary>Signed URL of one image from the message, shown in the banner itself. Null for
     /// anything that is not a picture: a notification cannot preview a zip.</summary>
-    string? ImageUrl = null);
+    string? ImageUrl = null,
+    /// <summary>The icon of the message's files ("🎤", "📷", …), for a device that writes the
+    /// body itself — the iOS extension that opens an encrypted caption puts it in front.</summary>
+    string? Icon = null);
 
 /// <summary>
 /// An incoming call, on its way to a phone whose app is not running.

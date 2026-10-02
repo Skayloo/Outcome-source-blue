@@ -35,9 +35,44 @@ public sealed partial class PushNotifier(
     /// in ours. Past this the push is sent without it and the phone shows the fallback — a long
     /// message loses its preview rather than the notification failing to arrive.</summary>
 
+    /// <summary>What a message's files are, as a lock screen says it — the way Telegram does:
+    /// "🎤 Голосовое сообщение (0:09)", "📷 Фото", "📷 3 фото", "🎬 Видео", "📎 report.pdf".
+    /// <see cref="Icon"/> alone goes in front of a caption.</summary>
+    public sealed record PushAttachment(string Icon, string Label);
+
+    public static PushAttachment? AttachmentLabel(IReadOnlyList<Outcome.Application.Realtime.AttachmentDto> attachments)
+    {
+        if (attachments.Count == 0) return null;
+        var voice = attachments.FirstOrDefault(a => a.Mime.StartsWith("audio/", StringComparison.Ordinal) && a.DurationMs is not null);
+        if (voice is not null)
+        {
+            var secs = (voice.DurationMs!.Value + 500) / 1000;
+            return new("🎤", $"🎤 Голосовое сообщение ({secs / 60}:{secs % 60:D2})");
+        }
+        var images = attachments.Count(a => a.Mime.StartsWith("image/", StringComparison.Ordinal));
+        if (images > 0) return new("📷", images == 1 ? "📷 Фото" : $"📷 {images} фото");
+        var videos = attachments.Count(a => a.Mime.StartsWith("video/", StringComparison.Ordinal));
+        if (videos > 0) return new("🎬", videos == 1 ? "🎬 Видео" : $"🎬 {videos} видео");
+        if (attachments.Count == 1)
+        {
+            var a = attachments[0];
+            var icon = a.Mime.StartsWith("audio/", StringComparison.Ordinal) ? "🎵" : "📎";
+            return new(icon, $"{icon} {a.Filename}");
+        }
+        return new("📎", $"📎 {Files(attachments.Count)}");
+    }
+
+    private static string Files(int n) =>
+        (n % 10, n % 100) switch
+        {
+            (1, not 11) => $"{n} файл",
+            (2 or 3 or 4, < 12 or > 14) => $"{n} файла",
+            _ => $"{n} файлов",
+        };
+
     public void QueueMessage(Space space, long channelId, long senderId, string senderName, string content,
         string? imageUrl,
-        IReadOnlyList<long>? dmParticipants, long? serverId)
+        IReadOnlyList<long>? dmParticipants, long? serverId, PushAttachment? attachment = null)
     {
         if (!push.Enabled) return;
         // The overwhelming majority of channel traffic mentions nobody. Rule it out here
@@ -47,7 +82,7 @@ public sealed partial class PushNotifier(
         {
             try
             {
-                await NotifyAsync(space, channelId, senderId, senderName, content, imageUrl, dmParticipants, serverId);
+                await NotifyAsync(space, channelId, senderId, senderName, content, imageUrl, dmParticipants, serverId, attachment);
             }
             catch (Exception ex)
             {
@@ -86,7 +121,7 @@ public sealed partial class PushNotifier(
 
     private async Task NotifyAsync(Space space, long channelId, long senderId, string senderName, string content,
         string? imageUrl,
-        IReadOnlyList<long>? dmParticipants, long? serverId)
+        IReadOnlyList<long>? dmParticipants, long? serverId, PushAttachment? attachment)
     {
         await using var scope = scopeFactory.CreateAsyncScopeFor(space);
         var sp = scope.ServiceProvider;
@@ -125,11 +160,12 @@ public sealed partial class PushNotifier(
             var wantsText = preview.GetValueOrDefault(d.UserId, true);
             var message = new PushMessage(
                 senderName,
-                wantsText ? Preview(content) : NoPreview,
+                wantsText ? Preview(content, attachment) : NoPreview,
                 channelId,
                 d.UserId,
                 // A preview the recipient asked not to see should not arrive as a picture either.
-                wantsText ? imageUrl : null);
+                wantsText ? imageUrl : null,
+                wantsText ? attachment?.Icon : null);
 
             var outcome = await push.SendAsync(new PushTarget(d.Token, d.Platform, d.Sandbox), message);
             if (outcome == PushOutcome.Gone) await devices.RemoveAsync(d.Token);
@@ -163,10 +199,13 @@ public sealed partial class PushNotifier(
     /// showing nothing, so it reads the same as a preview the user switched off. Putting real
     /// text there needs a notification service extension that decrypts on the phone.
     /// </summary>
-    private static string Preview(string content)
+    /// A file without words says what it is ("🎤 Голосовое сообщение (0:09)") — every one of them
+    /// used to read "Вложение", a voice note and a photo alike. A caption keeps the file's icon.
+    private static string Preview(string content, PushAttachment? attachment)
     {
         var text = content.Trim();
-        if (text.Length == 0) return "Вложение";
-        return text.Length <= MaxBodyChars ? text : text[..MaxBodyChars] + "…";
+        if (text.Length == 0) return attachment?.Label ?? "Вложение";
+        var body = text.Length <= MaxBodyChars ? text : text[..MaxBodyChars] + "…";
+        return attachment is null ? body : $"{attachment.Icon} {body}";
     }
 }

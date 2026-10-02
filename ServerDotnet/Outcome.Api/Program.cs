@@ -292,7 +292,13 @@ app.Map("/api/v1/ws", async (HttpContext ctx, WebSocketHandler handler, WsConnec
         using var ws = await ctx.WebSockets.AcceptWebSocketAsync();
         // The upgrade request already resolved the tenant; the socket keeps it for life.
         var space = ctx.RequestServices.GetRequiredService<Outcome.Infrastructure.Tenancy.ICurrentSpace>().Space;
-        await handler.RunAsync(ws, space, ctx.RequestAborted);
+        // Where this deployment is reachable from outside, for links that leave the app — a push
+        // notification's picture is fetched by the phone's notification extension, which has no
+        // base address to resolve a path against. The edge routes only our own domains, so the
+        // upgrade's Host is one of them; the scheme comes from the edge, past nginx.
+        var proto = ctx.Request.Headers["X-Forwarded-Proto"].ToString() == "http" || (ctx.Request.Headers["X-Forwarded-Proto"].Count == 0 && !ctx.Request.IsHttps && ctx.Request.Host.Port is not null)
+            ? "http" : "https";
+        await handler.RunAsync(ws, space, $"{proto}://{ctx.Request.Host}", ctx.RequestAborted);
     }
     finally { if (clientIp is not null) wsLimit.Exit(clientIp); }
 });
