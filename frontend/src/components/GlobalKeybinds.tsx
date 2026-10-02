@@ -41,7 +41,8 @@ export function GlobalKeybinds() {
 
       // Push-to-talk: hold the configured key to open the mic (ignored while typing).
       const ptt = loadPref<string>("pttKey", "");
-      if (ptt && e.code === ptt && inVoice() && !pttActive && !isTyping()) {
+      // Not while deafened: talking into a room you cannot hear is not what the key is for.
+      if (ptt && e.code === ptt && inVoice() && !pttActive && !isTyping() && !voiceStore.getState().localDeafened) {
         pttActive = true;
         setMuted(false);
       }

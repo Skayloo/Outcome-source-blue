@@ -161,10 +161,10 @@ export function VoiceWidget() {
 
       <div className="vd-controls">
         <button
-          className={v.localMuted ? "active-ctrl" : ""}
-          title={v.localMuted ? t("voice.unmute") : t("voice.mute")}
+          className={v.localMuted || v.localDeafened ? "active-ctrl" : ""}
+          title={v.localMuted || v.localDeafened ? t("voice.unmute") : t("voice.mute")}
           onClick={toggleMute}
-        ><Icon name={v.localMuted ? "mic-off" : "mic"} size={17} /></button>
+        ><Icon name={v.localMuted || v.localDeafened ? "mic-off" : "mic"} size={17} /></button>
         <button
           className={v.localDeafened ? "active-ctrl" : ""}
           title={v.localDeafened ? t("voice.undeafen") : t("voice.deafen")}

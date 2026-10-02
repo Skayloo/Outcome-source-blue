@@ -1211,6 +1211,14 @@ export class LiveKitSession {
   }
 
   setMuted(muted: boolean): void {
+    // Turning the mic on while deafened brings the sound back too, as Discord does: a live mic
+    // in a room you cannot hear is never what the click meant. Without this the mic opened and
+    // the room stayed silent — the headphones button looked like it did half a job.
+    if (!muted && voiceStore.getState().localDeafened) {
+      setLocalDeafened(false);
+      this.ws?.send({ type: "voice_deafen", payload: { deafened: false } });
+      this.applyRemoteAudioSubscriptionState(false);
+    }
     // Unmuting is a click, and it is the last moment a browser will hand out a live
     // AudioContext. Priming it here rather than after the awaits below is the difference
     // between a pipeline that runs and one that publishes silence.

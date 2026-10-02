@@ -8,6 +8,7 @@ import { Room } from "livekit-client";
 import { loadPref, savePref } from "@components/settings/helpers";
 import { createLogger } from "@lib/logger";
 import type { AudioPipeline } from "@lib/audioPipeline";
+import { voiceStore } from "@stores/voice.store";
 
 const log = createLogger("deviceManager");
 
@@ -92,6 +93,7 @@ export class DeviceManager {
             log.warn("Audio pipeline setup failed after device fallback", pipelineErr);
             this.onToast?.("Audio pipeline error after device switch");
           }
+          await this.keepMicOffIfMuted();
           this.onToast?.("Audio device disconnected — switched to default");
         } catch (err) {
           log.error("Failed to fallback to default input device", err);
@@ -138,11 +140,22 @@ export class DeviceManager {
       } else {
         await this.audioPipeline?.removeNoiseSuppressor();
       }
+      await this.keepMicOffIfMuted();
       log.info("Switched input device", { deviceId });
     } catch (err) {
       log.error("Failed to switch input device", err);
       this.onErrorCallback?.("Failed to switch microphone");
     }
+  }
+
+  /** A device switch re-enables the microphone to open the new one. Someone muted or deafened
+   *  must not go live because AirPods connected or the default input changed. */
+  private async keepMicOffIfMuted(): Promise<void> {
+    const { localMuted, localDeafened } = voiceStore.getState();
+    if (this.room === null || !(localMuted || localDeafened)) return;
+    this.audioPipeline?.teardownAudioPipeline();
+    await this.room.localParticipant.setMicrophoneEnabled(false);
+    log.info("Mic kept off after a device switch (muted or deafened)");
   }
 
   async switchOutputDevice(deviceId: string): Promise<void> {

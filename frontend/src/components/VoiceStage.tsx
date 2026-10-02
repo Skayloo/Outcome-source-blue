@@ -196,7 +196,7 @@ export function VoiceStage({ channelId }: { channelId: number }) {
       <div className="vstage-controls">
         {connectedHere ? (
           <>
-            <Ctl name={v.localMuted ? "mic-off" : "mic"} label={v.localMuted ? t("voice.unmuteLabel") : t("voice.micLabel")} red={v.localMuted} onClick={toggleMute} />
+            <Ctl name={v.localMuted || v.localDeafened ? "mic-off" : "mic"} label={v.localMuted || v.localDeafened ? t("voice.unmuteLabel") : t("voice.micLabel")} red={v.localMuted || v.localDeafened} onClick={toggleMute} />
             <Ctl name={v.localDeafened ? "headphones-off" : "headphones"} label={v.localDeafened ? t("voice.undeafenLabel") : t("voice.soundLabel")} red={v.localDeafened} onClick={toggleDeafen} />
             {/* Icon = state, like the microphone: crossed and red while nobody can see you. */}
             <Ctl name={v.localCamera ? "camera" : "camera-off"} label={v.localCamera ? t("voice.stopVideoLabel") : t("voice.videoLabel")} on={v.localCamera} red={!v.localCamera} onClick={() => { if (v.localCamera) void disableCamera(); else void enableCamera(); }} />
@@ -286,7 +286,7 @@ function FullscreenControls() {
   const v = useStoreState(voiceStore);
   return (
     <div className="vstage-full-controls" onDoubleClick={(e) => e.stopPropagation()}>
-      <Ctl name={v.localMuted ? "mic-off" : "mic"} label={v.localMuted ? t("voice.unmuteLabel") : t("voice.micLabel")} red={v.localMuted} onClick={toggleMute} />
+      <Ctl name={v.localMuted || v.localDeafened ? "mic-off" : "mic"} label={v.localMuted || v.localDeafened ? t("voice.unmuteLabel") : t("voice.micLabel")} red={v.localMuted || v.localDeafened} onClick={toggleMute} />
       <Ctl name={v.localDeafened ? "headphones-off" : "headphones"} label={v.localDeafened ? t("voice.undeafenLabel") : t("voice.soundLabel")} red={v.localDeafened} onClick={toggleDeafen} />
       <Ctl name={v.localCamera ? "camera" : "camera-off"} label={v.localCamera ? t("voice.stopVideoLabel") : t("voice.videoLabel")} on={v.localCamera} red={!v.localCamera} onClick={() => { if (v.localCamera) void disableCamera(); else void enableCamera(); }} />
       <Ctl name={v.localScreenshare ? "monitor-off" : "monitor"} label={v.localScreenshare ? t("voice.stopShareLabel") : t("voice.screenLabel")} on={v.localScreenshare} onClick={() => { if (v.localScreenshare) void disableScreenshare(); else void enableScreenshare(); }} />

@@ -167,8 +167,14 @@ export class AudioElements {
     return this.outputVolumeMultiplier;
   }
 
+  /** Deafened: every remote voice at zero, on top of the unsubscription — so a track that is
+   *  still (or again) subscribed for any reason stays silent. The owner pressed the headphones
+   *  and kept hearing the room; this is the half of deafen that does not depend on the SFU. */
+  private deafened = false;
+
   /** Compute the effective volume for a participant: per-user volume * master output. */
   getEffectiveVolume(userId: number): number {
+    if (this.deafened) return 0;
     const userVol = userId > 0 ? getSavedUserVolume(userId) : 100;
     // The normalisation factor rides on top of both, so a listener who drags someone's slider
     // still gets exactly what they asked for, relative to a voice that is already levelled.
@@ -177,7 +183,15 @@ export class AudioElements {
   }
 
   private getScreenshareOutputVolume(): number {
+    if (this.deafened) return 0;
     return Math.max(0, Math.min(1, this.outputVolumeMultiplier));
+  }
+
+  private applyScreenshareVolume(): void {
+    const volume = this.getScreenshareOutputVolume();
+    for (const audioEls of this.screenshareAudioElements.values()) {
+      for (const audioEl of audioEls) audioEl.volume = volume;
+    }
   }
 
   // --- Track subscription handlers ---
@@ -260,12 +274,15 @@ export class AudioElements {
   // --- Remote audio subscription state (deafen) ---
 
   applyRemoteAudioSubscriptionState(deafened: boolean): void {
+    this.deafened = deafened;
+    this.applyScreenshareVolume();
     if (this.room === null) return;
     for (const participant of this.room.remoteParticipants.values()) {
       for (const publication of participant.audioTrackPublications.values()) {
         publication.setSubscribed(!deafened);
       }
     }
+    this.applyAllVolumes();
   }
 
   // --- Volume control ---
@@ -285,7 +302,9 @@ export class AudioElements {
     if (this.room !== null) {
       for (const participant of this.room.remoteParticipants.values()) {
         if (parseUserId(participant.identity) === userId) {
-          participant.setVolume((clamped / 100) * this.outputVolumeMultiplier);
+          // Through the one formula, so a slider moved while deafened stays silent and the
+          // loudness levelling is not dropped the moment someone touches a slider.
+          participant.setVolume(this.getEffectiveVolume(userId));
         }
       }
     }
@@ -298,12 +317,7 @@ export class AudioElements {
     savePref("outputVolume", clamped);
     this.outputVolumeMultiplier = clamped / 100;
     this.applyAllVolumes();
-    const screenshareVolume = this.getScreenshareOutputVolume();
-    for (const audioEls of this.screenshareAudioElements.values()) {
-      for (const audioEl of audioEls) {
-        audioEl.volume = screenshareVolume;
-      }
-    }
+    this.applyScreenshareVolume();
   }
 
   // --- Screenshare audio ---

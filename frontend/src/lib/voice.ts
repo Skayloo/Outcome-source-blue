@@ -118,7 +118,10 @@ export function leaveVoiceLocal(): void {
 }
 
 export function toggleMute(): void {
-  sessionSetMuted(!voiceStore.getState().localMuted);
+  // While deafened the mic shows as off (it is), so the click means "back on" — which also
+  // brings the sound back (see setMuted).
+  const { localMuted, localDeafened } = voiceStore.getState();
+  sessionSetMuted(!(localMuted || localDeafened));
 }
 
 export function toggleDeafen(): void {
