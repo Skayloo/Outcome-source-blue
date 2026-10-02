@@ -12,7 +12,7 @@ import { authStore } from "@stores/auth.store";
 import { dmStore } from "@stores/dm.store";
 import { setReply, setEditing } from "@stores/composer.store";
 import { quotesStore, claimQuoteLookup, releaseQuoteLookup, setQuoteFound, setQuoteMissing } from "@stores/quotes.store";
-import { prompt } from "@components/ConfirmDialog";
+import { confirm, prompt } from "@components/ConfirmDialog";
 import { setTransientSuccess, setTransientError } from "@stores/ui.store";
 import { api, wsSend } from "@lib/services";
 import { ForwardModal } from "@components/ForwardModal";
@@ -29,6 +29,22 @@ const GROUP_WINDOW_MS = 5 * 60 * 1000;
 const isImage = (mime: string) => mime.startsWith("image/");
 /** A voice message: audio attachment carrying the transcoder's duration/waveform. */
 const isVoice = (att: { mime: string; duration_ms?: number }) => att.mime.startsWith("audio/") && att.duration_ms != null;
+
+/** Deleting is for everyone and cannot be undone, so it asks first — one stray click on the
+ *  trash, which sits where the pointer goes around a video, took a call recording out of a room's
+ *  chat. Shift+click skips the question, for clearing up several. */
+async function deleteMessageAsking(m: Message, skipQuestion: boolean): Promise<void> {
+  if (!skipQuestion) {
+    const ok = await confirm({
+      title: t("chat.deleteTitle"),
+      message: m.attachments.length > 0 ? t("chat.deleteConfirmFiles") : t("chat.deleteConfirm"),
+      confirmLabel: t("chat.delete"),
+      danger: true,
+    });
+    if (!ok) return;
+  }
+  wsSend("chat_delete", { message_id: m.id });
+}
 
 export function MessageList({ channelId: forced }: { channelId?: number } = {}) {
   useStoreState(messagesStore);
@@ -413,7 +429,7 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
               server erases the row for both. Elsewhere: own messages only (moderators are
               gated by the server's ManageMessages check, not by this button). */}
           {(me?.id === m.user.id || isDm) && (
-            <button title={t("chat.delete")} onClick={() => wsSend("chat_delete", { message_id: m.id })}><Icon name="trash-2" size={16} /></button>
+            <button title={t("chat.deleteHint")} onClick={(e) => { void deleteMessageAsking(m, e.shiftKey); }}><Icon name="trash-2" size={16} /></button>
           )}
       </div>
     );

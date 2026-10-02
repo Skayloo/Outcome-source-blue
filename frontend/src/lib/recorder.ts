@@ -110,7 +110,9 @@ function pickMime(kind: "audio" | "video"): { mime: string; ext: string } {
 function baseName(): string {
   const d = new Date();
   const p = (n: number): string => String(n).padStart(2, "0");
-  return `outcome-call-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}`;
+  // Down to the second: two recordings started in the same minute were given one name, and in
+  // "separate" mode the second wrote straight over the first in the chosen folder.
+  return `outcome-call-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}`;
 }
 
 /** Where to write, asked BEFORE anything else: the pickers only open from inside the click. Null
