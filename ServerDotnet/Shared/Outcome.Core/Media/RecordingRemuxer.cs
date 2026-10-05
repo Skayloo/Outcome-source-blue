@@ -57,6 +57,49 @@ public sealed class RecordingRemuxer(ILogger<RecordingRemuxer> log)
         }
     }
 
+    /// <summary>Is this the MP4 MediaRecorder wrote — a <c>moof</c> straight after the
+    /// <c>moov</c> — rather than one already remuxed (<c>moov</c>, then <c>free</c>/<c>mdat</c>)?
+    /// Reads only the top-level box headers up to there; a remuxed file answers false, which is
+    /// what keeps the backfill from touching a file twice.</summary>
+    public static async Task<bool> IsFragmentedMp4Async(Stream s, CancellationToken ct = default)
+    {
+        var head = new byte[16];
+        var skip = new byte[1 << 16];
+        for (var boxes = 0; boxes < 8; boxes++)
+        {
+            if (!await ReadExactlyAsync(s, head, 8, ct)) return false;
+            long size = (uint)((head[0] << 24) | (head[1] << 16) | (head[2] << 8) | head[3]);
+            var type = System.Text.Encoding.ASCII.GetString(head, 4, 4);
+            var header = 8;
+            if (size == 1)
+            {
+                if (!await ReadExactlyAsync(s, head, 8, ct)) return false;
+                size = (long)System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(head.AsSpan(0, 8));
+                header = 16;
+            }
+            if (type == "moof") return true;
+            if (type is "mdat" or "free" || size < header || size > 64L * 1024 * 1024) return false;
+            for (var left = size - header; left > 0;)
+            {
+                var n = await s.ReadAsync(skip.AsMemory(0, (int)Math.Min(skip.Length, left)), ct);
+                if (n <= 0) return false;
+                left -= n;
+            }
+        }
+        return false;
+    }
+
+    private static async Task<bool> ReadExactlyAsync(Stream s, byte[] buf, int count, CancellationToken ct)
+    {
+        for (var got = 0; got < count;)
+        {
+            var n = await s.ReadAsync(buf.AsMemory(got, count - got), ct);
+            if (n <= 0) return false;
+            got += n;
+        }
+        return true;
+    }
+
     private string? Fail(string output, string why)
     {
         log.LogWarning("Recording kept as recorded, remux failed: {Why}", why);

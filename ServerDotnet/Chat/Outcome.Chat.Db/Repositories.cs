@@ -116,6 +116,16 @@ public interface IAttachmentRepository
     /// its downscaled copy.</summary>
     Task<IReadOnlyList<Attachment>> ListImagesAsync(int limit, CancellationToken ct = default);
     Task SetDimensionsAsync(string id, int width, int height, CancellationToken ct = default);
+
+    /// <summary>The stored objects behind call recordings in MP4 (one per object — forwards
+    /// share theirs), for the remux backfill.</summary>
+    Task<IReadOnlyList<(string StoredAs, string Mime)>> ListRecordingFilesAsync(int limit, CancellationToken ct = default);
+
+    /// <summary>Every attachment row on <paramref name="oldStoredAs"/> becomes a new row — new
+    /// id, same message and place — on <paramref name="newStoredAs"/>. A NEW id, because files
+    /// are served immutable with the id as their ETag: the same id would keep handing browsers
+    /// the old bytes from their cache.</summary>
+    Task<int> ReplaceStoredFileAsync(string oldStoredAs, string newStoredAs, long newSize, CancellationToken ct = default);
 }
 
 public interface IReactionRepository

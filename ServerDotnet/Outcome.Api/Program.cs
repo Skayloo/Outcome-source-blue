@@ -377,6 +377,9 @@ static async Task MigrateDatabaseAsync(WebApplication app)
             await provisioner.ProvisionAllAsync();
             await ResetPresenceAsync(app, logger);
             await BackfillImageDimensionsAsync(app, logger);
+            // In the background: a recording can be hundreds of megabytes, and startup must not
+            // wait on ffmpeg.
+            _ = Task.Run(() => RemuxOldRecordingsAsync(app, logger));
             return;
         }
         catch (Exception ex) when (attempt < maxAttempts)
@@ -491,6 +494,77 @@ static async Task BackfillImageDimensionsAsync(WebApplication app, ILogger logge
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Space {Slug}: could not backfill image dimensions", space.Slug);
+        }
+    }
+}
+
+/// <summary>
+/// Remuxes call recordings stored before uploads were remuxed (1.31.48): MediaRecorder's
+/// fragmented MP4 says "duration 0" in its header, and Firefox and the iPhone ran the slider out
+/// before the video ended — the owner's recording of 2026-10-02 kept doing it after the fix,
+/// because the fix only met new uploads. Like the image backfill it must run in the server (the
+/// bytes are encrypted at rest), and it is idempotent: a file whose header is already followed by
+/// its data is left alone, so after one pass every boot just reads a few header bytes per file.
+/// </summary>
+static async Task RemuxOldRecordingsAsync(WebApplication app, ILogger logger)
+{
+    // The cap is on REMUXES, not on the list: fixed files stay in the list (only their header is
+    // read, a few bytes), and capping the list instead let them crowd out the ones still broken.
+    const int perBoot = 50;
+    var registry = app.Services.GetRequiredService<SpaceRegistry>();
+    var scopes = app.Services.GetRequiredService<IServiceScopeFactory>();
+    var remuxer = app.Services.GetRequiredService<Outcome.Infrastructure.Media.RecordingRemuxer>();
+    foreach (var space in await registry.ListAsync())
+    {
+        if (!space.Active) continue;
+        try
+        {
+            await using var scope = scopes.CreateAsyncScopeFor(space);
+            var attachments = scope.ServiceProvider.GetRequiredService<IAttachmentRepository>();
+            var storage = scope.ServiceProvider.GetRequiredService<IFileStorage>();
+            var fixedCount = 0;
+            foreach (var (storedAs, mime) in await attachments.ListRecordingFilesAsync(100_000))
+            {
+                if (fixedCount >= perBoot) break;
+                await using (var head = storage.OpenRead(storedAs))
+                    if (head is null || !await Outcome.Infrastructure.Media.RecordingRemuxer.IsFragmentedMp4Async(head)) continue;
+
+                var input = Path.GetTempFileName();
+                string? output = null;
+                try
+                {
+                    await using (var src = storage.OpenRead(storedAs))
+                    await using (var dst = File.Create(input))
+                    {
+                        if (src is null) continue;
+                        await src.CopyToAsync(dst);
+                    }
+                    output = await remuxer.RemuxAsync(input, mime, CancellationToken.None);
+                    if (output is null) continue;
+                    var newStoredAs = Guid.NewGuid().ToString();
+                    long size;
+                    await using (var remuxed = File.OpenRead(output))
+                    {
+                        size = remuxed.Length;
+                        await storage.SaveAsync(newStoredAs, remuxed);
+                    }
+                    var rows = await attachments.ReplaceStoredFileAsync(storedAs, newStoredAs, size);
+                    storage.Delete(storedAs);
+                    fixedCount++;
+                    logger.LogInformation("Space {Slug}: remuxed recording {Old} → {New} ({Rows} attachment row(s))",
+                        space.Slug, storedAs, newStoredAs, rows);
+                }
+                finally
+                {
+                    File.Delete(input);
+                    if (output is not null) File.Delete(output);
+                }
+            }
+            if (fixedCount > 0) logger.LogInformation("Space {Slug}: remuxed {Count} old recording(s)", space.Slug, fixedCount);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Space {Slug}: could not remux old recordings", space.Slug);
         }
     }
 }

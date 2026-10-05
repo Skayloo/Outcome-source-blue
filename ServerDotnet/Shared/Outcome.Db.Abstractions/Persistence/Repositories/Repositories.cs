@@ -485,6 +485,45 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
             .Take(limit)
             .ToListAsync(ct);
 
+    public async Task<IReadOnlyList<(string StoredAs, string Mime)>> ListRecordingFilesAsync(int limit, CancellationToken ct = default)
+    {
+        var rows = await db.Attachments.AsNoTracking()
+            .Where(a => a.Filename.StartsWith("outcome-call-") && (a.MimeType == "video/mp4" || a.MimeType == "audio/mp4"))
+            .Select(a => new { a.StoredAs, a.MimeType })
+            .Distinct()
+            .OrderBy(a => a.StoredAs)
+            .Take(limit)
+            .ToListAsync(ct);
+        return rows.Select(r => (r.StoredAs, r.MimeType)).ToList();
+    }
+
+    public async Task<int> ReplaceStoredFileAsync(string oldStoredAs, string newStoredAs, long newSize, CancellationToken ct = default)
+    {
+        var rows = await db.Attachments.Where(a => a.StoredAs == oldStoredAs).ToListAsync(ct);
+        foreach (var a in rows)
+        {
+            db.Attachments.Add(new Attachment
+            {
+                Id = Guid.NewGuid().ToString(),
+                MessageId = a.MessageId,
+                UploaderId = a.UploaderId,
+                Filename = a.Filename,
+                StoredAs = newStoredAs,
+                MimeType = a.MimeType,
+                Size = newSize,
+                UploadedAt = a.UploadedAt,
+                Width = a.Width,
+                Height = a.Height,
+                DurationMs = a.DurationMs,
+                Waveform = a.Waveform,
+                Position = a.Position,
+            });
+            db.Attachments.Remove(a);
+        }
+        await db.SaveChangesAsync(ct);
+        return rows.Count;
+    }
+
     public Task SetDimensionsAsync(string id, int width, int height, CancellationToken ct = default) =>
         db.Attachments.Where(a => a.Id == id)
             .ExecuteUpdateAsync(s => s.SetProperty(a => a.Width, width).SetProperty(a => a.Height, height), ct);
