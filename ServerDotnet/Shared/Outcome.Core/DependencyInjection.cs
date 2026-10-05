@@ -163,6 +163,8 @@ public static class DependencyInjection
         services.AddSingleton<IFileStorage, MinioFileStorage>();
         // Voice-message normalization (ffmpeg → m4a + waveform). Stateless singleton.
         services.AddSingleton<Media.VoiceTranscoder>();
+        // Call recordings: MediaRecorder's fragmented MP4 / duration-less WebM → a seekable file.
+        services.AddSingleton<Media.RecordingRemuxer>();
 
         return services;
     }

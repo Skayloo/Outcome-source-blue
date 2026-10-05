@@ -42,7 +42,8 @@ public static class RecordingEndpoints
         });
 
         app.MapPost("/api/v1/recordings/{upload:guid}/complete", async (Guid upload, CompleteBody body, HttpContext ctx,
-            ICurrentUser current, IFileStorage storage, ISender mediator, IFileUrlSigner fileUrls) =>
+            ICurrentUser current, IFileStorage storage, ISender mediator, IFileUrlSigner fileUrls,
+            Outcome.Infrastructure.Media.RecordingRemuxer remuxer) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             if (body.Parts is < 1 or > MaxParts) throw DomainException.BadRequest("bad part count");
@@ -63,14 +64,26 @@ public static class RecordingEndpoints
 
             var id = Guid.NewGuid().ToString();
             // Through a temp file: storage wants to know how long an object is, which the joined
-            // parts cannot say until they have all been read.
-            await using var joined = new ConcatStream(storage, keys);
-            await using (var temp = new FileStream(Path.GetTempFileName(), FileMode.Create, FileAccess.ReadWrite,
-                FileShare.None, 1 << 16, FileOptions.DeleteOnClose | FileOptions.Asynchronous))
+            // parts cannot say until they have all been read — and ffmpeg needs a file to remux.
+            long size;
+            var joinedPath = Path.GetTempFileName();
+            string? remuxed = null;
+            try
             {
-                await joined.CopyToAsync(temp, ctx.RequestAborted);
-                temp.Position = 0;
-                await storage.SaveAsync(id, temp, ctx.RequestAborted);
+                await using (var joined = new ConcatStream(storage, keys))
+                await using (var temp = new FileStream(joinedPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous))
+                    await joined.CopyToAsync(temp, ctx.RequestAborted);
+                // As recorded the file is fragmented with no duration; Firefox and the iPhone then
+                // run the slider out before the video ends. See RecordingRemuxer.
+                remuxed = await remuxer.RemuxAsync(joinedPath, mime, ctx.RequestAborted);
+                await using var stored = new FileStream(remuxed ?? joinedPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.Asynchronous);
+                size = stored.Length;
+                await storage.SaveAsync(id, stored, ctx.RequestAborted);
+            }
+            finally
+            {
+                File.Delete(joinedPath);
+                if (remuxed is not null) File.Delete(remuxed);
             }
             foreach (var k in keys) storage.Delete(k);
 
@@ -78,14 +91,14 @@ public static class RecordingEndpoints
             if (name.Length > 120) name = name[^120..];
             try
             {
-                await mediator.Send(new CreateAttachmentCommand(id, name, id, mime, joined.Total, null, null), ctx.RequestAborted);
+                await mediator.Send(new CreateAttachmentCommand(id, name, id, mime, size, null, null), ctx.RequestAborted);
             }
             catch
             {
                 storage.Delete(id);
                 throw;
             }
-            return Results.Json(new { id, filename = name, size = joined.Total, mime, url = fileUrls.Sign(id) });
+            return Results.Json(new { id, filename = name, size, mime, url = fileUrls.Sign(id) });
         });
     }
 
