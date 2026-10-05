@@ -456,6 +456,7 @@ export const ru: Record<string, string> = {
   "chat.deleteConfirm": "Оно пропадёт у всех в этом чате. Отменить это нельзя.",
   "chat.deleteConfirmFiles": "Оно пропадёт у всех в этом чате вместе с вложениями — и запись созвона тоже. Отменить это нельзя.",
   "chat.deletedMessage": "Удалённое сообщение",
+  "chat.quoteNotFound": "Не получилось перейти к сообщению — возможно, его удалили.",
   "chat.download": "Скачать",
   "chat.openOriginal": "Открыть оригинал",
   "chat.dropToUpload": "Отпустите, чтобы прикрепить к сообщению",

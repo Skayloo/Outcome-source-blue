@@ -1413,6 +1413,8 @@
 .msg-reply-ref .rr-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msg-reply-ref:hover .rr-text { color: var(--text-normal); }
 .msg-reply-ref .rr-deleted { font-style: italic; opacity: 0.6; }
+/* Paging back to a quote's source that was not loaded yet. */
+.msg-reply-ref.loading { cursor: progress; opacity: 0.6; }
 .msg-reply-ref:hover .rr-deleted { color: inherit; }
 .rr-avatar {
   width: 16px; height: 16px; border-radius: var(--radius-circle);

@@ -456,6 +456,7 @@ export const en: Record<string, string> = {
   "chat.deleteConfirm": "It disappears for everyone in this chat. This cannot be undone.",
   "chat.deleteConfirmFiles": "It disappears for everyone in this chat together with its files — a call recording too. This cannot be undone.",
   "chat.deletedMessage": "Deleted message",
+  "chat.quoteNotFound": "Could not get to that message — it may have been deleted.",
   "chat.download": "Download",
   "chat.openOriginal": "Open original",
   "chat.dropToUpload": "Release to attach it to your message",

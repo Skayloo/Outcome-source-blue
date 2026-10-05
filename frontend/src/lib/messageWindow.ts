@@ -22,3 +22,22 @@ export function windowAfterPrepend<T>(older: readonly T[], existing: readonly T[
     ? combined.slice(0, MAX_LOADED_PER_CHANNEL)
     : combined;
 }
+
+/** What a channel is cut back to once the reader is at its end again. */
+export const RECENT_PER_CHANNEL = 500;
+
+/**
+ * The window after a new message arrives at the bottom.
+ *
+ * Trims the OLDEST end, but only beyond the same ceiling as scrolling back. It used to cut back
+ * to 500 on every new message, so after scrolling — or jumping to a quoted reply — further back
+ * than that, the next line anybody wrote threw away the history being read, the reader's place
+ * with it. Cutting back to the recent 500 is the list's job now, done when the reader returns to
+ * the end (MessageList, trimToRecent).
+ */
+export function windowAfterAppend<T>(existing: readonly T[], added: T): T[] {
+  const combined = [...existing, added];
+  return combined.length > MAX_LOADED_PER_CHANNEL
+    ? combined.slice(combined.length - MAX_LOADED_PER_CHANNEL)
+    : combined;
+}

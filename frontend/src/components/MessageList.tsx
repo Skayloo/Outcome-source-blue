@@ -6,7 +6,8 @@ import { VoiceMessage } from "@components/VoiceMessage";
 import { EmojiPicker } from "@components/EmojiPicker";
 import { useStoreState } from "@lib/useStore";
 import { channelsStore } from "@stores/channels.store";
-import { messagesStore, getChannelMessages, isChannelLoaded, setMessages, prependMessages, hasMoreMessages, setMessagePinned, type Message } from "@stores/messages.store";
+import { messagesStore, getChannelMessages, isChannelLoaded, setMessages, prependMessages, hasMoreMessages, setMessagePinned, trimToRecent, type Message } from "@stores/messages.store";
+import { MAX_LOADED_PER_CHANNEL, RECENT_PER_CHANNEL } from "@lib/messageWindow";
 import { membersStore } from "@stores/members.store";
 import { authStore } from "@stores/auth.store";
 import { dmStore } from "@stores/dm.store";
@@ -121,34 +122,48 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   // conversation whole. prependMessages had been sitting in the store with no callers at all.
   const loadingOlderRef = useRef(false);
   const keepScrollRef = useRef<number | null>(null);
-  function loadOlder(el: HTMLElement): void {
-    if (channelId == null || loadingOlderRef.current || !hasMoreMessages(channelId)) return;
-    const current = getChannelMessages(channelId);
-    const oldest = current[0];
-    if (oldest === undefined) return;
-    loadingOlderRef.current = true;
-    // Remember the distance from the BOTTOM, not scrollTop: the content above is about to grow
-    // and every pixel of it would otherwise push the reader's place down the screen.
-    keepScrollRef.current = el.scrollHeight - el.scrollTop;
-    const id = channelId;
-    api.getMessages(id, { before: oldest.id, limit: 50 })
+  // The channel on screen NOW — a page that lands after a switch must not move the new chat.
+  const shownChannelRef = useRef(channelId);
+  shownChannelRef.current = channelId;
+  /** One page of older history, prepended; resolves to how many messages came. Shared by
+   *  scrolling up and by jumping to a quote. */
+  function fetchOlder(id: number, before: number, limit: number): Promise<number> {
+    return api.getMessages(id, { before, limit })
       .then((resp) => {
+        // Remember the distance from the BOTTOM, not scrollTop: the content above is about to
+        // grow and every pixel of it would otherwise push the reader's place down the screen.
+        // Taken as the page lands, not when it was asked for — the reader may have moved since.
+        const el = containerRef.current;
+        if (el !== null && shownChannelRef.current === id) keepScrollRef.current = el.scrollHeight - el.scrollTop;
         const msgs = resp.messages;
         prependMessages(id, msgs, resp.has_more);
         markListenedBulk(msgs.flatMap((m) => m.attachments.filter((a) => a.listened).map((a) => a.id)));
         markListenedByOthersBulk(msgs.flatMap((m) => m.attachments.filter((a) => a.listened_by_others).map((a) => a.id)));
-      })
+        return msgs.length;
+      });
+  }
+  function loadOlder(): void {
+    if (channelId == null || loadingOlderRef.current || !hasMoreMessages(channelId)) return;
+    if (Date.now() < jumpHoldRef.current) return;
+    const oldest = getChannelMessages(channelId)[0];
+    if (oldest === undefined) return;
+    loadingOlderRef.current = true;
+    fetchOlder(channelId, oldest.id, 50)
       .catch(() => { /* a failed page is not a broken channel; the next scroll tries again */ })
       .finally(() => { loadingOlderRef.current = false; });
   }
 
-  // Restore the reading position after older messages land above it.
+  // Restore the reading position after older messages land above it — and, once a jump to a
+  // quote has paged its source in, go there.
   useLayoutEffect(() => {
     const el = containerRef.current;
     const keep = keepScrollRef.current;
-    if (el === null || keep === null) return;
-    keepScrollRef.current = null;
-    el.scrollTop = el.scrollHeight - keep;
+    if (el !== null && keep !== null) {
+      keepScrollRef.current = null;
+      el.scrollTop = el.scrollHeight - keep;
+    }
+    const target = pendingJumpRef.current;
+    if (target !== null && showMessage(target)) pendingJumpRef.current = null;
   });
 
   const messages = channelId != null ? getChannelMessages(channelId) : [];
@@ -158,16 +173,70 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   // Telegram behaviour: clicking a quoted reply scrolls to its source and flashes it.
   const [flashId, setFlashId] = useState<number | null>(null);
+  // The quote being paged back to, and the message to show once it is in the DOM.
+  const [jumpingTo, setJumpingTo] = useState<number | null>(null);
+  const pendingJumpRef = useRef<number | null>(null);
+  // While the view glides to a jumped-to message, scrolling past the top must not page in more
+  // history: restoring the position for that page would stop the glide halfway.
+  const jumpHoldRef = useRef(0);
   // Forward: Telegram-style centered dialog with search over every chat.
   const [fwdFor, setFwdFor] = useState<Message | null>(null);
   // Clicking whoever wrote a line opens them — the same door the mobile app has.
   const [profile, setProfile] = useState<{ id: number; username: string; avatar: string | null } | null>(null);
-  function jumpToMessage(id: number): void {
-    const el = document.getElementById(`msg-${id}`);
-    if (!el) return; // source not loaded (deep history)
+  /** Scroll to a message that is on the page and flash it; false when it is not there. */
+  function showMessage(id: number): boolean {
+    const box = containerRef.current;
+    const el = box?.querySelector<HTMLElement>(`#msg-${id}`);
+    if (!box || !el) return false;
+    jumpHoldRef.current = Date.now() + 1500;
+    stickRef.current = false;
+    nearBottomRef.current = false;
     el.scrollIntoView({ behavior: "smooth", block: "center" });
     setFlashId(id);
     window.setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1700);
+    // Pictures above it that finish loading push it down; if that took it off the screen, put
+    // it back in the middle.
+    window.setTimeout(() => {
+      const b = box.getBoundingClientRect(), r = el.getBoundingClientRect();
+      if (el.isConnected && (r.bottom < b.top || r.top > b.bottom)) el.scrollIntoView({ block: "center" });
+    }, 900);
+    return true;
+  }
+  // The source of a quote older than the loaded history: page back to it, then show it. The
+  // click used to do nothing at all — the quote had been fetched on its own, so it was readable
+  // and looked clickable, but there was no row to scroll to. CONTIGUOUS pages, the same ones
+  // scrolling up fetches, so the window stays one unbroken run and scrolling down from the
+  // source leads back to the reply.
+  function jumpToMessage(id: number): void {
+    if (showMessage(id) || channelId == null || jumpingTo !== null) return;
+    const cid = channelId;
+    stickRef.current = false;
+    nearBottomRef.current = false;
+    jumpHoldRef.current = Number.MAX_SAFE_INTEGER; // until the source is shown (showMessage)
+    setJumpingTo(id);
+    void (async () => {
+      // A page already on its way from scrolling: let it land rather than race it.
+      while (loadingOlderRef.current) await new Promise((r) => window.setTimeout(r, 100));
+      loadingOlderRef.current = true;
+      try {
+        for (;;) {
+          const loaded = getChannelMessages(cid);
+          const oldest = loaded[0];
+          if (oldest === undefined || oldest.id <= id || !hasMoreMessages(cid)) break;
+          if (loaded.length >= MAX_LOADED_PER_CHANNEL) break;
+          if (await fetchOlder(cid, oldest.id, 100) === 0) break;
+          if (shownChannelRef.current !== cid) return;
+        }
+        if (getChannelMessages(cid).some((m) => m.id === id && !m.deleted)) pendingJumpRef.current = id;
+        else setTransientError(t("chat.quoteNotFound"));
+      } catch {
+        setTransientError(t("chat.quoteNotFound"));
+      } finally {
+        loadingOlderRef.current = false;
+        if (pendingJumpRef.current === null) jumpHoldRef.current = 0;
+        setJumpingTo(null);
+      }
+    })();
   }
   // "Text & Images" settings: inline previews for image URLs in message text.
   const showInlineMedia = loadPref("inlineMedia", true) && loadPref("showLinkPreviews", true);
@@ -197,6 +266,12 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
     lastChannelRef.current = channelId;
     if (channelSwitched) { stickRef.current = true; setShowJump(false); }
     if (channelSwitched || nearBottomRef.current) toBottom();
+    // Back at the end after reading far up (or jumping to an old quote): the history above can
+    // go, so a chat left open all day does not keep thousands of rows. Never mid-page or mid-jump.
+    if (channelId != null && stickRef.current && !loadingOlderRef.current && pendingJumpRef.current === null
+        && messages.length > RECENT_PER_CHANNEL) {
+      trimToRecent(channelId);
+    }
   }, [messages.length, channelId]);
 
   // Re-pin on every size change while glued. A picture finishing its download is a size
@@ -300,7 +375,7 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
         );
       }
       return (
-        <div className="msg-reply-ref" onClick={() => jumpToMessage(parent.id)}>
+        <div className={"msg-reply-ref" + (jumpingTo === parent.id ? " loading" : "")} onClick={() => jumpToMessage(parent.id)}>
           <span className="rr-author" style={{ color: colorFor(parent.user.id) }}>{parent.user.username}</span>
           <span className="rr-text">{messagePreview(parent)}</span>
         </div>
@@ -473,13 +548,17 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       onScroll={(e) => {
         const el = e.currentTarget;
         const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        setShowJump(fromBottom > 400);
+        // A jump to a quote pages in history while the view sits at the bottom, then glides up
+        // through it: neither is the reader coming back to the end, and re-pinning there would
+        // throw the view back down halfway.
+        if (Date.now() < jumpHoldRef.current) return;
         // Near the top → fetch the page above. 300 px of warning, so it arrives before the
         // reader hits the ceiling.
-        if (el.scrollTop < 300) loadOlder(el);
+        if (el.scrollTop < 300) loadOlder();
         nearBottomRef.current = fromBottom < 80;
         // Scrolling away is the reader taking over; nothing re-pins until they come back.
         stickRef.current = fromBottom < 80;
-        setShowJump(fromBottom > 400);
       }}
     >
       {loadError !== null ? (

@@ -6,7 +6,7 @@
 // The bug this guards against shipped and was found by a user: scrolling back in a busy DM
 // stopped at a date and went no further, while the iOS client showed the whole history.
 import assert from "node:assert/strict";
-import { windowAfterPrepend, MAX_LOADED_PER_CHANNEL } from "../src/lib/messageWindow.ts";
+import { windowAfterPrepend, windowAfterAppend, MAX_LOADED_PER_CHANNEL } from "../src/lib/messageWindow.ts";
 
 const ids = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
 
@@ -25,5 +25,17 @@ assert.notDeepEqual(out, existing, "prepending must change the window");
 const huge = windowAfterPrepend(ids(1, 100), ids(101, MAX_LOADED_PER_CHANNEL + 100));
 assert.equal(huge.length, MAX_LOADED_PER_CHANNEL);
 assert.equal(huge[0], 1, "what we scrolled into survives the trim");
+
+// A new message must not throw away history the reader went back for. The shape that broke: a
+// quoted reply jumped to 800 messages back, someone wrote a line, and the window snapped to the
+// newest 500 — the quoted message and the reader's place gone.
+const deep = ids(201, 1000);
+const appended = windowAfterAppend(deep, 1001);
+assert.equal(appended.length, 801, "an arriving message is added without trimming the history");
+assert.equal(appended[0], 201, "the oldest message read back to is still there");
+assert.equal(appended.at(-1), 1001);
+const full = windowAfterAppend(ids(1, MAX_LOADED_PER_CHANNEL), MAX_LOADED_PER_CHANNEL + 1);
+assert.equal(full.length, MAX_LOADED_PER_CHANNEL, "the ceiling still holds");
+assert.equal(full.at(-1), MAX_LOADED_PER_CHANNEL + 1, "and it trims the oldest end");
 
 console.log("message window ok");

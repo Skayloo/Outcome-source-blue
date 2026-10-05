@@ -5,7 +5,7 @@
  */
 
 import { createStore } from "@lib/store";
-import { windowAfterPrepend } from "@lib/messageWindow";
+import { windowAfterPrepend, windowAfterAppend, RECENT_PER_CHANNEL } from "@lib/messageWindow";
 import type {
   ChatMessagePayload,
   ChatEditedPayload,
@@ -91,7 +91,7 @@ export function messageResponseToMessage(response: MessageResponse): Message {
 }
 
 /** Maximum messages retained per channel from a FRESH load. Oldest are evicted when exceeded. */
-const MAX_MESSAGES_PER_CHANNEL = 500;
+const MAX_MESSAGES_PER_CHANNEL = RECENT_PER_CHANNEL;
 
 
 
@@ -122,16 +122,13 @@ export function addMessage(payload: ChatMessagePayload): void {
   messagesStore.setState((prev) => {
     const channelId = message.channelId;
     const existing = prev.messagesByChannel.get(channelId) ?? [];
-    let updatedMsgs = [...existing, message];
-    // Evict oldest messages if over the cap
-    if (updatedMsgs.length > MAX_MESSAGES_PER_CHANNEL) {
-      updatedMsgs = updatedMsgs.slice(updatedMsgs.length - MAX_MESSAGES_PER_CHANNEL);
-    }
+    // See messageWindow.ts: the history somebody went back for stays until they come back down.
+    const updatedMsgs = windowAfterAppend(existing, message);
     const updated = new Map(prev.messagesByChannel);
     updated.set(channelId, updatedMsgs);
     // If we evicted, there are now more messages on the server above
     const updatedHasMore = new Map(prev.hasMore);
-    if (existing.length + 1 > MAX_MESSAGES_PER_CHANNEL) {
+    if (updatedMsgs.length <= existing.length) {
       updatedHasMore.set(channelId, true);
     }
     return { ...prev, messagesByChannel: updated, hasMore: updatedHasMore };
@@ -193,6 +190,21 @@ export function prependMessages(
       messagesByChannel: updatedMessages,
       hasMore: updatedHasMore,
     };
+  });
+}
+
+/** Cut a channel back to its recent messages — called by the list once the reader is at the end
+ *  again, so a chat left open all day does not grow to thousands of rows. */
+export function trimToRecent(channelId: number): void {
+  const existing = messagesStore.getState().messagesByChannel.get(channelId);
+  if (existing === undefined || existing.length <= MAX_MESSAGES_PER_CHANNEL) return;
+  messagesStore.setState((prev) => {
+    const current = prev.messagesByChannel.get(channelId) ?? [];
+    const updated = new Map(prev.messagesByChannel);
+    updated.set(channelId, current.slice(Math.max(0, current.length - MAX_MESSAGES_PER_CHANNEL)));
+    const updatedHasMore = new Map(prev.hasMore);
+    updatedHasMore.set(channelId, true);
+    return { ...prev, messagesByChannel: updated, hasMore: updatedHasMore };
   });
 }
 
