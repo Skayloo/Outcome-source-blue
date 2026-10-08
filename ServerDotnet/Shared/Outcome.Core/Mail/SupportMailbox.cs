@@ -50,9 +50,38 @@ public sealed class SupportMailbox(IOptions<SupportMailOptions> options, ILogger
             throw DomainException.BadRequest("the support mailbox is not configured on this server");
     }
 
+    /// <summary>Give up on a silent server before the proxies in front of us give up on the
+    /// request — MailKit's own default is two minutes.</summary>
+    private const int TimeoutMs = 20_000;
+
+    /// <summary>
+    /// No ONLINE revocation check of the mail server's certificate (the chain and the host name
+    /// are still verified). MailKit asks for one by default, so .NET downloads Let's Encrypt's
+    /// CRL during the handshake — and from production's home network one of the two addresses
+    /// <c>*.c.lencr.org</c> resolves to (8.6.112.0) does not answer at all. Whenever the cached
+    /// CRL had run out and the resolver picked that one, the download hung, validation failed and
+    /// the panel's mailbox was a bare 500 (2026-10-07: the IMAP session sat 35 s after TLS without
+    /// ever logging in). This is our own server under a 90-day certificate; a revocation answer
+    /// we cannot reliably fetch protects nothing and only takes the inbox down.
+    /// </summary>
+    private static void Prepare(MailService client)
+    {
+        client.CheckCertificateRevocation = false;
+        client.Timeout = TimeoutMs;
+    }
+
+    /// <summary>What reaches the panel when the mail server cannot be talked to: a 503 that
+    /// says so, not an anonymous 500 that reads like our own bug.</summary>
+    private DomainException Unreachable(Exception e, string what)
+    {
+        log.LogWarning(e, "support mail: {What} failed", what);
+        return DomainException.Unavailable($"the mail server could not be reached ({what}): {e.Message}");
+    }
+
     private async Task<ImapClient> ConnectAsync(CancellationToken ct)
     {
         var client = new ImapClient();
+        Prepare(client);
         try
         {
             await client.ConnectAsync(_opt.Host, _opt.Port,
@@ -60,6 +89,11 @@ public sealed class SupportMailbox(IOptions<SupportMailOptions> options, ILogger
                             : MailKit.Security.SecureSocketOptions.StartTls, ct);
             await client.AuthenticateAsync(_opt.Username, _opt.Password, ct);
             return client;
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            client.Dispose();
+            throw Unreachable(e, "IMAP");
         }
         catch
         {
@@ -169,13 +203,21 @@ public sealed class SupportMailbox(IOptions<SupportMailOptions> options, ILogger
         reply.Body = new TextPart("plain") { Text = text };
 
         using var smtp = new SmtpClient();
+        Prepare(smtp);
         var host = string.IsNullOrWhiteSpace(_opt.SmtpHost) ? _opt.Host : _opt.SmtpHost;
-        await smtp.ConnectAsync(host, _opt.SmtpPort,
-            _opt.SmtpPort == 587 ? MailKit.Security.SecureSocketOptions.StartTls
-                                 : MailKit.Security.SecureSocketOptions.SslOnConnect, ct);
-        await smtp.AuthenticateAsync(_opt.Username, _opt.Password, ct);
-        await smtp.SendAsync(reply, ct);
-        await smtp.DisconnectAsync(true, ct);
+        try
+        {
+            await smtp.ConnectAsync(host, _opt.SmtpPort,
+                _opt.SmtpPort == 587 ? MailKit.Security.SecureSocketOptions.StartTls
+                                     : MailKit.Security.SecureSocketOptions.SslOnConnect, ct);
+            await smtp.AuthenticateAsync(_opt.Username, _opt.Password, ct);
+            await smtp.SendAsync(reply, ct);
+            await smtp.DisconnectAsync(true, ct);
+        }
+        catch (Exception e) when (e is not OperationCanceledException and not DomainException)
+        {
+            throw Unreachable(e, "SMTP");
+        }
 
         log.LogInformation("support mail: replied to {Address}", to.Address);
     }
