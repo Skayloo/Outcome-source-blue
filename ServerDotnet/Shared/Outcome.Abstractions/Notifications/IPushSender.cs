@@ -31,7 +31,10 @@ public sealed record PushMessage(
     string? ImageUrl = null,
     /// <summary>The icon of the message's files ("🎤", "📷", …), for a device that writes the
     /// body itself — the iOS extension that opens an encrypted caption puts it in front.</summary>
-    string? Icon = null);
+    string? Icon = null,
+    /// <summary>The server of a channel message (null for a DM): a tapped mention from a server
+    /// other than the one open in the app has to switch to it before the channel can open.</summary>
+    long? ServerId = null);
 
 /// <summary>
 /// An incoming call, on its way to a phone whose app is not running.

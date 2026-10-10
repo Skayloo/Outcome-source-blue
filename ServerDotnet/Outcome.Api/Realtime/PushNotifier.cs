@@ -165,7 +165,8 @@ public sealed partial class PushNotifier(
                 d.UserId,
                 // A preview the recipient asked not to see should not arrive as a picture either.
                 wantsText ? imageUrl : null,
-                wantsText ? attachment?.Icon : null);
+                wantsText ? attachment?.Icon : null,
+                dmParticipants is null ? serverId : null);
 
             var outcome = await push.SendAsync(new PushTarget(d.Token, d.Platform, d.Sandbox), message);
             if (outcome == PushOutcome.Gone) await devices.RemoveAsync(d.Token);

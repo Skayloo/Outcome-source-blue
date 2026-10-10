@@ -113,6 +113,7 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
         }
 
         if (message.Icon is { Length: > 0 } icon) payload["att_icon"] = icon;
+        if (message.ServerId is { } serverId) payload["server_id"] = serverId;
 
         var json = payload.ToJsonString();
         var (status, reason) = await PostAsync(sandbox ? SandboxHost : ProdHost, deviceToken, json, ct);

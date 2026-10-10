@@ -52,6 +52,7 @@ public sealed class RuStorePushSender : IPushSender, IDisposable
             ["channel_id"] = message.ChannelId.ToString(),
             ["user_id"] = message.RecipientId.ToString(),
         };
+        if (message.ServerId is { } serverId) data["server_id"] = serverId.ToString();
         if (message.ImageUrl is { Length: > 0 } image) data["image_url"] = image;
         var body = new JsonObject
         {
