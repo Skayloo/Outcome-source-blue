@@ -249,7 +249,7 @@ export const ru: Record<string, string> = {
   "admin.kick": "Кик",
   "admin.banned": "Забанен",
   "admin.noUsers": "Нет пользователей.",
-  "admin.searchUsers": "Поиск пользователей…",
+  "admin.searchUsers": "Поиск по имени или почте…",
   "admin.channelName": "Название канала",
   "admin.channelType": "Тип",
   "admin.text": "Текстовый",

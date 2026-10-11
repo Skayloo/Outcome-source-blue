@@ -33,14 +33,6 @@ public static class AdminEndpoints
             throw DomainException.Forbidden("administrator only");
     }
 
-    /// <summary>
-    /// Gate for operations that belong to whoever RUNS the instance rather than to a customer:
-    /// process-wide logs (every tenant's lines are in that ring), infrastructure health, the
-    /// instance settings, the bug queue. A space owner is a full administrator INSIDE their
-    /// space — the Administrator bit alone must not open these, or the tenancy boundary is
-    /// only a matter of which buttons the UI happens to render.
-    /// </summary>
-    /// <summary>Body of a reply from the support mailbox.</summary>
     /// <summary>Messages of one folder and what to do with them (flags / move / delete / empty).</summary>
     public sealed record MailUidsBody(string? Folder, uint[]? Uids, bool? Seen, bool? Flagged, string? To);
 
@@ -94,6 +86,13 @@ public static class AdminEndpoints
             Uid(form["draft_uid"]), keep, files);
     }
 
+    /// <summary>
+    /// Gate for operations that belong to whoever RUNS the instance rather than to a customer:
+    /// process-wide logs (every tenant's lines are in that ring), infrastructure health, the
+    /// instance settings, the bug queue. A space owner is a full administrator INSIDE their
+    /// space — the Administrator bit alone must not open these, or the tenancy boundary is
+    /// only a matter of which buttons the UI happens to render.
+    /// </summary>
     private static void RequireInstanceAdmin(ICurrentUser current, ICurrentSpace space)
     {
         RequireAdmin(current);

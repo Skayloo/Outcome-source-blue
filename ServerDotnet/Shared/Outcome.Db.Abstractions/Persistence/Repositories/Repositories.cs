@@ -106,7 +106,7 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
     public async Task<IReadOnlyList<AdminUserDto>> ListAdminUsersAsync(int limit = int.MaxValue, int offset = 0, string? search = null, CancellationToken ct = default) =>
         await AdminUsersQuery(search).OrderBy(u => u.Id)
             .Skip(offset).Take(limit)
-            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.RoleId, u.Status, u.Banned, u.CreatedAt))
+            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.RoleId, u.Status, u.Banned, u.CreatedAt, u.Email))
             .ToListAsync(ct);
 
     public Task<int> CountAdminUsersAsync(string? search = null, CancellationToken ct = default) =>
@@ -118,7 +118,11 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
     {
         var q = db.Users.AsNoTracking().Where(u => !u.Deleted);
         if (!string.IsNullOrWhiteSpace(search))
-            q = q.Where(u => EF.Functions.ILike(u.UserName!, $"%{search.Trim()}%"));
+        {
+            // By e-mail too: the console shows it, and it is often all a support request gives.
+            var like = $"%{search.Trim()}%";
+            q = q.Where(u => EF.Functions.ILike(u.UserName!, like) || (u.Email != null && EF.Functions.ILike(u.Email, like)));
+        }
         return q;
     }
 

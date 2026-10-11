@@ -898,6 +898,8 @@ export interface AdminUserResponse {
   readonly status: string;
   readonly banned: boolean;
   readonly created_at: string;
+  /** Null for an account that never gave one (a guest's placeholder author). */
+  readonly email?: string | null;
 }
 
 /** A single live-log line streamed from GET /api/v1/admin/logs/stream (SSE). */

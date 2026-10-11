@@ -171,7 +171,7 @@ export function SpaceConsole({ space, onBack, onChanged }: {
                   <td>
                     <div className="adm-cell-user">
                       <Avatar name={u.username} />
-                      <div><div className="adm-cell-main">{u.username}</div><div className="adm-cell-sub">ID {u.id}</div></div>
+                      <div><div className="adm-cell-main">{u.username}</div>{u.email && <div className="adm-cell-email">{u.email}</div>}<div className="adm-cell-sub">ID {u.id}</div></div>
                     </div>
                   </td>
                   <td>

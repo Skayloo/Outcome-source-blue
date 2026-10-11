@@ -1,7 +1,9 @@
 namespace Outcome.Application.Admin;
 
-/// <summary>Admin user-list row. Returned by <c>IUserRepository.ListAdminUsersAsync</c>.</summary>
-public sealed record AdminUserDto(long Id, string Username, long RoleId, string Status, bool Banned, DateTime CreatedAt);
+/// <summary>Admin user-list row. Returned by <c>IUserRepository.ListAdminUsersAsync</c>. Email is
+/// here because the console is where an administrator finds out who an account belongs to; only
+/// the space's Administrator reaches it (a per-server role never carries that bit).</summary>
+public sealed record AdminUserDto(long Id, string Username, long RoleId, string Status, bool Banned, DateTime CreatedAt, string? Email);
 
 /// <summary>An audit-log row joined with the actor's username, for the admin Audit Log view.</summary>
 public sealed record AuditEntryDto(

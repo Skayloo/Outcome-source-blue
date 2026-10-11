@@ -161,6 +161,9 @@
 .adm-cell-user { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .adm-cell-user .adm-cell-main { font-weight: 600; color: var(--header-primary); }
 .adm-cell-sub { font-size: 12px; color: var(--text-faint); }
+.adm-cell-user > div { min-width: 0; }
+/* Readable, not faint: it is what an administrator came to the list for. */
+.adm-cell-email { font-size: 13px; color: var(--text-normal); overflow-wrap: anywhere; user-select: text; }
 .adm-cell-actions { display: flex; align-items: center; justify-content: flex-end; gap: 4px; white-space: nowrap; }
 .adm-num { font-variant-numeric: tabular-nums; }
 

@@ -249,7 +249,7 @@ export const en: Record<string, string> = {
   "admin.kick": "Kick",
   "admin.banned": "Banned",
   "admin.noUsers": "No users.",
-  "admin.searchUsers": "Search users…",
+  "admin.searchUsers": "Search by name or email…",
   "admin.channelName": "Channel name",
   "admin.channelType": "Type",
   "admin.text": "Text",
