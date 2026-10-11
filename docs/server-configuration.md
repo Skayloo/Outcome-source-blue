@@ -127,6 +127,24 @@ whoever runs the instance; a space owner reading it would be reading someone els
 Everything in the mailbox is untrusted input. HTML-only mail is converted to text on the
 server and never rendered as markup, and bodies are capped at 100 000 characters.
 
+Replies go to the message's `Reply-To` when it has one, else to `From` — requests from the
+landing's contact form arrive from `no-reply` with the person in `Reply-To`.
+
+## Contact form
+
+The landing page's "Написать нам" form posts to `POST /api/v1/contact` (root space only), and
+the request is mailed — through `Email` above — to one fixed address. Nothing is stored.
+
+| Key | Default |
+| --- | --- |
+| `Contact:To` | *(empty ⇒ `SupportMail:From`, else `SupportMail:Username`)* |
+
+With no recipient, or no `Email:Host`, the form answers **503** and the page points to the
+e-mail address instead (without SMTP the sender would only log the request — a customer's
+message in the server log, answered "sent"). Three requests per client per 10 minutes, 30 an
+hour in all; a hidden honeypot field is answered "sent" and dropped. The person's own address
+only ever becomes the `Reply-To` — the recipient never comes from the request.
+
 ## Single sign-on
 
 Bound from `OAuth`. A provider turns on simply by having both halves of its credential —

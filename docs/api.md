@@ -98,6 +98,15 @@ everything else is absolute.
 | `DELETE` | `/api/v1/channels/{id}/pins/{messageId}` |
 | `POST` | `/api/v1/channels/{id}/pins/{messageId}` |
 
+### Contact
+
+| `POST` | `/api/v1/contact` |
+
+Anonymous, root space only: the landing's "Написать нам" form. JSON (`name`, `contact`,
+`company`, `message`, `consent`, `website` — the honeypot) → 204; a plain HTML form post →
+redirect to `/#contact-sent` (or `#contact-failed`, `#contact-later` on 429). Mailed to
+`Contact:To`, nothing stored — see `server-configuration.md`.
+
 ### Device
 
 | `POST` | `/api/v1/devices` |

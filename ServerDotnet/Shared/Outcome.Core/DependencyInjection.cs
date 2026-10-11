@@ -30,6 +30,7 @@ public static class DependencyInjection
         services.Configure<VoiceOptions>(config.GetSection("Voice"));
         services.Configure<EmailOptions>(config.GetSection("Email"));
         services.Configure<SupportMailOptions>(config.GetSection("SupportMail"));
+        services.Configure<ContactOptions>(config.GetSection("Contact"));
         services.Configure<OAuthOptions>(config.GetSection("OAuth"));
         services.Configure<MinioOptions>(config.GetSection("Minio"));
         services.Configure<ApnsOptions>(config.GetSection("Apns"));

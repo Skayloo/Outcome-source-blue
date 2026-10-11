@@ -179,7 +179,10 @@ public sealed class SupportMailbox(IOptions<SupportMailOptions> options, ILogger
         var original = await inbox.GetMessageAsync(new UniqueId(uid), ct)
             ?? throw DomainException.NotFound("message not found");
 
-        var to = original.From.Mailboxes.FirstOrDefault()
+        // Reply-To first: a request from the landing's form arrives FROM our own no-reply
+        // address, with the person who wrote it in Reply-To — answering From would mail ourselves.
+        var to = original.ReplyTo.Mailboxes.FirstOrDefault()
+            ?? original.From.Mailboxes.FirstOrDefault()
             ?? throw DomainException.BadRequest("the original message has no sender to answer");
 
         var fromAddress = string.IsNullOrWhiteSpace(_opt.From) ? _opt.Username : _opt.From;

@@ -15,7 +15,10 @@ namespace Outcome.Infrastructure.Notifications;
 /// </summary>
 public sealed class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSender> logger) : IEmailSender
 {
-    public async Task SendAsync(string to, string subject, string body, CancellationToken ct = default)
+    public Task SendAsync(string to, string subject, string body, CancellationToken ct = default)
+        => SendAsync(to, subject, body, null, ct);
+
+    public async Task SendAsync(string to, string subject, string body, string? replyTo, CancellationToken ct)
     {
         var o = options.Value;
 
@@ -35,6 +38,7 @@ public sealed class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<Smtp
             IsBodyHtml = false,
         };
         message.To.Add(to);
+        if (!string.IsNullOrWhiteSpace(replyTo)) message.ReplyToList.Add(replyTo);
 
         // System.Net.Mail does not write a Message-ID, and this relay's Postfix is configured
         // with always_add_missing_headers = no — so the message left without one. A message

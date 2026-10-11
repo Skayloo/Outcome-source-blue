@@ -267,6 +267,7 @@ api.MapFriendEndpoints();
 api.MapBugEndpoints();
 api.MapModerationEndpoints();
 api.MapGuestEndpoints();
+api.MapContactEndpoints();
 api.MapGifEndpoints();
 api.MapRecordingEndpoints();
 api.MapVoiceEndpoints();
