@@ -13,8 +13,8 @@
  */
 import { Logo } from "@components/Logo";
 
-const UPDATED = "5 August 2026";
-const CONTACT = "bikachi84@gmail.com";
+const UPDATED = "11 October 2026";
+const CONTACT = "admin@outcome.ru";
 
 /**
  * End-to-end encryption is a RED-edition feature. In blue — the public Docker images anyone

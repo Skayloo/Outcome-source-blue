@@ -295,7 +295,10 @@ services:
     # container. Handles the domain's mailboxes (IMAP) and the app's transactional mail
     # (SMTP submission). ClamAV stays off — it alone eats ~1.3 GB RAM; rspamd suffices.
     # Manage accounts/aliases with:  docker exec outcome-mailserver-1 setup email add ...
-    image: ghcr.io/docker-mailserver/docker-mailserver:15.0
+    # 16.0 = Debian 13 + Dovecot 2.4: a custom dovecot.cf in 2.3 syntax would not load (there is
+    # none here). Moved from 15.0.2 on 2026-10-11 after a rehearsal on a copy of the volumes:
+    # same mailboxes and paths, IMAP/SMTP logins, spoof protection, LMTP delivery, DKIM keys.
+    image: ghcr.io/docker-mailserver/docker-mailserver:16.0
     hostname: mail.${OUTCOME_DOMAIN}
     restart: unless-stopped
     <<: *logging

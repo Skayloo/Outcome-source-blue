@@ -2,7 +2,7 @@
 
 ## Reporting a vulnerability
 
-Mail **bikachi84@gmail.com**. Please do not open a public issue for a security bug — the
+Mail **admin@outcome.ru**. Please do not open a public issue for a security bug — the
 repository that carries the server source is private, but the deployment kit and the blue
 source are not, and an issue there is a disclosure.
 
