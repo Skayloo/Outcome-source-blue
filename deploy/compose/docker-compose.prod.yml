@@ -320,6 +320,11 @@ services:
       ENABLE_CLAMAV: 0
       ENABLE_FAIL2BAN: 0     # needs NET_ADMIN; edge exposure is small enough without it
       SPOOF_PROTECTION: 1    # authenticated users may only send as themselves
+      # Moving a message into Junk over IMAP teaches Rspamd "spam", out of Junk "not spam" —
+      # the admin panel's "Spam" / "Not spam" buttons are exactly such moves (2026-10-11).
+      RSPAMD_LEARN: 1
+      # 25 MB, what the big providers take; the stock 10 MB refused a contract with a scan.
+      POSTFIX_MESSAGE_SIZE_LIMIT: 26214400
       POSTMASTER_ADDRESS: admin@${OUTCOME_DOMAIN}
       # TLS: reuse the certificate Caddy obtains for mail.outcome.ru (caddy_2 label above);
       # DMS watches these files, so Caddy's renewals are picked up automatically.

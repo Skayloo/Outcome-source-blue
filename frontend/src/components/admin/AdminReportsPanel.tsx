@@ -10,7 +10,8 @@ import { authStore } from "@stores/auth.store";
 import { confirm, prompt } from "@components/ConfirmDialog";
 import { setTransientError, setTransientSuccess } from "@stores/ui.store";
 import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Avatar, Badge, Btn, Empty, IconBtn, RowMenu, Spacer, Toolbar, type Tone } from "@components/admin/kit";
 import { Pager } from "@components/BugReportModal";
 import type { MessageReportDto, ReportStatus } from "@lib/types";
 
@@ -123,72 +124,71 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  const tone = (st: ReportStatus): Tone =>
+    st === "open" ? "warning" : st === "resolved" ? "success" : st === "closed" ? "neutral" : "accent";
+
   return (
     <div className="settings-pane active">
-      <div className="admin-toolbar">
-        <Section title={t("admin.reports")} />
-        <span className="spacer" />
-        <button className="ac-btn" disabled={loading} onClick={() => load()}>
-          {loading ? t("admin.loading") : t("admin.refresh")}
-        </button>
-      </div>
+      <Toolbar>
+        <span className="adm-count">{t("admin.reportsTotal", { count: total })}</span>
+        <Spacer />
+        <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={loading} onClick={() => void load()} />
+      </Toolbar>
 
       {error && <Banner kind="error">{error}</Banner>}
 
       {reports.length === 0 && !loading ? (
-        <Banner kind="info">{t("admin.reportsEmpty")}</Banner>
+        <Empty icon="flag" title={t("admin.reportsEmpty")} text={t("admin.reportsEmptyText")} />
       ) : (
-        <div className="admin-bug-list">
+        <div className="adm-stack">
           {reports.map((r) => (
-            <div className="admin-bug-card" key={r.id}>
-              <div className="admin-bug-head">
-                <div className="admin-bug-meta">
-                  <span className={`bug-status bug-status-${r.status === "open" ? "new" : r.status === "resolved" || r.status === "closed" ? "fixed" : "in_progress"}`}>
-                    {statusLabel(r.status)}
-                  </span>
-                  <span className="admin-bug-reporter">
-                    {t("admin.reportedBy")} <b>{r.reporter_name}</b> · {t("admin.reportAuthor")} <b>{r.author_name}</b> · #{r.message_id}
-                  </span>
-                  <span className="admin-bug-date">{new Date(r.created_at).toLocaleString()}</span>
+            <article className={"adm-item" + (r.status === "open" ? " is-attention" : "")} key={r.id}>
+              <header className="adm-item-head">
+                <Avatar name={r.author_name} size={32} />
+                <div className="adm-item-who">
+                  <div><b>{r.author_name}</b> <span className="adm-cell-sub">#{r.message_id}</span></div>
+                  <div className="adm-cell-sub">
+                    {t("admin.reportedBy")} {r.reporter_name} · {new Date(r.created_at).toLocaleString()}
+                  </div>
                 </div>
-                <select
-                  className="bug-status-select"
-                  value={r.status}
-                  disabled={r.status === "closed"}
-                  title={r.status === "closed" ? t("admin.reportClosedHint") : undefined}
-                  onChange={(e) => setStatus(r.id, e.target.value as ReportStatus)}
-                >
-                  {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-                </select>
-                {/* A queue you cannot act on is a list of complaints. This is the acting — and
-                    once acted on, a report is done: the controls go with it. */}
-                {r.status !== "closed" && (
-                  <>
-                    <button className="btn-sm" onClick={() => dismissWithReply(r.id, r.reporter_id === meId)}>
-                      {t("admin.reportReply")}
-                    </button>
-                    <button className="btn-sm" onClick={() => act(r.id, "hide",
-                      t("admin.reportHideTitle"), t("admin.reportHideBody"), t("admin.reportHide"))}>
-                      {t("admin.reportHide")}
-                    </button>
-                    <button className="btn-danger-sm" onClick={() => act(r.id, "delete",
-                      t("admin.reportDeleteTitle"), t("admin.reportDeleteBody"), t("admin.reportDeleteMessage"))}>
-                      {t("admin.reportDeleteMessage")}
-                    </button>
-                  </>
-                )}
-              </div>
+                <Badge tone={tone(r.status)} dot>{statusLabel(r.status)}</Badge>
+              </header>
 
               {/* The snapshot — what the reporter actually saw. */}
-              <div className="admin-bug-desc" style={{ whiteSpace: "pre-wrap" }}>
+              <blockquote className="adm-quote">
                 {r.content.length > 0 ? r.content : <i>{t("admin.reportNoContent")}</i>}
-              </div>
+              </blockquote>
               {r.reason.length > 0 && (
-                <div className="setting-desc" style={{ marginTop: 6 }}>
-                  {t("admin.reportReason")}: {r.reason}
-                </div>
+                <div className="adm-cell-sub">{t("admin.reportReason")}: {r.reason}</div>
               )}
-            </div>
+
+              {/* A queue you cannot act on is a list of complaints. This is the acting — and
+                  once acted on, a report is done: the controls go with it. */}
+              {r.status !== "closed" && (
+                <footer className="adm-item-actions">
+                  <Btn kind="secondary" size="sm" icon="reply" onClick={() => dismissWithReply(r.id, r.reporter_id === meId)}>
+                    {t("admin.reportReply")}
+                  </Btn>
+                  <Btn kind="ghost" size="sm" icon="eye-off" onClick={() => act(r.id, "hide",
+                    t("admin.reportHideTitle"), t("admin.reportHideBody"), t("admin.reportHide"))}>
+                    {t("admin.reportHide")}
+                  </Btn>
+                  <Spacer />
+                  <select
+                    className="form-input adm-select-sm"
+                    value={r.status}
+                    aria-label={t("admin.status")}
+                    onChange={(e) => setStatus(r.id, e.target.value as ReportStatus)}
+                  >
+                    {STATUSES.map((st) => <option key={st} value={st}>{statusLabel(st)}</option>)}
+                  </select>
+                  <RowMenu items={[
+                    { label: t("admin.reportDeleteMessage"), icon: "trash-2", danger: true, onClick: () => act(r.id, "delete",
+                      t("admin.reportDeleteTitle"), t("admin.reportDeleteBody"), t("admin.reportDeleteMessage")) },
+                  ]} />
+                </footer>
+              )}
+            </article>
           ))}
           <Pager page={Math.min(page, pageCount)} pageCount={pageCount} onPage={setPage} />
         </div>

@@ -9,7 +9,8 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { api } from "@lib/services";
 import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Badge, Btn, Empty, SearchField, Spacer, Toolbar } from "@components/admin/kit";
 import { type AdminLogLine } from "@lib/types";
 
 /** Maximum number of log lines retained in memory. */
@@ -78,10 +79,6 @@ export function AdminLogsPanel() {
     setLevel(e.target.value);
   };
 
-  const onQueryChange = (e: ChangeEvent<HTMLInputElement>): void => {
-    setQuery(e.target.value);
-  };
-
   const togglePaused = (): void => {
     setPaused((prev) => !prev);
   };
@@ -99,46 +96,38 @@ export function AdminLogsPanel() {
 
   return (
     <div className="settings-pane active">
-      <div className="admin-toolbar">
-        <Section title={t("admin.serverLogs")} />
-        <select className="form-input" value={level} onChange={onLevelChange}>
+      <Toolbar>
+        <select className="form-input adm-select" value={level} onChange={onLevelChange} aria-label={t("admin.level")}>
           <option value="All">{t("admin.all")}</option>
           <option value="INFORMATION">INFORMATION</option>
           <option value="WARNING">WARNING</option>
           <option value="ERROR">ERROR</option>
         </select>
-        <input
-          className="form-input"
-          type="text"
-          placeholder={t("admin.searchLogs")}
-          value={query}
-          onChange={onQueryChange}
-        />
-        <span className="spacer" />
-        <button className="ac-btn" type="button" onClick={togglePaused}>
+        <SearchField value={query} onChange={(v) => setQuery(v)} placeholder={t("admin.searchLogs")} />
+        <Spacer />
+        {connected
+          ? <Badge tone={paused ? "warning" : "success"} dot>{paused ? t("admin.paused") : t("admin.live")}</Badge>
+          : <Badge tone="danger" dot>{lines.length === 0 ? t("admin.connecting") : t("admin.logsDisconnected")}</Badge>}
+        <Btn kind="secondary" size="sm" icon={paused ? "play" : "pause"} onClick={togglePaused}>
           {t(paused ? "admin.resume" : "admin.pause")}
-        </button>
-        <button className="ac-btn" type="button" onClick={clearLines}>
-          {t("admin.clear")}
-        </button>
-      </div>
+        </Btn>
+        <Btn kind="ghost" size="sm" icon="eraser" onClick={clearLines}>{t("admin.clear")}</Btn>
+      </Toolbar>
 
-      {!connected && (
-        <Banner kind="error">
-          {lines.length === 0 ? t("admin.connecting") : t("admin.logsDisconnected")}
-        </Banner>
+      {filtered.length === 0 ? (
+        <Empty icon="scroll-text" title={t("admin.logsEmpty")} />
+      ) : (
+        <div className="admin-logs adm-logs" ref={boxRef}>
+          {filtered.map((line, i) => (
+            <div className="admin-log-line" key={i}>
+              <span className="all-ts">{new Date(line.ts).toLocaleTimeString()}</span>
+              <span className={"all-lvl lvl-" + line.level}>{line.level}</span>
+              <span className="all-src">{line.source}</span>
+              {line.msg}
+            </div>
+          ))}
+        </div>
       )}
-
-      <div className="admin-logs" ref={boxRef}>
-        {filtered.map((line, i) => (
-          <div className="admin-log-line" key={i}>
-            <span className="all-ts">{new Date(line.ts).toLocaleTimeString()}</span>
-            <span className={"all-lvl lvl-" + line.level}>{line.level}</span>
-            <span className="all-src">{line.source}</span>
-            {line.msg}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

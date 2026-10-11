@@ -130,6 +130,12 @@ server and never rendered as markup, and bodies are capped at 100 000 characters
 Replies go to the message's `Reply-To` when it has one, else to `From` — requests from the
 landing's contact form arrive from `no-reply` with the person in `Reply-To`.
 
+Since 1.31.56 the panel is a whole mail client over this mailbox — Inbox, Sent, Drafts, Spam,
+Trash (found by their SPECIAL-USE flags, names as a fallback), search, flags, moving, deleting,
+writing with files (18 MB a letter) — see `docs/api.md`. Two things on the MAIL SERVER go with
+it, in `deploy/compose/docker-compose.prod.yml`: `RSPAMD_LEARN: 1` (moving into/out of Junk
+teaches Rspamd — the panel's "Spam" / "Not spam") and `POSTFIX_MESSAGE_SIZE_LIMIT: 26214400`.
+
 ## Contact form
 
 The landing page's "Написать нам" form posts to `POST /api/v1/contact` (root space only), and

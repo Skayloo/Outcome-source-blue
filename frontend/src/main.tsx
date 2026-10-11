@@ -13,6 +13,8 @@ import "@styles/panes.css";
 import "@styles/glass.css";
 import "@styles/motion.css";
 import "@styles/responsive.css";
+// Last: the admin console (/admin) restyles app.css classes under .admin-app only.
+import "@styles/admin.css";
 import { App } from "./App";
 import { prefetchDeepFilter } from "@lib/noise-suppression-dfn";
 import { loadPref } from "@components/settings/helpers";

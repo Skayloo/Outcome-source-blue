@@ -7,7 +7,9 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { confirm } from "@components/ConfirmDialog";
 import { api } from "@lib/services";
 import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Avatar, Btn, Empty, IconBtn, RowMenu, Spacer, Toolbar } from "@components/admin/kit";
+import { Icon } from "@lib/icons";
 import { Pager } from "@components/BugReportModal";
 import type { ChannelType } from "@lib/types";
 
@@ -86,79 +88,95 @@ export function AdminServersPanel() {
       .finally(() => setBusy(false));
   };
 
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   return (
     <div className="settings-pane active">
-      <div className="admin-toolbar">
-        <Section title={t("admin.servers")} />
-        <span className="spacer" />
-        <button className="ac-btn" disabled={busy || loading} onClick={() => load()}>{loading ? t("admin.loading") : t("admin.refresh")}</button>
-      </div>
+      <Toolbar>
+        <span className="adm-count">{t("admin.serversTotal", { count: total })}</span>
+        <Spacer />
+        <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={busy || loading} onClick={() => void load()} />
+      </Toolbar>
 
       {error && <Banner kind="error">{error}</Banner>}
 
       {servers.length === 0 && !loading ? (
-        <Banner kind="info">{t("admin.noServers")}</Banner>
+        <Empty icon="server" title={t("admin.noServers")} />
       ) : (
         <table className="admin-table">
           <thead>
             <tr>
-              <th>ID</th>
               <th>{t("admin.serverName")}</th>
-              <th>{t("admin.ownerId")}</th>
               <th>{t("admin.owner")}</th>
-              <th>{t("admin.actions")}</th>
+              <th />
             </tr>
           </thead>
           <tbody>
             {servers.map((s) => (
               <Fragment key={s.id}>
                 <tr>
-                  <td className="mono">{s.id}</td>
-                  <td>{s.name}</td>
-                  <td className="mono">{s.owner_id}</td>
                   <td>
-                    {s.owner_username ?? <i>{t("admin.ownerGone")}</i>}
-                    {s.owner_email && <div className="admin-sub mono">{s.owner_email}</div>}
+                    <div className="adm-cell-user">
+                      <Avatar name={s.name} />
+                      <div>
+                        <div className="adm-cell-main">{s.name}</div>
+                        <div className="adm-cell-sub">ID {s.id}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td className="admin-actions-cell">
-                    <button className={"ac-btn" + (openId === s.id ? " on" : "")} disabled={busy} onClick={() => openChannels(s.id)}>{t("admin.channels")}</button>
-                    <button className="ac-btn account-delete-btn" disabled={busy} onClick={() => deleteServer(s)}>{t("admin.delete")}</button>
+                  <td>
+                    {s.owner_username
+                      ? <><div>{s.owner_username}</div>{s.owner_email && <div className="adm-cell-sub">{s.owner_email}</div>}</>
+                      : <span className="adm-cell-sub">{t("admin.ownerGone")}</span>}
+                  </td>
+                  <td>
+                    <div className="adm-cell-actions">
+                      <Btn kind={openId === s.id ? "secondary" : "ghost"} size="sm" icon="hash" disabled={busy} onClick={() => openChannels(s.id)}>
+                        {t("admin.channels")}
+                      </Btn>
+                      <RowMenu items={[
+                        { label: t("admin.deleteServer"), icon: "trash-2", danger: true, disabled: busy, onClick: () => void deleteServer(s) },
+                      ]} />
+                    </div>
                   </td>
                 </tr>
                 {openId === s.id && (
-                  <tr className="admin-perms-row">
-                    <td colSpan={4}>
-                      <div className="admin-perms-title">{t("admin.channels")} — {s.name}</div>
-                      <div className="admin-toolbar">
-                        <input
-                          className="form-input"
-                          type="text"
-                          placeholder={t("admin.channelName")}
-                          value={newName}
-                          disabled={busy}
-                          onChange={(e) => setNewName(e.target.value)}
-                        />
-                        <select className="form-input" value={newType} disabled={busy} onChange={(e) => setNewType(e.target.value as ChannelType)}>
-                          <option value="text">{t("admin.text")}</option>
-                          <option value="voice">{t("admin.voice")}</option>
-                        </select>
-                        <button className="ac-btn" disabled={busy || newName.trim().length === 0} onClick={() => createChannel(s.id)}>
-                          {busy ? t("admin.working") : t("admin.createChannel")}
-                        </button>
+                  <tr className="adm-subrow">
+                    <td colSpan={3}>
+                      <div className="adm-subpanel">
+                        <div className="adm-subpanel-title">{t("admin.channelsOf", { name: s.name })}</div>
+                        <form className="adm-inline-form" onSubmit={(e) => { e.preventDefault(); createChannel(s.id); }}>
+                          <input
+                            className="form-input"
+                            type="text"
+                            placeholder={t("admin.channelName")}
+                            value={newName}
+                            disabled={busy}
+                            onChange={(e) => setNewName(e.target.value)}
+                          />
+                          <select className="form-input" value={newType} disabled={busy} onChange={(e) => setNewType(e.target.value as ChannelType)}>
+                            <option value="text">{t("admin.text")}</option>
+                            <option value="voice">{t("admin.voice")}</option>
+                          </select>
+                          <Btn type="submit" kind="secondary" size="sm" icon="plus" disabled={busy || newName.trim().length === 0}>
+                            {busy ? t("admin.working") : t("admin.createChannel")}
+                          </Btn>
+                        </form>
+                        {channels.length === 0 ? (
+                          <div className="adm-cell-sub">{t("admin.noChannels")}</div>
+                        ) : (
+                          <ul className="adm-chanlist">
+                            {channels.map((c) => (
+                              <li key={c.id}>
+                                <Icon name={c.type === "voice" ? "volume-2" : "hash"} size={15} />
+                                <span className="adm-chan-name">{c.name}</span>
+                                {c.category && <span className="adm-cell-sub">{c.category}</span>}
+                                <Spacer />
+                                <IconBtn icon="trash-2" label={t("admin.deleteChannel")} disabled={busy} onClick={() => void deleteChannel(c)} />
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </div>
-                      {channels.length === 0 ? (
-                        <div className="dm-empty">{t("admin.noChannels")}</div>
-                      ) : (
-                        <div className="admin-subchannels">
-                          {channels.map((c) => (
-                            <div className="admin-subchannel" key={c.id}>
-                              <span className="asc-name">{c.type === "voice" ? "🔊" : "#"} {c.name}</span>
-                              <span className="asc-cat">{c.category ?? ""}</span>
-                              <button className="ac-btn account-delete-btn" disabled={busy} onClick={() => deleteChannel(c)}>{t("admin.delete")}</button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
                     </td>
                   </tr>
                 )}
@@ -167,7 +185,7 @@ export function AdminServersPanel() {
           </tbody>
         </table>
       )}
-      <Pager page={Math.min(page, Math.max(1, Math.ceil(total / PAGE_SIZE)))} pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))} onPage={setPage} />
+      <Pager page={Math.min(page, pageCount)} pageCount={pageCount} onPage={setPage} />
     </div>
   );
 }

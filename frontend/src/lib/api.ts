@@ -9,9 +9,12 @@ import { createLogger } from "./logger";
 import { runtimeApiBase } from "./runtimeConfig";
 import { getActiveServerId } from "@stores/servers.store";
 import type {
-  SupportMailSummary,
-  SupportMailMessage,
   PublicUser,
+  MailFolder,
+  MailFolderId,
+  MailSummary,
+  MailMessage,
+  MailOutgoing,
   FriendsListResponse,
   AdminStatsResponse,
   ServiceHealthResponse,
@@ -837,17 +840,72 @@ export function createApiClient(
 
     /** Admin: the support mailbox. `configured` is false when the server has no mailbox set,
      *  which is not an error — the panel says so rather than showing a failure. */
-    adminListMail(limit: number, offset: number, signal?: AbortSignal):
-      Promise<{ configured: boolean; messages: SupportMailSummary[] }> {
-      return request("GET", `/admin/mail?limit=${limit}&offset=${offset}`, undefined, signal);
+    adminMailFolders(signal?: AbortSignal):
+      Promise<{ configured: boolean; address: string; folders: MailFolder[] }> {
+      return request("GET", "/admin/mail/folders", undefined, signal);
     },
 
-    adminGetMail(uid: number, signal?: AbortSignal): Promise<SupportMailMessage> {
-      return request("GET", `/admin/mail/${uid}`, undefined, signal);
+    adminListMail(folder: MailFolderId, limit: number, offset: number, q: string, signal?: AbortSignal):
+      Promise<{ configured: boolean; total: number; messages: MailSummary[] }> {
+      const query = q ? `&q=${encodeURIComponent(q)}` : "";
+      return request("GET", `/admin/mail?folder=${folder}&limit=${limit}&offset=${offset}${query}`, undefined, signal);
     },
 
-    adminReplyMail(uid: number, text: string, signal?: AbortSignal): Promise<void> {
-      return request<void>("POST", `/admin/mail/${uid}/reply`, { text }, signal);
+    adminGetMail(folder: MailFolderId, uid: number, signal?: AbortSignal): Promise<MailMessage> {
+      return request("GET", `/admin/mail/${uid}?folder=${folder}`, undefined, signal);
+    },
+
+    /** A file of a message, as a Blob — always downloaded, never opened on this origin. */
+    async adminMailAttachment(folder: MailFolderId, uid: number, index: number, signal?: AbortSignal): Promise<Blob> {
+      const h: Record<string, string> = {};
+      if (config.token) h["Authorization"] = `Bearer ${config.token}`;
+      const res = await platformFetch(`${baseUrl()}/admin/mail/${uid}/attachments/${index}?folder=${folder}`,
+        { method: "GET", headers: h, signal } as RequestInit);
+      if (!res.ok) {
+        const err = await parseError(res);
+        throw new ApiClientError(res.status, err.error, err.message);
+      }
+      return res.blob();
+    },
+
+    adminMailFlags(folder: MailFolderId, uids: readonly number[], flags: { seen?: boolean; flagged?: boolean }, signal?: AbortSignal): Promise<void> {
+      return request<void>("POST", "/admin/mail/flags", { folder, uids, ...flags }, signal);
+    },
+
+    adminMailMove(folder: MailFolderId, uids: readonly number[], to: MailFolderId, signal?: AbortSignal): Promise<void> {
+      return request<void>("POST", "/admin/mail/move", { folder, uids, to }, signal);
+    },
+
+    adminMailDelete(folder: MailFolderId, uids: readonly number[], signal?: AbortSignal): Promise<void> {
+      return request<void>("POST", "/admin/mail/delete", { folder, uids }, signal);
+    },
+
+    adminMailEmpty(folder: MailFolderId, signal?: AbortSignal): Promise<void> {
+      return request<void>("POST", "/admin/mail/empty", { folder }, signal);
+    },
+
+    /** Send, or keep as a draft (answers the draft's new uid). Multipart: the files ride along. */
+    async adminMailWrite(kind: "send" | "draft", m: MailOutgoing, signal?: AbortSignal): Promise<{ uid?: number } | undefined> {
+      const fd = new FormData();
+      fd.append("to", m.to);
+      fd.append("cc", m.cc);
+      fd.append("subject", m.subject);
+      fd.append("text", m.text);
+      if (m.reply_folder && m.reply_uid !== undefined) {
+        fd.append("reply_folder", m.reply_folder);
+        fd.append("reply_uid", String(m.reply_uid));
+      }
+      if (m.draft_uid !== undefined) fd.append("draft_uid", String(m.draft_uid));
+      if (m.keep.length > 0) fd.append("keep", JSON.stringify(m.keep));
+      for (const f of m.files) fd.append("files", f, f.name);
+      const h: Record<string, string> = {};
+      if (config.token) h["Authorization"] = `Bearer ${config.token}`;
+      const res = await platformFetch(`${baseUrl()}/admin/mail/${kind}`, { method: "POST", headers: h, body: fd, signal } as RequestInit);
+      if (!res.ok) {
+        const err = await parseError(res);
+        throw new ApiClientError(res.status, err.error, err.message);
+      }
+      return res.status === 204 ? undefined : ((await res.json()) as { uid?: number });
     },
 
     adminSetReportStatus(id: number, status: ReportStatus, signal?: AbortSignal): Promise<void> {

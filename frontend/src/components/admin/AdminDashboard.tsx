@@ -8,7 +8,9 @@
 import { useEffect, useState } from "react";
 import { api } from "@lib/services";
 import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Badge, IconBtn, Spacer, Spinner, Toolbar } from "@components/admin/kit";
+import { Icon, type IconName } from "@lib/icons";
 import type { AdminStatsResponse, ServiceHealthResponse } from "@lib/types";
 
 // ---------------------------------------------------------------------------
@@ -56,19 +58,20 @@ interface StatCard {
   readonly key: string;
   readonly value: string;
   readonly label: string;
+  readonly icon: IconName;
 }
 
 function buildCards(stats: AdminStatsResponse): readonly StatCard[] {
   return [
-    { key: "users", value: String(stats.user_count), label: t("admin.statUsers") },
-    { key: "messages", value: String(stats.message_count), label: t("admin.statMessages") },
-    { key: "channels", value: String(stats.channel_count), label: t("admin.statChannels") },
-    { key: "servers", value: String(stats.server_count), label: t("admin.statServers") },
-    { key: "invites", value: String(stats.invite_count), label: t("admin.statInvites") },
-    { key: "online", value: String(stats.online_count), label: t("admin.statOnline") },
-    { key: "db", value: humanBytes(stats.db_size_bytes), label: t("admin.statDbSize") },
-    { key: "uptime", value: humanDuration(stats.uptime_seconds), label: t("admin.statUptime") },
-    { key: "version", value: stats.version, label: t("admin.statVersion") },
+    { key: "users", icon: "users", value: String(stats.user_count), label: t("admin.statUsers") },
+    { key: "messages", icon: "message-circle", value: String(stats.message_count), label: t("admin.statMessages") },
+    { key: "channels", icon: "hash", value: String(stats.channel_count), label: t("admin.statChannels") },
+    { key: "servers", icon: "server", value: String(stats.server_count), label: t("admin.statServers") },
+    { key: "invites", icon: "user-plus", value: String(stats.invite_count), label: t("admin.statInvites") },
+    { key: "online", icon: "signal", value: String(stats.online_count), label: t("admin.statOnline") },
+    { key: "db", icon: "file-text", value: humanBytes(stats.db_size_bytes), label: t("admin.statDbSize") },
+    { key: "uptime", icon: "zap", value: humanDuration(stats.uptime_seconds), label: t("admin.statUptime") },
+    { key: "version", icon: "settings", value: stats.version, label: t("admin.statVersion") },
   ];
 }
 
@@ -108,32 +111,34 @@ export function AdminDashboard() {
 
   const cards = stats ? buildCards(stats) : [];
 
+  const allOk = health?.services.every((x) => x.ok) ?? true;
+
   return (
     <div className="settings-pane active">
-      <div className="admin-toolbar">
-        <Section title={t("admin.dashboard")} />
-        <span className="spacer" />
-        <button className="ac-btn" disabled={loading} onClick={() => load()}>
-          {loading ? t("admin.loading") : t("admin.refresh")}
-        </button>
-      </div>
+      <Toolbar>
+        {health && (
+          <Badge tone={allOk ? "success" : "danger"} dot>{allOk ? t("admin.allSystemsOk") : t("admin.someSystemsDown")}</Badge>
+        )}
+        <Spacer />
+        <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={loading} onClick={() => load()} />
+      </Toolbar>
 
       {error && <Banner kind="error">{error}</Banner>}
 
       {health && (
         <div className="admin-health">
           <div className="admin-health-node">
-            <span className="ahn-dot" data-ok={health.services.every((s) => s.ok)} />
+            <span className="ahn-dot" data-ok={allOk} />
             <span>{t("admin.thisNode")}: <code>{health.node.hostname}</code></span>
             <span className="ahn-meta">{health.node.online_here} {t("admin.socketsHere")}</span>
             {health.node.redis_backplane && <span className="ahn-badge">{t("admin.redisBackplane")}</span>}
           </div>
           <div className="admin-health-grid">
-            {health.services.map((s) => (
-              <div className={"admin-health-card" + (s.ok ? " ok" : " down")} key={s.name} title={s.error ?? ""}>
+            {health.services.map((x) => (
+              <div className={"admin-health-card" + (x.ok ? " ok" : " down")} key={x.name} title={x.error ?? ""}>
                 <span className="ahc-dot" />
-                <span className="ahc-name">{s.name}</span>
-                <span className="ahc-status">{s.ok ? (s.error ? s.error : `${t("admin.up")} · ${s.ms}ms`) : t("admin.down")}</span>
+                <span className="ahc-name">{x.name}</span>
+                <span className="ahc-status">{x.ok ? (x.error ? x.error : `${t("admin.up")} · ${x.ms}ms`) : t("admin.down")}</span>
               </div>
             ))}
           </div>
@@ -141,11 +146,12 @@ export function AdminDashboard() {
       )}
 
       {loading && !stats ? (
-        <Banner kind="info">{t("admin.loading")}</Banner>
+        <div className="adm-loading"><Spinner size={20} /></div>
       ) : stats ? (
         <div className="admin-stat-grid">
           {cards.map((card) => (
             <div className="admin-stat-card" key={card.key}>
+              <span className="asc-icon"><Icon name={card.icon} size={16} /></span>
               <div className="asc-value">{card.value}</div>
               <div className="asc-label">{card.label}</div>
             </div>

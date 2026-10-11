@@ -7,7 +7,8 @@
 import { useEffect, useState } from "react";
 import { api } from "@lib/services";
 import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Avatar, Badge, Btn, Empty, IconBtn, Spacer, Toolbar } from "@components/admin/kit";
 import { type AuditEntryResponse } from "@lib/types";
 
 const PAGE_SIZE = 50;
@@ -52,18 +53,15 @@ export function AdminAuditPanel() {
 
   return (
     <div className="settings-pane active">
-      <div className="admin-toolbar">
-        <Section title={t("admin.auditLog")} />
-        <span className="spacer" />
-        <button className="ac-btn" disabled={loading} onClick={() => load(0)}>
-          {loading ? t("admin.loading") : t("admin.refresh")}
-        </button>
-      </div>
+      <Toolbar>
+        <Spacer />
+        <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={loading} onClick={() => load(0)} />
+      </Toolbar>
 
       {error && <Banner kind="error">{error}</Banner>}
 
       {entries.length === 0 && !loading && !error ? (
-        <Banner kind="info">{t("admin.noAudit")}</Banner>
+        <Empty icon="file-text" title={t("admin.noAudit")} />
       ) : (
         <table className="admin-table">
           <thead>
@@ -78,12 +76,12 @@ export function AdminAuditPanel() {
           <tbody>
             {entries.map((entry) => (
               <tr key={entry.id}>
-                <td className="mono">{new Date(entry.created_at).toLocaleString()}</td>
-                <td>{entry.actor_name}</td>
-                <td>{entry.action}</td>
+                <td className="adm-cell-sub adm-nowrap">{new Date(entry.created_at).toLocaleString()}</td>
                 <td>
-                  {entry.target_type} #{entry.target_id}
+                  <div className="adm-cell-user"><Avatar name={entry.actor_name} size={24} /><span>{entry.actor_name}</span></div>
                 </td>
+                <td><Badge tone="accent">{entry.action}</Badge></td>
+                <td className="adm-cell-sub">{entry.target_type} #{entry.target_id}</td>
                 <td>{entry.detail}</td>
               </tr>
             ))}
@@ -92,9 +90,11 @@ export function AdminAuditPanel() {
       )}
 
       {hasMore && (
-        <button className="ac-btn" disabled={loading} onClick={() => load(offset)}>
-          {loading ? t("admin.loading") : t("admin.loadMore")}
-        </button>
+        <div className="adm-more">
+          <Btn kind="secondary" disabled={loading} onClick={() => load(offset)}>
+            {loading ? t("admin.loading") : t("admin.loadMore")}
+          </Btn>
+        </div>
       )}
     </div>
   );

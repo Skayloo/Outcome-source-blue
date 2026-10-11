@@ -11,7 +11,8 @@ import { useCallback, useEffect, useState } from "react";
 import { confirm } from "@components/ConfirmDialog";
 import { api } from "@lib/services";
 import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Avatar, Badge, Btn, Card, Empty, IconBtn, RowMenu, Spacer, Toolbar } from "@components/admin/kit";
 import { SpaceConsole } from "@components/admin/SpaceConsole";
 import type { AdminSpace } from "@lib/types";
 
@@ -30,6 +31,7 @@ export function AdminSpacesPanel() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [ownerPass, setOwnerPass] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const load = useCallback(async (signal?: AbortSignal): Promise<void> => {
     setLoading(true);
@@ -68,6 +70,7 @@ export function AdminSpacesPanel() {
     }), () => {
       setSlug(""); setName(""); setDomain("");
       setOwnerEmail(""); setOwnerName(""); setOwnerPass("");
+      setCreating(false);
       void load();
     });
   };
@@ -88,71 +91,105 @@ export function AdminSpacesPanel() {
 
   return (
     <div className="settings-pane active">
-      <div className="admin-toolbar">
-        <Section title={t("admin.spaces")} />
-        <span className="spacer" />
-        <button className="ac-btn" disabled={busy || loading} onClick={() => load()}>{loading ? t("admin.loading") : t("admin.refresh")}</button>
-      </div>
+      <Toolbar>
+        <span className="adm-count">{t("admin.spacesTotal", { count: spaces.length })}</span>
+        <Spacer />
+        <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={busy || loading} onClick={() => void load()} />
+        {!creating && <Btn kind="primary" icon="plus" onClick={() => setCreating(true)}>{t("admin.newSpace")}</Btn>}
+      </Toolbar>
 
       {error && <Banner kind="error">{error}</Banner>}
-      <Banner kind="info">{t("admin.spacesHint")}</Banner>
 
-      <div className="admin-toolbar">
-        <input className="form-input mono" type="text" placeholder="core_otc" value={slug} disabled={busy}
-               onChange={(e) => setSlug(e.target.value)} />
-        <input className="form-input" type="text" placeholder={t("admin.spaceName")} value={name} disabled={busy}
-               onChange={(e) => setName(e.target.value)} />
-        <input className="form-input mono" type="text" placeholder="coreotc.outcome.ru" value={domain} disabled={busy}
-               onChange={(e) => setDomain(e.target.value)} />
-      </div>
-      <div className="admin-toolbar">
-        <input className="form-input" type="email" placeholder={t("admin.ownerEmail")} value={ownerEmail} disabled={busy}
-               onChange={(e) => setOwnerEmail(e.target.value)} />
-        <input className="form-input" type="text" placeholder={t("admin.ownerUsername")} value={ownerName} disabled={busy}
-               onChange={(e) => setOwnerName(e.target.value)} />
-        <input className="form-input" type="password" placeholder={t("admin.ownerPassword")} value={ownerPass} disabled={busy}
-               autoComplete="new-password" onChange={(e) => setOwnerPass(e.target.value)} />
-        <button className="ac-btn" disabled={busy || !slug.trim() || !name.trim()} onClick={create}>
-          {busy ? t("admin.working") : t("admin.createSpace")}
-        </button>
-      </div>
+      {creating && (
+        <Card title={t("admin.newSpace")} desc={t("admin.spacesHint")}
+          actions={<IconBtn icon="x" label={t("admin.cancel")} onClick={() => setCreating(false)} />}>
+          <form className="adm-form-grid" onSubmit={(e) => { e.preventDefault(); create(); }}>
+            <label className="adm-field">
+              <span>{t("admin.spaceSlug")}</span>
+              <input className="form-input mono" type="text" placeholder="core_otc" value={slug} disabled={busy}
+                     onChange={(e) => setSlug(e.target.value)} />
+            </label>
+            <label className="adm-field">
+              <span>{t("admin.spaceName")}</span>
+              <input className="form-input" type="text" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} />
+            </label>
+            <label className="adm-field">
+              <span>{t("admin.domain")}</span>
+              <input className="form-input mono" type="text" placeholder="coreotc.outcome.ru" value={domain} disabled={busy}
+                     onChange={(e) => setDomain(e.target.value)} />
+            </label>
+            <label className="adm-field">
+              <span>{t("admin.ownerEmail")}</span>
+              <input className="form-input" type="email" value={ownerEmail} disabled={busy} onChange={(e) => setOwnerEmail(e.target.value)} />
+            </label>
+            <label className="adm-field">
+              <span>{t("admin.ownerUsername")}</span>
+              <input className="form-input" type="text" value={ownerName} disabled={busy} onChange={(e) => setOwnerName(e.target.value)} />
+            </label>
+            <label className="adm-field">
+              <span>{t("admin.ownerPassword")}</span>
+              <input className="form-input" type="password" value={ownerPass} disabled={busy}
+                     autoComplete="new-password" onChange={(e) => setOwnerPass(e.target.value)} />
+            </label>
+            <div className="adm-form-actions">
+              <Btn type="submit" kind="primary" icon="plus" disabled={busy || !slug.trim() || !name.trim()}>
+                {busy ? t("admin.working") : t("admin.createSpace")}
+              </Btn>
+            </div>
+          </form>
+        </Card>
+      )}
 
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>{t("admin.spaceSlug")}</th>
-            <th>{t("admin.serverName")}</th>
-            <th>{t("admin.domain")}</th>
-            <th>{t("admin.users")}</th>
-            <th>{t("admin.servers")}</th>
-            <th>{t("admin.actions")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {spaces.map((s) => (
-            <tr key={s.id} className={s.active ? undefined : "dimmed"}>
-              <td className="mono">{s.id}</td>
-              <td className="mono">{s.slug}</td>
-              <td>{s.name}</td>
-              <td className="mono">{s.domain ?? "—"}</td>
-              <td className="mono">{s.user_count}</td>
-              <td className="mono">{s.server_count}</td>
-              <td className="admin-actions-cell">
-                <button className="ac-btn" disabled={busy} onClick={() => setOpenId(s.id)}>{t("admin.manage")}</button>
-                {!s.is_root && (
-                  <>
-                    <button className="ac-btn" disabled={busy} onClick={() => toggleActive(s)}>
-                      {s.active ? t("admin.disable") : t("admin.enable")}
-                    </button>
-                    <button className="ac-btn account-delete-btn" disabled={busy} onClick={() => remove(s)}>{t("admin.delete")}</button>
-                  </>
-                )}
-              </td>
+      {spaces.length === 0 && !loading ? (
+        <Empty icon="globe" title={t("admin.noSpaces")} />
+      ) : (
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>{t("admin.spaceName")}</th>
+              <th>{t("admin.domain")}</th>
+              <th className="adm-num">{t("admin.users")}</th>
+              <th className="adm-num">{t("admin.servers")}</th>
+              <th>{t("admin.status")}</th>
+              <th />
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {spaces.map((s) => (
+              <tr key={s.id} className={s.active ? undefined : "dimmed"}>
+                <td>
+                  <div className="adm-cell-user">
+                    <Avatar name={s.name} />
+                    <div>
+                      <div className="adm-cell-main">{s.name}</div>
+                      <div className="adm-cell-sub mono">{s.slug}</div>
+                    </div>
+                  </div>
+                </td>
+                <td className="mono">{s.domain ?? "—"}</td>
+                <td className="adm-num">{s.user_count}</td>
+                <td className="adm-num">{s.server_count}</td>
+                <td>
+                  {s.is_root
+                    ? <Badge tone="accent">{t("admin.rootSpace")}</Badge>
+                    : s.active ? <Badge tone="success" dot>{t("admin.active")}</Badge> : <Badge dot>{t("admin.disabled")}</Badge>}
+                </td>
+                <td>
+                  <div className="adm-cell-actions">
+                    <Btn kind="ghost" size="sm" icon="settings" disabled={busy} onClick={() => setOpenId(s.id)}>{t("admin.manage")}</Btn>
+                    {!s.is_root && (
+                      <RowMenu items={[
+                        { label: s.active ? t("admin.disable") : t("admin.enable"), icon: "power", disabled: busy, onClick: () => toggleActive(s) },
+                        { label: t("admin.deleteSpace"), icon: "trash-2", danger: true, disabled: busy, onClick: () => void remove(s) },
+                      ]} />
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

@@ -7,7 +7,8 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@lib/services";
 import { assetUrl } from "@lib/serverHost";
 import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Avatar, Badge, Empty, IconBtn, Spacer, Toolbar, type Tone } from "@components/admin/kit";
 import { statusLabel, Pager, BUG_PAGE_SIZE } from "@components/BugReportModal";
 import type { BugReportDto, BugStatus } from "@lib/types";
 
@@ -55,66 +56,63 @@ export function AdminBugsPanel() {
   const cur = Math.min(page, pageCount);
   const pageItems = shown.slice((cur - 1) * BUG_PAGE_SIZE, cur * BUG_PAGE_SIZE);
 
+  const tone = (st: BugStatus): Tone => (st === "new" ? "warning" : st === "in_progress" ? "accent" : "success");
+
   return (
     <div className="settings-pane active">
-      <div className="admin-toolbar">
-        <Section title={t("admin.bugs")} />
-        <span className="spacer" />
-        <button className="ac-btn" disabled={loading} onClick={() => load()}>{loading ? t("admin.loading") : t("admin.refresh")}</button>
-      </div>
-
-      <div className="bug-filter">
-        <button className={"bug-filter-tab" + (filter === "all" ? " active" : "")} onClick={() => setFilter("all")}>
-          {t("admin.bugsAll")} <span className="bug-filter-count">{count("all")}</span>
-        </button>
-        {STATUSES.map((s) => (
-          <button key={s} className={"bug-filter-tab" + (filter === s ? " active" : "")} onClick={() => setFilter(s)}>
-            {statusLabel(s)} <span className="bug-filter-count">{count(s)}</span>
+      <Toolbar>
+        <div className="adm-segmented" role="tablist">
+          <button role="tab" aria-selected={filter === "all"} className={filter === "all" ? "is-active" : ""} onClick={() => setFilter("all")}>
+            {t("admin.bugsAll")} <span>{count("all")}</span>
           </button>
-        ))}
-      </div>
+          {STATUSES.map((st) => (
+            <button key={st} role="tab" aria-selected={filter === st} className={filter === st ? "is-active" : ""} onClick={() => setFilter(st)}>
+              {statusLabel(st)} <span>{count(st)}</span>
+            </button>
+          ))}
+        </div>
+        <Spacer />
+        <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={loading} onClick={() => void load()} />
+      </Toolbar>
 
       {error && <Banner kind="error">{error}</Banner>}
 
       {shown.length === 0 && !loading ? (
-        <Banner kind="info">{t("admin.bugsEmpty")}</Banner>
+        <Empty icon="bug" title={t("admin.bugsEmpty")} />
       ) : (
-        <div className="admin-bug-list">
+        <div className="adm-stack">
           {pageItems.map((b) => (
-            <div className="admin-bug-card" key={b.id}>
-              <div className="admin-bug-head">
-                <div className="admin-bug-meta">
-                  <span className={`bug-status bug-status-${b.status}`}>{statusLabel(b.status)}</span>
-                  <span className="admin-bug-reporter">
-                    {t("admin.bugsBy")} <b>{b.reporter_name}</b> · #{b.id}
-                  </span>
-                  <span className="admin-bug-date">{new Date(b.created_at).toLocaleString()}</span>
+            <article className={"adm-item" + (b.status === "new" ? " is-attention" : "")} key={b.id}>
+              <header className="adm-item-head">
+                <Avatar name={b.reporter_name} size={32} />
+                <div className="adm-item-who">
+                  <div><b>{b.reporter_name}</b> <span className="adm-cell-sub">#{b.id}</span></div>
+                  <div className="adm-cell-sub">{new Date(b.created_at).toLocaleString()}</div>
                 </div>
+                <Badge tone={tone(b.status)} dot>{statusLabel(b.status)}</Badge>
                 <select
-                  className="bug-status-select"
+                  className="form-input adm-select-sm"
                   value={b.status}
+                  aria-label={t("admin.status")}
                   onChange={(e) => changeStatus(b.id, e.target.value as BugStatus)}
                 >
-                  {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+                  {STATUSES.map((st) => <option key={st} value={st}>{statusLabel(st)}</option>)}
                 </select>
-              </div>
+              </header>
 
-              {b.title && <div className="admin-bug-title">{b.title}</div>}
-              <div className="admin-bug-desc">{b.description}</div>
+              {b.title && <div className="adm-item-title">{b.title}</div>}
+              <div className="adm-item-text">{b.description}</div>
 
               {b.attachments.length > 0 && (
-                <div className="admin-bug-shots">
-                  <div className="admin-bug-shots-label">{t("admin.bugsScreenshots")} ({b.attachments.length})</div>
-                  <div className="admin-bug-shots-grid">
-                    {b.attachments.map((url) => (
-                      <button className="admin-bug-shot" key={url} onClick={() => setLightbox(url)}>
-                        <img src={assetUrl(url)} alt="" loading="lazy" />
-                      </button>
-                    ))}
-                  </div>
+                <div className="adm-shots">
+                  {b.attachments.map((url) => (
+                    <button type="button" className="adm-shot" key={url} onClick={() => setLightbox(url)} aria-label={t("admin.bugsScreenshots")}>
+                      <img src={assetUrl(url)} alt="" loading="lazy" />
+                    </button>
+                  ))}
                 </div>
               )}
-            </div>
+            </article>
           ))}
           <Pager page={cur} pageCount={pageCount} onPage={setPage} />
         </div>

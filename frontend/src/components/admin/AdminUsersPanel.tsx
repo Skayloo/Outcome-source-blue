@@ -2,11 +2,12 @@
  * AdminUsersPanel — full member management: search, Ban/Unban, Kick, hard Delete,
  * per-user ROLE change, and direct PERMISSION grants (user_claims on top of the role).
  */
-import { Fragment, useCallback, useEffect, useState, type ChangeEvent } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { confirm } from "@components/ConfirmDialog";
 import { api } from "@lib/services";
-import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { getLocale, t } from "@lib/i18n";
+import { Banner } from "@components/settings/controls";
+import { Avatar, Badge, Btn, Empty, IconBtn, RowMenu, SearchField, Spacer, Toolbar } from "@components/admin/kit";
 import { Pager } from "@components/BugReportModal";
 import type { AdminUserResponse, RoleResponse } from "@lib/types";
 
@@ -106,14 +107,20 @@ export function AdminUsersPanel() {
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const roleName = (id: number): string => roles.find((r) => r.id === id)?.name ?? String(id);
 
+  const joined = (iso: string): string => {
+    const d = new Date(iso);
+    // The interface's language, not the browser's: "joined 1 окт." under English labels read as a bug.
+    return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(getLocale() === "ru" ? "ru-RU" : "en-GB", { day: "numeric", month: "short", year: "numeric" });
+  };
+
   return (
     <div className="settings-pane active">
-      <div className="admin-toolbar">
-        <Section title={t("admin.users")} />
-        <input className="form-input" type="text" placeholder={t("admin.searchUsers")} value={query} onChange={(e: ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)} />
-        <span className="spacer" />
-        <button className="ac-btn" disabled={busy || loading} onClick={() => loadUsers()}>{loading ? t("admin.loading") : t("admin.refresh")}</button>
-      </div>
+      <Toolbar>
+        <SearchField value={query} onChange={setQuery} placeholder={t("admin.searchUsers")} />
+        <span className="adm-count">{t("admin.usersTotal", { count: total })}</span>
+        <Spacer />
+        <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={busy || loading} onClick={() => void loadUsers()} />
+      </Toolbar>
       {/* Two role systems exist and this console edits only one of them; saying so costs a
           line and saves the hour spent wondering why an "admin" cannot moderate a server. */}
       <p className="admin-note">{t("admin.roleSpaceHint")}</p>
@@ -121,28 +128,32 @@ export function AdminUsersPanel() {
       {error && <Banner kind="error">{error}</Banner>}
 
       {users.length === 0 && !loading ? (
-        <Banner kind="info">{t("admin.noUsers")}</Banner>
+        <Empty icon="users" title={search ? t("admin.noUsersFound") : t("admin.noUsers")} />
       ) : (
         <table className="admin-table">
           <thead>
             <tr>
-              <th>ID</th>
               <th>{t("admin.username")}</th>
               <th>{t("admin.roleSpace")}</th>
               <th>{t("admin.status")}</th>
-              <th>{t("admin.actions")}</th>
+              <th />
             </tr>
           </thead>
           <tbody>
             {visible.map((u) => {
               const expanded = permsFor === u.id;
+              const online = u.status === "online";
               return (
               <Fragment key={u.id}>
                 <tr>
-                  <td className="mono">{u.id}</td>
                   <td>
-                    {u.username}
-                    {u.banned && <span className="admin-badge danger" style={{ marginLeft: 8 }}>{t("admin.banned")}</span>}
+                    <div className="adm-cell-user">
+                      <Avatar name={u.username} />
+                      <div>
+                        <div className="adm-cell-main">{u.username}</div>
+                        <div className="adm-cell-sub">ID {u.id}{u.created_at ? ` · ${t("admin.joined", { date: joined(u.created_at) })}` : ""}</div>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     <select
@@ -155,30 +166,42 @@ export function AdminUsersPanel() {
                       {!roles.some((r) => r.id === u.role_id) && <option value={u.role_id}>{roleName(u.role_id)}</option>}
                     </select>
                   </td>
-                  <td>{u.status}</td>
-                  <td className="admin-actions-cell">
+                  <td>
                     {u.banned
-                      ? <button className="ac-btn" disabled={busy} onClick={() => runAction(() => api.adminUnbanMember(u.id))}>{t("admin.unban")}</button>
-                      : <button className="ac-btn" disabled={busy} onClick={() => runAction(() => api.adminBanMember(u.id, ""))}>{t("admin.ban")}</button>}
-                    <button className="ac-btn" disabled={busy} onClick={() => runAction(() => api.adminKickMember(u.id), false)}>{t("admin.kick")}</button>
-                    <button className={"ac-btn" + (expanded ? " on" : "")} disabled={busy} onClick={() => togglePerms(u.id)}>{t("admin.permissions")}</button>
-                    <button className="ac-btn account-delete-btn" disabled={busy} onClick={() => deleteUser(u)}>{t("admin.delete")}</button>
+                      ? <Badge tone="danger" dot>{t("admin.banned")}</Badge>
+                      : <Badge tone={online ? "success" : "neutral"} dot>{online ? t("admin.online") : t("admin.offline")}</Badge>}
+                  </td>
+                  <td>
+                    <div className="adm-cell-actions">
+                      <Btn kind={expanded ? "secondary" : "ghost"} size="sm" icon="key" disabled={busy} onClick={() => togglePerms(u.id)}>
+                        {t("admin.permissions")}
+                      </Btn>
+                      <RowMenu items={[
+                        u.banned
+                          ? { label: t("admin.unban"), icon: "undo-2", disabled: busy, onClick: () => runAction(() => api.adminUnbanMember(u.id)) }
+                          : { label: t("admin.ban"), icon: "ban", disabled: busy, onClick: () => runAction(() => api.adminBanMember(u.id, "")) },
+                        { label: t("admin.kick"), icon: "log-out", disabled: busy, onClick: () => runAction(() => api.adminKickMember(u.id), false) },
+                        { label: t("admin.deleteUser"), icon: "user-x", danger: true, disabled: busy, onClick: () => void deleteUser(u) },
+                      ]} />
+                    </div>
                   </td>
                 </tr>
                 {expanded && (
-                  <tr className="admin-perms-row">
+                  <tr className="adm-subrow">
                     <td colSpan={4}>
-                      <div className="admin-perms-title">{t("admin.directPermissions")} — {u.username}</div>
-                      <div className="admin-perms-grid">
-                        {allPerms.map((p) => {
-                          const has = userPerms.includes(p);
-                          return (
-                            <label key={p} className={"admin-perm-chip" + (has ? " on" : "")}>
-                              <input type="checkbox" checked={has} disabled={busy} onChange={() => togglePerm(u.id, p, has)} />
-                              {p}
-                            </label>
-                          );
-                        })}
+                      <div className="adm-subpanel">
+                        <div className="adm-subpanel-title">{t("admin.directPermissions")} — {u.username}</div>
+                        <div className="admin-perms-grid">
+                          {allPerms.map((p) => {
+                            const has = userPerms.includes(p);
+                            return (
+                              <label key={p} className={"admin-perm-chip" + (has ? " on" : "")}>
+                                <input type="checkbox" checked={has} disabled={busy} onChange={() => togglePerm(u.id, p, has)} />
+                                {p}
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
                     </td>
                   </tr>

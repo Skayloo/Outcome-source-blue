@@ -8,7 +8,8 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
 import { api } from "@lib/services";
 import { t } from "@lib/i18n";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Badge, Btn, Card, Empty, Spinner } from "@components/admin/kit";
 import { Permission, type RoleResponse } from "@lib/types";
 
 // ---------------------------------------------------------------------------
@@ -183,142 +184,62 @@ export function RolesPanel() {
       .finally(() => setBusy(false));
   };
 
+  const pickable = /^#[0-9a-fA-F]{6}$/.test(draftColor) ? draftColor : DEFAULT_ROLE_COLOR;
+
   return (
     <div className="settings-pane active">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <Section title={t("admin.roles")} />
-        <button className="ac-btn" disabled={busy} onClick={createRole}>
-          {busy ? t("admin.working") : t("admin.newRole")}
-        </button>
-      </div>
-
       {error && <Banner kind="error">{error}</Banner>}
 
       {loading ? (
-        <Banner kind="info">{t("admin.loadingRoles")}</Banner>
+        <div className="adm-loading"><Spinner size={20} /></div>
       ) : roles.length === 0 ? (
-        <Banner kind="info">{t("admin.noRolesYet")}</Banner>
+        <Empty icon="shield" title={t("admin.noRolesYet")}>
+          <Btn kind="primary" icon="plus" disabled={busy} onClick={createRole}>{t("admin.newRole")}</Btn>
+        </Empty>
       ) : (
-        <div style={{ display: "flex", gap: 16, marginTop: 12, alignItems: "flex-start" }}>
-          {/* Role list */}
-          <div
-            style={{
-              flex: "0 0 200px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-              maxHeight: 420,
-              overflowY: "auto",
-            }}
-          >
-            {roles.map((role) => {
-              const active = role.id === selectedId;
-              return (
-                <button
-                  key={role.id}
-                  type="button"
-                  onClick={() => setSelectedId(role.id)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "8px 10px",
-                    borderRadius: 6,
-                    border: "1px solid var(--border)",
-                    background: active ? "var(--bg-active)" : "transparent",
-                    color: "var(--text-primary)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    font: "inherit",
-                  }}
-                >
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      flex: "0 0 12px",
-                      width: 12,
-                      height: 12,
-                      borderRadius: "50%",
-                      background: colorOf(role.color),
-                    }}
-                  />
-                  <span style={{ color: colorOf(role.color), fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {role.name}
-                  </span>
-                  {role.is_default && (
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-muted)" }}>{t("admin.defaultBadge")}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+        <div className="adm-split">
+          <aside className="adm-split-list">
+            {roles.map((role) => (
+              <button
+                key={role.id}
+                type="button"
+                className={"adm-list-item" + (role.id === selectedId ? " is-active" : "")}
+                onClick={() => setSelectedId(role.id)}
+              >
+                <span className="adm-role-dot" style={{ background: colorOf(role.color) }} aria-hidden="true" />
+                <span className="adm-list-item-name">{role.name}</span>
+                {role.is_default && <Badge>{t("admin.defaultBadge")}</Badge>}
+              </button>
+            ))}
+            <Btn kind="ghost" size="sm" icon="plus" disabled={busy} onClick={createRole}>{t("admin.newRole")}</Btn>
+          </aside>
 
-          {/* Editor */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="adm-split-main">
             {!selected ? (
-              <Banner kind="info">{t("admin.selectRoleToEdit")}</Banner>
+              <Empty icon="shield" title={t("admin.selectRoleToEdit")} />
             ) : (
-              <>
-                <div className="setting-row">
-                  <div className="setting-label">{t("admin.name")}</div>
-                </div>
-                <input
-                  className="form-input"
-                  type="text"
-                  placeholder={t("admin.roleNamePlaceholder")}
-                  value={draftName}
-                  onChange={onNameChange}
-                  style={{ marginBottom: 12 }}
-                />
-
-                <div className="setting-row">
-                  <div className="setting-label">{t("admin.color")}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      flex: "0 0 28px",
-                      width: 28,
-                      height: 28,
-                      borderRadius: 6,
-                      border: "1px solid var(--border)",
-                      background: draftColor,
-                    }}
-                  />
-                  <input
-                    type="color"
-                    aria-label={t("admin.pickRoleColor")}
-                    value={/^#[0-9a-fA-F]{6}$/.test(draftColor) ? draftColor : DEFAULT_ROLE_COLOR}
-                    onChange={onColorPickChange}
-                    style={{ width: 40, height: 32, padding: 0, border: "none", background: "transparent", cursor: "pointer" }}
-                  />
-                  <input
-                    className="form-input"
-                    type="text"
-                    placeholder="#99aab5"
-                    value={draftColor}
-                    onChange={onColorTextChange}
-                    style={{ maxWidth: 140 }}
-                  />
+              <Card>
+                <div className="adm-form-grid adm-form-grid--2">
+                  <label className="adm-field">
+                    <span>{t("admin.name")}</span>
+                    <input className="form-input" type="text" placeholder={t("admin.roleNamePlaceholder")} value={draftName} onChange={onNameChange} />
+                  </label>
+                  <div className="adm-field">
+                    <span>{t("admin.color")}</span>
+                    <div className="adm-color">
+                      <input type="color" aria-label={t("admin.pickRoleColor")} value={pickable} onChange={onColorPickChange} />
+                      <input className="form-input mono" type="text" placeholder="#99aab5" value={draftColor} onChange={onColorTextChange} />
+                      <span className="adm-role-preview" style={{ color: pickable }}>{draftName || "…"}</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="settings-section-title">{t("admin.permissions")}</div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))",
-                    gap: "6px 16px",
-                    margin: "8px 0 16px",
-                  }}
-                >
+                <div className="adm-section-label">{t("admin.permissions")}</div>
+                <div className="adm-perms">
                   {PERMISSION_ENTRIES.map((perm) => {
                     const checked = (draftPerms & perm.bit) !== 0;
                     return (
-                      <label
-                        key={perm.bit}
-                        style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: "var(--text-primary)" }}
-                      >
+                      <label key={perm.bit} className={"adm-perm" + (checked ? " is-on" : "")}>
                         <input type="checkbox" checked={checked} onChange={onPermChange(perm.bit)} />
                         <span>{perm.label}</span>
                       </label>
@@ -326,20 +247,17 @@ export function RolesPanel() {
                   })}
                 </div>
 
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="ac-btn" disabled={busy} onClick={saveRole}>
-                    {busy ? t("admin.saving") : t("admin.save")}
-                  </button>
-                  <button
-                    className="ac-btn account-delete-btn"
-                    disabled={busy || selected.is_default}
-                    title={selected.is_default ? t("admin.defaultRolesCannotDelete") : undefined}
-                    onClick={deleteRole}
-                  >
+                <div className="adm-form-actions">
+                  <Btn kind="danger" icon="trash-2" disabled={busy || selected.is_default}
+                    title={selected.is_default ? t("admin.defaultRolesCannotDelete") : undefined} onClick={deleteRole}>
                     {t("admin.delete")}
-                  </button>
+                  </Btn>
+                  <span className="adm-spacer" />
+                  <Btn kind="primary" icon="check" disabled={busy} onClick={saveRole}>
+                    {busy ? t("admin.saving") : t("admin.save")}
+                  </Btn>
                 </div>
-              </>
+              </Card>
             )}
           </div>
         </div>

@@ -48,6 +48,16 @@ everything else is absolute.
 | `DELETE` | `/channels/{id}/force` |
 | `GET` | `/health/services` |
 | `POST` | `/logs/ticket` |
+| `GET` | `/mail/folders` |
+| `GET` | `/mail?folder=&limit=&offset=&q=` |
+| `GET` | `/mail/{uid}?folder=` |
+| `GET` | `/mail/{uid}/attachments/{index}?folder=` |
+| `POST` | `/mail/flags` |
+| `POST` | `/mail/move` |
+| `POST` | `/mail/delete` |
+| `POST` | `/mail/empty` |
+| `POST` | `/mail/send` |
+| `POST` | `/mail/draft` |
 | `GET` | `/permissions` |
 | `GET` | `/servers` |
 | `DELETE` | `/servers/{id}` |
@@ -64,6 +74,18 @@ everything else is absolute.
 | `DELETE` | `/users/{id}/permissions/{permission}` |
 | `DELETE` | `/users/{id}/sessions` |
 | `POST` | `/users/{id}/unban` |
+
+The `/mail*` routes are the support mailbox's client (instance admin, root space only; System.Text.Json,
+snake_case). Folders are `inbox`, `sent`, `drafts`, `junk`, `trash` — the mail server's SPECIAL-USE
+folders. A message's `html` is already sanitised (no scripts, handlers, forms; cid: pictures
+inlined) and still meant for a sandboxed frame; `remote_images` says whether it points at
+anything outside. `flags` takes `{folder, uids, seen?, flagged?}`, `move` `{folder, uids, to}`
+(into/out of `junk` is what teaches the spam filter), `delete` moves to Trash and deletes for
+good from Trash, `empty` takes `trash` or `junk`. `send` and `draft` are multipart: `to`, `cc`,
+`subject`, `text`, `reply_folder` + `reply_uid` (threading, original marked answered),
+`draft_uid` (replaced / removed once sent), `keep` (JSON `[{folder, uid, index}]` — files of
+messages already in the mailbox) and `files`; up to 18 MB of files. Attachments always download
+(`application/octet-stream`, `nosniff`).
 
 ### Auth
 

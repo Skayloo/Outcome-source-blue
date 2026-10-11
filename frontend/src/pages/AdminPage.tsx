@@ -22,6 +22,9 @@ import { loadSpace, isRootSpace } from "@lib/space";
 import { AdminBugsPanel } from "@components/admin/AdminBugsPanel";
 import { AdminReportsPanel } from "@components/admin/AdminReportsPanel";
 import { AdminMailPanel } from "@components/admin/AdminMailPanel";
+import { MAIL_UNREAD_EVENT } from "@components/admin/mail/MailClient";
+import { Toast } from "@components/Toast";
+import { api } from "@lib/services";
 
 type Section =
   | "dashboard" | "logs" | "audit" | "users" | "servers" | "spaces" | "roles" | "invites" | "server" | "bugs" | "reports" | "mail";
@@ -36,7 +39,7 @@ interface NavGroup { title: () => string; items: NavItem[] }
 
 const NAV: NavGroup[] = [
   { title: () => t("admin.grpOverview"), items: [
-    { id: "dashboard", icon: "zap", label: () => t("admin.dashboard") },
+    { id: "dashboard", icon: "layout-dashboard", label: () => t("admin.dashboard") },
   ] },
   { title: () => t("admin.grpSystem"), items: [
     { id: "logs", icon: "scroll-text", label: () => t("admin.serverLogs") },
@@ -44,13 +47,13 @@ const NAV: NavGroup[] = [
   ] },
   { title: () => t("admin.grpManage"), items: [
     { id: "users", icon: "users", label: () => t("admin.users") },
-    { id: "servers", icon: "signal", label: () => t("admin.servers") },
+    { id: "servers", icon: "server", label: () => t("admin.servers") },
     { id: "spaces", icon: "globe", label: () => t("admin.spaces") },
     { id: "roles", icon: "shield", label: () => t("admin.roles") },
     { id: "invites", icon: "user-plus", label: () => t("admin.invites") },
     { id: "reports", icon: "flag", label: () => t("admin.reports") },
     { id: "bugs", icon: "bug", label: () => t("admin.bugs") },
-    { id: "mail", icon: "reply", label: () => t("admin.mail") },
+    { id: "mail", icon: "mail", label: () => t("admin.mail") },
   ] },
   { title: () => t("admin.grpSettings"), items: [
     { id: "server", icon: "settings", label: () => t("admin.serverSettings") },
@@ -72,11 +75,19 @@ const TITLES: Record<Section, () => string> = {
   reports: () => t("admin.reports"),
 };
 
-const SUBTITLES: Partial<Record<Section, () => string>> = {
+const SUBTITLES: Record<Section, () => string> = {
   dashboard: () => t("admin.dashboardSub"),
-  users: () => t("admin.usersSub"),
   logs: () => t("admin.serverLogsSub"),
+  audit: () => t("admin.auditLogSub"),
+  users: () => t("admin.usersSub"),
+  servers: () => t("admin.serversSub"),
+  spaces: () => t("admin.spacesSub"),
+  roles: () => t("admin.rolesSub"),
+  invites: () => t("admin.invitesSub"),
+  reports: () => t("admin.reportsSub"),
   bugs: () => t("admin.bugsSub"),
+  mail: () => t("admin.mailSub"),
+  server: () => t("admin.serverSettingsSub"),
 };
 
 /** Map the /admin[/section] path to the initial section. */
@@ -99,6 +110,24 @@ export function AdminPage() {
 
   const auth = useStoreState(authStore);
   const [section, setSection] = useState<Section>(sectionFromPath);
+
+  // Unread support mail on the sidebar, like a mail app's badge: asked once a minute, and told
+  // at once by the mail client whenever it changes the count itself.
+  const [mailUnread, setMailUnread] = useState(0);
+  useEffect(() => {
+    if (!isRoot) return;
+    const ask = (): void => {
+      if (document.hidden) return;
+      void api.adminMailFolders()
+        .then((r) => setMailUnread(r.folders.find((f) => f.id === "inbox")?.unread ?? 0))
+        .catch(() => { /* a badge is not worth an error */ });
+    };
+    ask();
+    const timer = window.setInterval(ask, 60_000);
+    const told = (e: Event): void => setMailUnread(Number((e as CustomEvent<number>).detail) || 0);
+    window.addEventListener(MAIL_UNREAD_EVENT, told);
+    return () => { window.clearInterval(timer); window.removeEventListener(MAIL_UNREAD_EVENT, told); };
+  }, [isRoot]);
 
   const go = (s: Section): void => {
     setSection(s);
@@ -129,6 +158,7 @@ export function AdminPage() {
                 >
                   <Icon name={it.icon} size={17} />
                   <span>{it.label()}</span>
+                  {it.id === "mail" && mailUnread > 0 && <span className="admin-nav-count">{mailUnread}</span>}
                 </button>
               ))}
             </div>
@@ -140,7 +170,7 @@ export function AdminPage() {
         <header className="admin-topbar">
           <div className="admin-topbar-title">
             <h1>{TITLES[section]()}</h1>
-            {SUBTITLES[section] && <p>{SUBTITLES[section]!()}</p>}
+            <p>{SUBTITLES[section]()}</p>
           </div>
           <div className="admin-topbar-right">
             <div className="admin-whoami">
@@ -154,7 +184,7 @@ export function AdminPage() {
         </header>
 
         <main className="admin-body">
-          <div className="admin-section">
+          <div className={"admin-section" + (section === "mail" ? " admin-section--full" : "")}>
             {section === "dashboard" && <AdminDashboard />}
             {section === "logs" && <AdminLogsPanel />}
             {section === "audit" && <AdminAuditPanel />}
@@ -170,6 +200,8 @@ export function AdminPage() {
           </div>
         </main>
       </div>
+      {/* The console's own toasts: the app's are mounted by MainPage, which /admin is not. */}
+      <Toast />
     </div>
   );
 }

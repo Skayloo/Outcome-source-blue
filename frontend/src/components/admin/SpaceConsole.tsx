@@ -6,8 +6,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@lib/services";
 import { t } from "@lib/i18n";
-import { Icon } from "@lib/icons";
 import { Banner } from "@components/settings/controls";
+import { Avatar, Badge, Btn, Card, Empty } from "@components/admin/kit";
 import type { AdminSpace, AdminUserResponse, SpaceServer, SpaceSso } from "@lib/types";
 
 function errMsg(e: unknown, f: string): string { return e instanceof Error ? e.message : f; }
@@ -86,9 +86,12 @@ export function SpaceConsole({ space, onBack, onChanged }: {
     }));
   };
 
-  const ssoField = (key: keyof SpaceSso, placeholder: string, type = "text") => (
-    <input className="form-input mono" type={type} placeholder={placeholder} value={sso[key]} disabled={busy}
-           onChange={(e) => setSso((prev) => ({ ...prev, [key]: e.target.value }))} />
+  const ssoField = (key: keyof SpaceSso, label: string, placeholder: string, type = "text") => (
+    <label className="adm-field">
+      <span>{label}</span>
+      <input className="form-input mono" type={type} placeholder={placeholder} value={sso[key]} disabled={busy}
+             onChange={(e) => setSso((prev) => ({ ...prev, [key]: e.target.value }))} />
+    </label>
   );
 
   const TABS: { id: Tab; label: string }[] = [
@@ -98,65 +101,83 @@ export function SpaceConsole({ space, onBack, onChanged }: {
     { id: "sso", label: "SSO" },
   ];
 
+  const logo = icon
+    ? <img className="space-logo-preview" src={icon} alt="" />
+    : <span className="space-logo-preview empty">{name.slice(0, 1).toUpperCase()}</span>;
+
   return (
     <div className="settings-pane active space-console">
-      <div className="admin-toolbar">
-        <button className="ac-btn" onClick={onBack}><Icon name="arrow-right" size={15} /> {t("admin.allSpaces")}</button>
-        <span className="space-console-title">
-          {icon ? <img className="space-logo-preview" src={icon} alt="" /> : <span className="space-logo-preview empty">{name.slice(0, 1).toUpperCase()}</span>}
-          <b>{name}</b>
-          <span className="mono dimmed">{space.slug} · {space.db_name}</span>
-        </span>
-        <span className="spacer" />
-        {saved && <span className="dimmed">{t("admin.saved")}</span>}
+      <div className="adm-console-head">
+        <Btn kind="ghost" size="sm" icon="arrow-left" onClick={onBack}>{t("admin.allSpaces")}</Btn>
+        <div className="adm-console-title">
+          {logo}
+          <div>
+            <div className="adm-cell-main">{name}</div>
+            <div className="adm-cell-sub mono">{space.slug} · {space.db_name}</div>
+          </div>
+          {space.is_root && <Badge tone="accent">{t("admin.rootSpace")}</Badge>}
+        </div>
+        {saved && <Badge tone="success">{t("admin.saved")}</Badge>}
       </div>
 
       {error && <Banner kind="error">{error}</Banner>}
 
-      <div className="admin-toolbar space-console-tabs">
+      <div className="adm-tabs" role="tablist">
         {TABS.map((x) => (
-          <button key={x.id} className={"ac-btn" + (tab === x.id ? " on" : "")} onClick={() => setTab(x.id)}>{x.label}</button>
+          <button key={x.id} role="tab" aria-selected={tab === x.id} className={"adm-tab" + (tab === x.id ? " is-active" : "")} onClick={() => setTab(x.id)}>
+            {x.label}
+          </button>
         ))}
       </div>
 
       {tab === "brand" && (
         <>
-          <div className="admin-perms-title">{t("admin.loginBranding")}</div>
-          <div className="admin-toolbar">
-            {icon ? <img className="space-logo-preview" src={icon} alt="" />
-                  : <span className="space-logo-preview empty">{name.slice(0, 1).toUpperCase()}</span>}
-            <input className="form-input" type="text" placeholder={t("admin.spaceName")} value={name} disabled={busy}
-                   onChange={(e) => setName(e.target.value)} />
-            <label className="ac-btn">
-              {t("admin.uploadLogo")}
-              <input type="file" accept="image/*" hidden disabled={busy}
-                     onChange={(e) => { pickLogo(e.target.files?.[0]); e.target.value = ""; }} />
-            </label>
-            {icon && <button className="ac-btn" disabled={busy} onClick={() => setIcon("")}>{t("admin.clearLogo")}</button>}
-            <button className="ac-btn" disabled={busy || !name.trim()} onClick={saveBrand}>
-              {busy ? t("admin.working") : t("admin.save")}
-            </button>
-          </div>
-
-          <div className="admin-perms-title">{t("admin.domain")}</div>
-          <div className="admin-toolbar">
-            <input className="form-input mono" type="text" placeholder="coreotc.outcome.ru" value={domain} disabled={busy}
-                   onChange={(e) => setDomain(e.target.value)} />
-            <button className="ac-btn" disabled={busy} onClick={saveDomain}>{t("admin.save")}</button>
-          </div>
+          <Card title={t("admin.loginBranding")}>
+            <div className="adm-brand-row">
+              {logo}
+              <label className="adm-field adm-field--grow">
+                <span>{t("admin.spaceName")}</span>
+                <input className="form-input" type="text" value={name} disabled={busy} onChange={(e) => setName(e.target.value)} />
+              </label>
+            </div>
+            <div className="adm-form-actions">
+              <label className="adm-btn adm-btn--secondary adm-btn--sm">
+                {t("admin.uploadLogo")}
+                <input type="file" accept="image/*" hidden disabled={busy}
+                       onChange={(e) => { pickLogo(e.target.files?.[0]); e.target.value = ""; }} />
+              </label>
+              {icon && <Btn kind="ghost" size="sm" disabled={busy} onClick={() => setIcon("")}>{t("admin.clearLogo")}</Btn>}
+              <span className="adm-spacer" />
+              <Btn kind="primary" disabled={busy || !name.trim()} onClick={saveBrand}>{busy ? t("admin.working") : t("admin.save")}</Btn>
+            </div>
+          </Card>
+          <Card title={t("admin.domain")} desc={t("admin.domainHint")}>
+            <form className="adm-inline-form" onSubmit={(e) => { e.preventDefault(); saveDomain(); }}>
+              <input className="form-input mono" type="text" placeholder="coreotc.outcome.ru" value={domain} disabled={busy}
+                     onChange={(e) => setDomain(e.target.value)} />
+              <Btn type="submit" kind="secondary" disabled={busy}>{t("admin.save")}</Btn>
+            </form>
+          </Card>
         </>
       )}
 
       {tab === "users" && (
-        users.length === 0 ? <Banner kind="info">{t("admin.noMembers")}</Banner> : (
+        users.length === 0 ? <Empty icon="users" title={t("admin.noMembers")} /> : (
           <table className="admin-table">
-            <thead><tr><th>ID</th><th>{t("admin.username")}</th><th>{t("admin.status")}</th><th>{t("admin.role")}</th></tr></thead>
+            <thead><tr><th>{t("admin.username")}</th><th>{t("admin.status")}</th><th>{t("admin.role")}</th></tr></thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id}>
-                  <td className="mono">{u.id}</td>
-                  <td>{u.username}</td>
-                  <td>{u.banned ? t("admin.banned") : u.status}</td>
+                  <td>
+                    <div className="adm-cell-user">
+                      <Avatar name={u.username} />
+                      <div><div className="adm-cell-main">{u.username}</div><div className="adm-cell-sub">ID {u.id}</div></div>
+                    </div>
+                  </td>
+                  <td>
+                    {u.banned ? <Badge tone="danger" dot>{t("admin.banned")}</Badge>
+                      : <Badge tone={u.status === "online" ? "success" : "neutral"} dot>{u.status === "online" ? t("admin.online") : t("admin.offline")}</Badge>}
+                  </td>
                   <td className="mono">{u.role_id}</td>
                 </tr>
               ))}
@@ -166,14 +187,18 @@ export function SpaceConsole({ space, onBack, onChanged }: {
       )}
 
       {tab === "servers" && (
-        servers.length === 0 ? <Banner kind="info">{t("admin.noServers")}</Banner> : (
+        servers.length === 0 ? <Empty icon="server" title={t("admin.noServers")} /> : (
           <table className="admin-table">
-            <thead><tr><th>ID</th><th>{t("admin.serverName")}</th><th>{t("admin.ownerId")}</th></tr></thead>
+            <thead><tr><th>{t("admin.serverName")}</th><th>{t("admin.ownerId")}</th></tr></thead>
             <tbody>
               {servers.map((sv) => (
                 <tr key={sv.id}>
-                  <td className="mono">{sv.id}</td>
-                  <td>{sv.name}</td>
+                  <td>
+                    <div className="adm-cell-user">
+                      <Avatar name={sv.name} />
+                      <div><div className="adm-cell-main">{sv.name}</div><div className="adm-cell-sub">ID {sv.id}</div></div>
+                    </div>
+                  </td>
                   <td className="mono">{sv.owner_id}</td>
                 </tr>
               ))}
@@ -183,29 +208,25 @@ export function SpaceConsole({ space, onBack, onChanged }: {
       )}
 
       {tab === "sso" && (
-        <>
-          <div className="admin-perms-title">Google</div>
-          <div className="admin-toolbar">
-            {ssoField("google_client_id", "client id")}
-            {ssoField("google_client_secret", "client secret", "password")}
-          </div>
-          <div className="admin-perms-title">Yandex</div>
-          <div className="admin-toolbar">
-            {ssoField("yandex_client_id", "client id")}
-            {ssoField("yandex_client_secret", "client secret", "password")}
-          </div>
-          <div className="admin-perms-title">{t("admin.ssoDomains")}</div>
-          <div className="admin-toolbar">
-            {ssoField("email_domains", "w3g.group")}
-            <button className="ac-btn" disabled={busy} onClick={saveSso}>{busy ? t("admin.working") : t("admin.save")}</button>
+        <Card title={t("admin.ssoTitle")} desc={t("admin.ssoDesc")}>
+          <div className="adm-form-grid">
+            {ssoField("google_client_id", "Google · client id", "client id")}
+            {ssoField("google_client_secret", "Google · client secret", "client secret", "password")}
+            {ssoField("yandex_client_id", "Yandex · client id", "client id")}
+            {ssoField("yandex_client_secret", "Yandex · client secret", "client secret", "password")}
+            {ssoField("email_domains", t("admin.ssoDomains"), "w3g.group")}
           </div>
           {sso.callback_base && (
-            <Banner kind="info">
+            <p className="admin-note">
               {t("admin.ssoCallbackHint")}<br />
               <span className="mono">{sso.callback_base}/api/v1/auth/oauth/google/callback</span>
-            </Banner>
+            </p>
           )}
-        </>
+          <div className="adm-form-actions">
+            <span className="adm-spacer" />
+            <Btn kind="primary" disabled={busy} onClick={saveSso}>{busy ? t("admin.working") : t("admin.save")}</Btn>
+          </div>
+        </Card>
       )}
     </div>
   );

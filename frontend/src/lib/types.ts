@@ -33,27 +33,75 @@ export type WsErrorCode =
   | "VOICE_ERROR"
   | "VIDEO_LIMIT";
 
-/** One message in the support mailbox, as the list shows it. */
-export interface SupportMailSummary {
+/** The support mailbox's folders, by the server's ids (SPECIAL-USE on the mail server). */
+export type MailFolderId = "inbox" | "sent" | "drafts" | "junk" | "trash";
+
+export interface MailFolder {
+  readonly id: MailFolderId;
+  readonly total: number;
+  readonly unread: number;
+}
+
+/** One message in a folder's list (snake_case, as the server sends it). */
+export interface MailSummary {
   readonly uid: number;
   readonly from: string;
-  readonly fromName: string;
+  readonly from_name: string;
+  readonly to: readonly string[];
   readonly subject: string;
   readonly date: string;
   readonly seen: boolean;
+  readonly flagged: boolean;
+  readonly answered: boolean;
+  readonly has_attachments: boolean;
   readonly preview: string;
 }
 
-/** A support message, opened. `body` is always TEXT — an HTML-only mail was converted
- *  server-side, because this arrives from strangers and is shown to an administrator. */
-export interface SupportMailMessage {
+export interface MailAttachment {
+  readonly index: number;
+  readonly file_name: string;
+  readonly mime: string;
+  readonly size: number;
+}
+
+/** A message, opened. `html` is already SANITISED by the server and still has to be shown in a
+ *  sandboxed frame; `text` is always there. Written by strangers — never put into the page. */
+export interface MailMessage {
   readonly uid: number;
+  readonly folder: MailFolderId;
   readonly from: string;
-  readonly fromName: string;
+  readonly from_name: string;
+  readonly to: readonly string[];
+  readonly cc: readonly string[];
+  readonly reply_to: string | null;
   readonly subject: string;
   readonly date: string;
-  readonly body: string;
-  readonly htmlOnly: boolean;
+  readonly text: string;
+  readonly html: string | null;
+  readonly remote_images: boolean;
+  readonly attachments: readonly MailAttachment[];
+  readonly flagged: boolean;
+  readonly is_draft: boolean;
+}
+
+/** A file of a message already in the mailbox, carried into a new one. */
+export interface MailRef {
+  readonly folder: MailFolderId;
+  readonly uid: number;
+  readonly index: number;
+}
+
+/** A message written in the panel. */
+export interface MailOutgoing {
+  readonly to: string;
+  readonly cc: string;
+  readonly subject: string;
+  readonly text: string;
+  readonly reply_folder?: MailFolderId;
+  readonly reply_uid?: number;
+  readonly draft_uid?: number;
+  readonly keep: readonly MailRef[];
+  readonly files: readonly File[];
 }
 
 /** REST API error codes. */

@@ -5,9 +5,9 @@
  * them, and each row can be copied to the clipboard or revoked.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Section, Banner } from "@components/settings/controls";
+import { Banner } from "@components/settings/controls";
+import { Btn, Card, Empty, IconBtn, Spinner } from "@components/admin/kit";
 import { Pager } from "@components/BugReportModal";
-import { Icon } from "@lib/icons";
 import { t } from "@lib/i18n";
 import { api } from "@lib/services";
 import { copyText } from "@lib/clipboard";
@@ -132,102 +132,62 @@ export function InviteManager() {
       .finally(() => setRevoking(null));
   };
 
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   return (
     <div className="settings-pane active">
-      <Section title={t("admin.createInvite")} />
-      <div className="setting-row">
-        <div>
-          <div className="setting-label">{t("admin.maxUses")}</div>
-          <div className="setting-desc">{t("admin.maxUsesDesc")}</div>
-        </div>
-        <input
-          className="form-input"
-          type="number"
-          min={0}
-          placeholder={t("admin.unlimited")}
-          style={{ width: 140 }}
-          value={maxUses}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxUses(e.target.value)}
-        />
-      </div>
-      <div className="setting-row">
-        <div>
-          <div className="setting-label">{t("admin.expiresInHours")}</div>
-          <div className="setting-desc">{t("admin.expiresInHoursDesc")}</div>
-        </div>
-        <input
-          className="form-input"
-          type="number"
-          min={0}
-          placeholder={t("admin.never")}
-          style={{ width: 140 }}
-          value={expiresHours}
-          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setExpiresHours(e.target.value)}
-        />
-      </div>
-      <button className="ac-btn" disabled={creating} onClick={create}>
-        {creating ? t("admin.creating") : t("admin.createInvite")}
-      </button>
+      <Card title={t("admin.createInvite")} desc={t("admin.createInviteDesc")}>
+        <form className="adm-form-grid adm-form-grid--3" onSubmit={(e) => { e.preventDefault(); void create(); }}>
+          <label className="adm-field">
+            <span>{t("admin.maxUses")}</span>
+            <input className="form-input" type="number" min={0} placeholder={t("admin.unlimited")}
+              value={maxUses} onChange={(e) => setMaxUses(e.target.value)} />
+            <small>{t("admin.maxUsesDesc")}</small>
+          </label>
+          <label className="adm-field">
+            <span>{t("admin.expiresInHours")}</span>
+            <input className="form-input" type="number" min={0} placeholder={t("admin.never")}
+              value={expiresHours} onChange={(e) => setExpiresHours(e.target.value)} />
+            <small>{t("admin.expiresInHoursDesc")}</small>
+          </label>
+          <div className="adm-field adm-field--end">
+            <Btn type="submit" kind="primary" icon="plus" disabled={creating}>
+              {creating ? t("admin.creating") : t("admin.createInvite")}
+            </Btn>
+          </div>
+        </form>
+        {error && <Banner kind="error">{error}</Banner>}
+        {success && <Banner kind="success">{success}</Banner>}
+      </Card>
 
-      {error && <Banner kind="error">{error}</Banner>}
-      {success && <Banner kind="success">{success}</Banner>}
-
-      <Section title={t("admin.activeInvites")} />
-      {loading ? (
-        <Banner kind="info">{t("admin.loadingInvites")}</Banner>
-      ) : invites.length === 0 ? (
-        <Banner kind="info">{t("admin.noActiveInvites")}</Banner>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {invites.map((invite) => {
-            const busy = revoking === invite.code;
-            const copied = copiedCode === invite.code;
-            return (
-              <div
-                key={invite.id}
-                className="setting-row"
-                style={{ alignItems: "center", gap: 12 }}
-              >
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div
-                    style={{
-                      fontFamily: "monospace",
-                      fontSize: 14,
-                      color: "var(--text-primary)",
-                      wordBreak: "break-all",
-                    }}
-                  >
-                    {invite.code}
+      <Card title={t("admin.activeInvites")} flush>
+        {loading ? (
+          <div className="adm-loading"><Spinner size={20} /></div>
+        ) : invites.length === 0 ? (
+          <Empty icon="user-plus" title={t("admin.noActiveInvites")} />
+        ) : (
+          <ul className="adm-rows">
+            {invites.map((invite) => {
+              const busy = revoking === invite.code;
+              const copied = copiedCode === invite.code;
+              return (
+                <li key={invite.id} className="adm-rows-item">
+                  <div className="adm-rows-main">
+                    <code className="adm-code">{invite.code}</code>
+                    <div className="adm-cell-sub">
+                      {t("admin.usesLabel")} {formatUses(invite)} · {t("admin.expiresLabel")} {formatExpiry(invite.expires_at)}
+                    </div>
                   </div>
-                  <div className="setting-desc">
-                    {t("admin.usesLabel")} {formatUses(invite)} · {t("admin.expiresLabel")} {formatExpiry(invite.expires_at)}
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                  <button
-                    className="ac-btn"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                    onClick={() => copy(invite)}
-                  >
-                    <Icon name={copied ? "check" : "send"} size={14} />
+                  <Btn kind="ghost" size="sm" icon={copied ? "check" : "copy"} onClick={() => copy(invite)}>
                     {copied ? t("admin.copied") : t("admin.copy")}
-                  </button>
-                  <button
-                    className="ac-btn account-delete-btn"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                    disabled={busy}
-                    onClick={() => revoke(invite.code)}
-                  >
-                    <Icon name="trash-2" size={14} />
-                    {busy ? t("admin.revoking") : t("admin.revoke")}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      <Pager page={Math.min(page, Math.max(1, Math.ceil(total / PAGE_SIZE)))} pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))} onPage={setPage} />
+                  </Btn>
+                  <IconBtn icon="trash-2" label={busy ? t("admin.revoking") : t("admin.revoke")} disabled={busy} onClick={() => revoke(invite.code)} />
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+      <Pager page={Math.min(page, pageCount)} pageCount={pageCount} onPage={setPage} />
     </div>
   );
 }

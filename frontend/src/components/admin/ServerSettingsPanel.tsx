@@ -6,7 +6,8 @@
  * Saving PATCHes only the changed keys via api.updateAdminSettings().
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Section, Row, Toggle, Banner } from "@components/settings/controls";
+import { Row, Toggle, Banner } from "@components/settings/controls";
+import { Btn, Card, Spinner } from "@components/admin/kit";
 import { t } from "@lib/i18n";
 import { api } from "@lib/services";
 
@@ -139,99 +140,84 @@ export function ServerSettingsPanel() {
 
   return (
     <div className="settings-pane active">
-      <Section title={t("admin.serverSettings")} />
-
       {loading ? (
-        <Banner kind="info">{t("admin.loadingServerSettings")}</Banner>
+        <div className="adm-loading"><Spinner size={20} /></div>
       ) : (
         <>
           {(hasServerName || hasMotd) && (
-            <>
+            <Card title={t("admin.general")}>
               {hasServerName && (
-                <div style={{ marginBottom: 16 }}>
-                  <div className="setting-label">{t("admin.serverName")}</div>
-                  <div className="setting-desc" style={{ marginBottom: 8 }}>
-                    {t("admin.serverNameDesc")}
-                  </div>
+                <label className="adm-field">
+                  <span>{t("admin.serverName")}</span>
                   <input
                     className="form-input"
                     type="text"
                     value={serverName}
                     placeholder={t("admin.serverNamePlaceholder")}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setField("server_name", e.target.value)
-                    }
+                    onChange={(e) => setField("server_name", e.target.value)}
                   />
-                </div>
+                  <small>{t("admin.serverNameDesc")}</small>
+                </label>
               )}
-
               {hasMotd && (
-                <div style={{ marginBottom: 16 }}>
-                  <div className="setting-label">{t("admin.motd")}</div>
-                  <div className="setting-desc" style={{ marginBottom: 8 }}>
-                    {t("admin.motdDesc")}
-                  </div>
+                <label className="adm-field">
+                  <span>{t("admin.motd")}</span>
                   <textarea
                     className="form-input"
                     value={motd}
                     placeholder={t("admin.motdPlaceholder")}
                     rows={3}
-                    style={{ resize: "vertical", minHeight: 72 }}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                      setField("motd", e.target.value)
-                    }
+                    onChange={(e) => setField("motd", e.target.value)}
                   />
-                </div>
+                  <small>{t("admin.motdDesc")}</small>
+                </label>
               )}
-            </>
+            </Card>
           )}
 
-          <Section title={t("admin.registration")} />
-          <Row label={t("admin.regOpen")} desc={t("admin.regOpenDesc")}>
-            <Toggle
-              on={isOn(draft["registration_open"], true)}
-              onChange={(v) => setField("registration_open", v ? "1" : "0")}
-            />
-          </Row>
-          {/* The keys may be absent until first toggled — treat missing as OFF (open registration). */}
-          <Row label={t("admin.regInviteOnly")} desc={t("admin.regInviteOnlyDesc")}>
-            <Toggle
-              on={isOn(draft["registration_invite_only"], false)}
-              onChange={(v) => setField("registration_invite_only", v ? "1" : "0")}
-            />
-          </Row>
-          <Row label={t("admin.regEmailVerify")} desc={t("admin.regEmailVerifyDesc")}>
-            <Toggle
-              on={isOn(draft["registration_email_verify"], false)}
-              onChange={(v) => setField("registration_email_verify", v ? "1" : "0")}
-            />
-          </Row>
-          {/* OFF by default: the obligation belongs to whoever operates the space, and this
-              server ships to people who operate their own. ON for outcome.ru. */}
-          <Row label={t("admin.regPdnConsent")} desc={t("admin.regPdnConsentDesc")}>
-            <Toggle
-              on={isOn(draft["registration_pdn_consent"], false)}
-              onChange={(v) => setField("registration_pdn_consent", v ? "1" : "0")}
-            />
-          </Row>
+          <Card title={t("admin.registration")}>
+            <div className="adm-rows-settings">
+              <Row label={t("admin.regOpen")} desc={t("admin.regOpenDesc")}>
+                <Toggle
+                  on={isOn(draft["registration_open"], true)}
+                  onChange={(v) => setField("registration_open", v ? "1" : "0")}
+                />
+              </Row>
+              {/* The keys may be absent until first toggled — treat missing as OFF (open registration). */}
+              <Row label={t("admin.regInviteOnly")} desc={t("admin.regInviteOnlyDesc")}>
+                <Toggle
+                  on={isOn(draft["registration_invite_only"], false)}
+                  onChange={(v) => setField("registration_invite_only", v ? "1" : "0")}
+                />
+              </Row>
+              <Row label={t("admin.regEmailVerify")} desc={t("admin.regEmailVerifyDesc")}>
+                <Toggle
+                  on={isOn(draft["registration_email_verify"], false)}
+                  onChange={(v) => setField("registration_email_verify", v ? "1" : "0")}
+                />
+              </Row>
+              {/* OFF by default: the obligation belongs to whoever operates the space, and this
+                  server ships to people who operate their own. ON for outcome.ru. */}
+              <Row label={t("admin.regPdnConsent")} desc={t("admin.regPdnConsentDesc")}>
+                <Toggle
+                  on={isOn(draft["registration_pdn_consent"], false)}
+                  onChange={(v) => setField("registration_pdn_consent", v ? "1" : "0")}
+                />
+              </Row>
+            </div>
+          </Card>
 
           {extraKeys.length > 0 && (
-            <>
-              <Section title={t("admin.advanced")} />
-              {extraKeys.map((key) => (
-                <div key={key} style={{ marginBottom: 16 }}>
-                  <div className="setting-label">{labelFor(key)}</div>
-                  <input
-                    className="form-input"
-                    type="text"
-                    value={draft[key] ?? ""}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      setField(key, e.target.value)
-                    }
-                  />
-                </div>
-              ))}
-            </>
+            <Card title={t("admin.advanced")}>
+              <div className="adm-form-grid adm-form-grid--2">
+                {extraKeys.map((key) => (
+                  <label key={key} className="adm-field">
+                    <span>{labelFor(key)}</span>
+                    <input className="form-input" type="text" value={draft[key] ?? ""} onChange={(e) => setField(key, e.target.value)} />
+                  </label>
+                ))}
+              </div>
+            </Card>
           )}
 
           {Object.keys(original).length === 0 && (
@@ -247,29 +233,16 @@ export function ServerSettingsPanel() {
               reloading, brought it back ON, and the panel looked like it was refusing to save.
               Nothing was refused: nothing had been sent. A switch reads as applied the moment
               it moves, so the thing that applies it cannot be somewhere the eye never goes. */}
-          <div
-            className="ss-commit"
-            style={{
-              position: "sticky",
-              bottom: 0,
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              marginTop: 8,
-              padding: "12px 0",
-              background: "var(--bg)",
-              borderTop: dirty ? "1px solid var(--border)" : "none",
-            }}
-          >
-            <button className="ac-btn" disabled={!dirty || saving} onClick={save}>
-              {saving ? t("admin.saving") : t("admin.saveChanges")}
-            </button>
-            {dirty && !saving && (
-              <span style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                {t("admin.unsavedChanges")}
-              </span>
-            )}
-          </div>
+          {dirty && (
+            <div className="adm-savebar">
+              <span>{t("admin.unsavedChanges")}</span>
+              <span className="adm-spacer" />
+              <Btn kind="ghost" disabled={saving} onClick={() => setDraft(original)}>{t("admin.discardChanges")}</Btn>
+              <Btn kind="primary" icon="check" disabled={saving} onClick={save}>
+                {saving ? t("admin.saving") : t("admin.saveChanges")}
+              </Btn>
+            </div>
+          )}
         </>
       )}
     </div>
