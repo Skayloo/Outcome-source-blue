@@ -6,7 +6,7 @@
   "description": "Outcome — мессенджер для команды на своём сервере",
   "author": {
     "name": "Outcome",
-    "email": "skayloo@yandex.ru"
+    "email": "admin@outcome.ru"
   },
   "main": "electron/main.js",
   "scripts": {
