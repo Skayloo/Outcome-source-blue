@@ -12,6 +12,7 @@ import { ContextMenu, type MenuEntry } from "@components/ContextMenu";
 import { confirm } from "@components/ConfirmDialog";
 import { api } from "@lib/services";
 import { startCall } from "@lib/call";
+import { fileLabel } from "@lib/messagePreview";
 import { Icon } from "@lib/icons";
 import { t, getLocale } from "@lib/i18n";
 
@@ -153,7 +154,7 @@ export function InboxView() {
                     <span className="inbox-name">{d.recipient.username}</span>
                     <span className="inbox-time">{relTime(d.lastMessageAt)}</span>
                   </div>
-                  <div className="inbox-preview">{d.lastMessage ? d.lastMessage : t("inbox.newMessages", { count: d.unreadCount })}</div>
+                  <div className="inbox-preview">{d.lastMessage ? d.lastMessage : d.lastFile ? fileLabel(d.lastFile) : t("inbox.newMessages", { count: d.unreadCount })}</div>
                 </div>
                 <span className="unread-badge">{d.unreadCount}</span>
               </div>
@@ -205,7 +206,8 @@ export function InboxView() {
                   {mutes.muted.has(d.channelId) && <span className="inbox-muted"><Icon name="bell-off" size={12} /></span>}
                   <span className="inbox-time">{d.lastMessageAt ? relTime(d.lastMessageAt) : ""}</span>
                 </div>
-                {d.lastMessage && <div className="inbox-preview">{d.lastMessage}</div>}
+                {d.lastMessage ? <div className="inbox-preview">{d.lastMessage}</div>
+                  : d.lastFile ? <div className="inbox-preview">{fileLabel(d.lastFile)}</div> : null}
               </div>
               {d.unreadCount > 0 && <span className="unread-badge">{d.unreadCount}</span>}
             </div>

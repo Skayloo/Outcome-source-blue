@@ -85,14 +85,21 @@ public static class UploadEndpoints
                         await s.CopyToAsync(ms, ctx.RequestAborted);
                         raw = ms.ToArray();
                     }
-                    if (await Outcome.Infrastructure.Media.ImageProbe.MeasureAsync(raw, ctx.RequestAborted) is { } dim)
+                    // A HEIC kept as a file is still drawn from a JPEG: its shape and copies come
+                    // from that, the stored file stays the one that was sent.
+                    var drawn = Outcome.Infrastructure.Media.ImageProbe.IsHeif(mime)
+                        ? await Outcome.Infrastructure.Media.ImageProbe.HeifToJpegAsync(raw, ctx.RequestAborted)
+                        : null;
+                    var drawMime = drawn is null ? mime : "image/jpeg";
+                    drawn ??= raw;
+                    if (await Outcome.Infrastructure.Media.ImageProbe.MeasureAsync(drawn, ctx.RequestAborted) is { } dim)
                         (width, height) = (dim.Width, dim.Height);
-                    if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(raw, mime, ct: ctx.RequestAborted) is { } small)
+                    if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(drawn, drawMime, ct: ctx.RequestAborted) is { } small)
                     {
                         await using var sm = new MemoryStream(small);
                         await storage.SaveAsync(PreviewKey(id), sm, ctx.RequestAborted);
                     }
-                    if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(raw, mime, MediumDim, ctx.RequestAborted) is { } medium)
+                    if (await Outcome.Infrastructure.Media.ImageProbe.PreviewAsync(drawn, drawMime, MediumDim, ctx.RequestAborted) is { } medium)
                     {
                         await using var md = new MemoryStream(medium);
                         await storage.SaveAsync(MediumKey(id), md, ctx.RequestAborted);
@@ -106,6 +113,16 @@ public static class UploadEndpoints
                         using var ms = new MemoryStream();
                         await s.CopyToAsync(ms, ctx.RequestAborted);
                         raw = ms.ToArray();
+                    }
+
+                    // An iPhone photo arrives as HEIC, which no browser but Safari can draw: it is
+                    // turned into a JPEG first, so a photo is a picture on every client.
+                    if (Outcome.Infrastructure.Media.ImageProbe.IsHeif(mime)
+                        && await Outcome.Infrastructure.Media.ImageProbe.HeifToJpegAsync(raw, ctx.RequestAborted) is { } jpeg)
+                    {
+                        raw = jpeg;
+                        mime = "image/jpeg";
+                        storedName = Path.ChangeExtension(file.FileName, ".jpg");
                     }
 
                     // The screen-sized copy is stored INSTEAD of the upload, not beside it.
@@ -356,6 +373,17 @@ internal static class MimeSniffer
         if (b.Length >= 12 && b[0] == (byte)'R' && b[1] == (byte)'I' && b[2] == (byte)'F' && b[3] == (byte)'F'
             && b[8] == (byte)'W' && b[9] == (byte)'E' && b[10] == (byte)'B' && b[11] == (byte)'P') return "image/webp";
         if (b.Length >= 4 && b[0] == (byte)'%' && b[1] == (byte)'P' && b[2] == (byte)'D' && b[3] == (byte)'F') return "application/pdf";
+        // ISO BMFF with a HEIF brand: an iPhone photo. Sniffed, not taken from the client, which
+        // may call it anything — and it decides whether the photo is turned into a JPEG.
+        if (b.Length >= 12 && b[4] == (byte)'f' && b[5] == (byte)'t' && b[6] == (byte)'y' && b[7] == (byte)'p')
+        {
+            var size = Math.Min(b.Length, (b[0] << 24) | (b[1] << 16) | (b[2] << 8) | b[3]);
+            var brands = System.Text.Encoding.ASCII.GetString(b[8..Math.Max(12, size)]);
+            var major = brands[..4];
+            if (major is "heic" or "heix" or "hevc" or "hevx" or "heim" or "heis"
+                || (major is "mif1" or "msf1" && brands.Contains("heic", StringComparison.Ordinal)))
+                return "image/heic";
+        }
         return string.IsNullOrWhiteSpace(fallback) ? "application/octet-stream" : fallback!;
     }
 }

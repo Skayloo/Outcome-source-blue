@@ -77,6 +77,8 @@ export const ClientMessageType = {
   VOICE_CAMERA: "voice_camera",
   VOICE_SCREENSHARE: "voice_screenshare",
   PING: "ping",
+  // Whether the person is at this connection now (lib/attention.ts); decides pushes.
+  ATTENTION: "attention",
   // Extension (not in protocol-schema.json but used in practice)
   VOICE_TOKEN_REFRESH: "voice_token_refresh",
   CALL_OFFER: "call_offer",

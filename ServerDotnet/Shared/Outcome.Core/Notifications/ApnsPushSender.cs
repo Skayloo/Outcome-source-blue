@@ -83,11 +83,10 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
         }
     }
 
-    public async Task<PushOutcome> SendAsync(PushTarget target, PushMessage message, CancellationToken ct = default)
+    /// <summary>The JSON Apple gets for a message — its own method so it can be checked against
+    /// the 4 KB Apple allows and the fields the iOS extension reads, without sending anything.</summary>
+    public static string BuildPayload(PushMessage message)
     {
-        if (_key is null) return PushOutcome.Failed;
-        var (deviceToken, sandbox) = (target.Token, target.Sandbox);
-
         var aps = new JsonObject
         {
             ["alert"] = new JsonObject { ["title"] = message.Title, ["body"] = message.Body },
@@ -115,7 +114,15 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
         if (message.Icon is { Length: > 0 } icon) payload["att_icon"] = icon;
         if (message.ServerId is { } serverId) payload["server_id"] = serverId;
 
-        var json = payload.ToJsonString();
+        return payload.ToJsonString();
+    }
+
+    public async Task<PushOutcome> SendAsync(PushTarget target, PushMessage message, CancellationToken ct = default)
+    {
+        if (_key is null) return PushOutcome.Failed;
+        var (deviceToken, sandbox) = (target.Token, target.Sandbox);
+
+        var json = BuildPayload(message);
         var (status, reason) = await PostAsync(sandbox ? SandboxHost : ProdHost, deviceToken, json, ct);
 
         // A production "unknown device" is what a development build looks like from here.

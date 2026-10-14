@@ -123,6 +123,42 @@ public static class ImageProbe
         }
     }
 
+    /// <summary>HEIC/HEIF — what an iPhone camera writes, and what no browser but Safari draws —
+    /// to JPEG, with libheif's heif-convert (ffmpeg 6.1 in this image cannot read it at all).
+    /// Null when the tool is missing, times out or refuses the input; the caller then keeps what
+    /// it has. libheif applies the picture's rotation itself, so the JPEG stands the right way up.</summary>
+    public static async Task<byte[]?> HeifToJpegAsync(byte[] bytes, CancellationToken ct = default)
+    {
+        var dir = Path.GetTempPath();
+        var stem = $"heif_{Guid.NewGuid():N}";
+        var src = Path.Combine(dir, stem + ".heic");
+        var dst = Path.Combine(dir, stem + ".jpg");
+        try
+        {
+            await File.WriteAllBytesAsync(src, bytes, ct);
+            var r = await MediaProcess.RunAsync("heif-convert", $"-q 92 \"{src}\" \"{dst}\"", TimeSpan.FromSeconds(30), captureStdout: false, ct);
+            if (r is null || r.ExitCode != 0) return null;
+            // A file holding several pictures (a burst) is written as <name>-1.jpg, -2.jpg, …;
+            // the first is the photo.
+            var made = File.Exists(dst) ? dst : Path.Combine(dir, stem + "-1.jpg");
+            if (!File.Exists(made)) return null;
+            var jpeg = await File.ReadAllBytesAsync(made, ct);
+            return jpeg.Length > 3 && jpeg[0] == 0xFF && jpeg[1] == 0xD8 ? jpeg : null;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            foreach (var f in Directory.EnumerateFiles(dir, stem + "*"))
+                try { File.Delete(f); } catch { /* best effort */ }
+        }
+    }
+
+    public static bool IsHeif(string mime) =>
+        mime.Equals("image/heic", StringComparison.OrdinalIgnoreCase) || mime.Equals("image/heif", StringComparison.OrdinalIgnoreCase);
+
     private static readonly string Guard = MediaProcess.InputGuard(MediaProcess.ImageFormats);
 
     // A picture decodes in well under a second; a crafted one that does not is cut off here.

@@ -20,3 +20,29 @@ export function messagePreview(m: Pick<Message, "content" | "attachments">): str
   if (mime.startsWith("audio/")) return "Голосовое сообщение";
   return first.filename || "Файл";
 }
+
+/** The kind of a conversation's last file, for the line under its name in the DM list. */
+export interface DmFile {
+  readonly mime: string;
+  readonly durationMs?: number;
+}
+
+/** "Фотография", "Голосовое сообщение", … — what the DM list says when the last message is a
+ *  file without words. Without it the row was a name over nothing and read as empty. */
+export function fileLabel(f: DmFile): string {
+  if (f.mime.startsWith("audio/") && f.durationMs != null) return "Голосовое сообщение";
+  if (f.mime.startsWith("image/")) return "Фотография";
+  if (f.mime.startsWith("video/")) return "Видео";
+  if (f.mime.startsWith("audio/")) return "Аудио";
+  return "Файл";
+}
+
+export function dmFileOf(mime: string | null | undefined, durationMs: number | null | undefined): DmFile | null {
+  return mime ? { mime, durationMs: durationMs ?? undefined } : null;
+}
+
+/** A live message's first file. */
+export function firstFileOf(m: { attachments: readonly { mime: string; duration_ms?: number }[] }): DmFile | null {
+  const a = m.attachments[0];
+  return a ? { mime: a.mime, durationMs: a.duration_ms } : null;
+}

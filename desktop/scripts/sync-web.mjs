@@ -56,7 +56,7 @@ if (build.status !== 0) {
 // to install this, and they already have — and the screenshots alone are 1.4 MB in an
 // installer people download over whatever connection they have.
 const SITE_ONLY = [
-  'landing.html', 'landing.js', 'shots',
+  'landing.html', 'landing.js', 'landing-contact.js', 'shots', 'video',
   'robots.txt', 'sitemap.xml',
 ];
 

@@ -183,7 +183,17 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-app.UseWebSockets();
+// A socket counts as "online" for as long as it is open — and an online user gets no push. With
+// the defaults (a ping every 2 minutes, no answer required) a phone app that iOS froze in the
+// background kept its socket open on this side indefinitely: the person was "online", so no push
+// was sent, and the frozen app showed nothing either. Every client answers pings by itself (the
+// browser's network stack, dart:io in a running app), so one that stops answering is frozen or
+// gone, and the socket is closed: its owner goes back to getting pushes within about 40 s.
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(20),
+    KeepAliveTimeout = TimeSpan.FromSeconds(20),
+});
 app.UseAuthentication();
 app.UseMiddleware<JwtCurrentUserMiddleware>();
 app.UseMiddleware<CurrentServerMiddleware>();

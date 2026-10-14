@@ -74,6 +74,8 @@ import { api, wsSend } from "./services";
 import { enterDmView } from "./dm";
 import { followRoomLink } from "./roomLink";
 import { onRecordAck } from "./recorder";
+import { tellAttentionAgain } from "./attention";
+import { dmFileOf, firstFileOf } from "./messagePreview";
 import { notifyIncomingMessage, notifyIncomingCall, stopTitleFlash, closeCallNotification } from "./notifications";
 import { createLogger } from "./logger";
 import { ServerMessageType as S } from "./protocolTypes";
@@ -112,6 +114,8 @@ function mapDmPayload(p: DmChannelPayload): DmChannel {
     lastMessageAt: p.last_message_at,
     unreadCount: p.unread_count,
     peerReadUpTo: p.peer_read_up_to ?? 0,
+    // A photo or a voice note without words: the list names the file instead of a blank line.
+    lastFile: dmFileOf(p.last_attachment_mime, p.last_attachment_duration_ms),
   };
 }
 
@@ -153,6 +157,9 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
 
   unsubs.push(
     ws.on(S.READY, (payload) => {
+      // Whether we are at this window decides the phone's pushes; the server holds it per
+      // connection, so a reconnect needs telling again.
+      tellAttentionAgain();
       // Every READY (also after switch_server, which sends no auth_ok) says what we are in THIS
       // server and whether we administer the space — lib/access.ts gates on these.
       if (payload.server_role !== undefined || payload.space_admin !== undefined) {
@@ -278,6 +285,7 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
             payload.id,
             payload.content,
             payload.timestamp,
+            firstFileOf(payload),
           );
         } else {
           updateDmLastMessage(
@@ -285,6 +293,7 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
             payload.id,
             payload.content,
             payload.timestamp,
+            firstFileOf(payload),
           );
         }
       }

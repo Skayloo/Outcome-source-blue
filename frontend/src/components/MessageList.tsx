@@ -27,7 +27,10 @@ import { loadPref } from "@components/settings/helpers";
 import { t } from "@lib/i18n";
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
-const isImage = (mime: string) => mime.startsWith("image/");
+// HEIC/HEIF (an iPhone's photos) is drawn by Safari alone — anywhere else it was a broken picture
+// with a file name over it. The server turns photos into JPEG since 1.31.67; what is left (older
+// uploads, ones sent "as a file") is shown as a file to download.
+const isImage = (mime: string) => mime.startsWith("image/") && !/^image\/hei[cf]/i.test(mime);
 /** A voice message: audio attachment carrying the transcoder's duration/waveform. */
 const isVoice = (att: { mime: string; duration_ms?: number }) => att.mime.startsWith("audio/") && att.duration_ms != null;
 

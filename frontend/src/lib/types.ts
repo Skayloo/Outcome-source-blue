@@ -447,6 +447,9 @@ export interface DmChannelPayload {
   readonly last_message_at: string;
   readonly unread_count: number;
   readonly peer_read_up_to?: number;
+  /** The last message's first file: what the list says when the message has no words. */
+  readonly last_attachment_mime?: string | null;
+  readonly last_attachment_duration_ms?: number | null;
 }
 
 export interface DmChannelOpenPayload {

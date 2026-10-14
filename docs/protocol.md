@@ -31,7 +31,7 @@ caused it. Payload keys are snake_case, matching the REST API.
 
 ## Messages
 
-**client → server** (24): `call_accept`, `call_cancel`, `call_decline`, `call_offer`, `chat_delete`, `chat_edit`, `chat_send`, `listen`, `ping`, `presence_update`, `reaction_add`, `reaction_remove`, `read`, `switch_server`, `typing_start`, `voice_camera`, `voice_deafen`, `voice_join`, `voice_key_request`, `voice_key_share`, `voice_leave`, `voice_mute`, `voice_screenshare`, `voice_token_refresh`
+**client → server** (25): `attention`, `call_accept`, `call_cancel`, `call_decline`, `call_offer`, `chat_delete`, `chat_edit`, `chat_send`, `listen`, `ping`, `presence_update`, `reaction_add`, `reaction_remove`, `read`, `switch_server`, `typing_start`, `voice_camera`, `voice_deafen`, `voice_join`, `voice_key_request`, `voice_key_share`, `voice_leave`, `voice_mute`, `voice_screenshare`, `voice_token_refresh`
 
 **server → client** (35): `auth_error`, `auth_ok`, `call_accepted`, `call_cancelled`, `call_declined`, `call_incoming`, `channel_create`, `channel_delete`, `channel_update`, `chat_deleted`, `chat_edited`, `chat_message`, `chat_send_ok`, `error`, `friend_accepted`, `friend_removed`, `friend_request`, `member_ban`, `member_delete`, `member_join`, `member_leave`, `member_update`, `pong`, `presence`, `reaction_update`, `replay_done`, `typing`, `voice_config`, `voice_key_first`, `voice_key_regime`, `voice_key_request`, `voice_key_share`, `voice_leave`, `voice_state`, `voice_token`
 
@@ -47,6 +47,12 @@ caused it. Payload keys are snake_case, matching the REST API.
   `voice_token` frame with the LiveKit token and the URL to use.
 - **Presence and typing are best-effort.** They are not replayed, and a client that reconnects
   rebuilds them from the state frames it gets on connect.
+- **`attention {active}` decides pushes.** A client says whether the person is at this connection
+  now — the app on screen or in a call; the web/desktop window visible, focused and touched in
+  the last 2 minutes — and says it again after every READY (the server keeps it per connection).
+  `PushNotifier` pushes someone only when none of their connections is attended; a connection
+  that never sent it (an older client) counts as attended. Sockets that stop answering the
+  server's pings (20 s apart, 20 s to answer) are closed, so a frozen app is not "online" either.
 
 ## Editions
 

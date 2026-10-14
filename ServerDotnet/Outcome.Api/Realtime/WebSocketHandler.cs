@@ -255,6 +255,15 @@ public sealed class WebSocketHandler(
                 await send(WsFrames.Pong());
                 break;
 
+            case "attention":
+                // Whether the person is at this connection now (app on screen or in a call; web in
+                // front and touched lately). Decides pushes only: someone attending is told here.
+                if (payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("active", out var att)
+                    && att.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    && limiter.Allow($"ws-attention:{connId}", 60, TimeSpan.FromMinutes(1)))
+                    hub.SetAttention(auth.Space.Id, auth.UserId, connId, att.ValueKind == JsonValueKind.True);
+                break;
+
             case "switch_server":
                 // Each one rebuilds a whole READY and tells the target server someone arrived.
                 if (!limiter.Allow($"ws-switch:{connId}", 30, TimeSpan.FromMinutes(1)))

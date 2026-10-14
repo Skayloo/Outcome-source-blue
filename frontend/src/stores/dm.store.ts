@@ -3,6 +3,7 @@
  * Immutable state updates only.
  */
 
+import type { DmFile } from "@lib/messagePreview";
 import { createStore } from "@lib/store";
 
 export interface DmUser {
@@ -21,6 +22,8 @@ export interface DmChannel {
   readonly unreadCount: number;
   /** The peer's read marker — own messages up to it show ✓✓. */
   readonly peerReadUpTo: number;
+  /** The last message's first file — the line under the name when the message has no words. */
+  readonly lastFile?: DmFile | null;
 }
 
 export interface DmState {
@@ -58,6 +61,7 @@ export function updateDmLastMessage(
   messageId: number,
   content: string,
   timestamp: string,
+  file: DmFile | null = null,
 ): void {
   dmStore.setState((prev) => {
     const updated = prev.channels.find((c) => c.channelId === channelId);
@@ -65,7 +69,7 @@ export function updateDmLastMessage(
     const rest = prev.channels.filter((c) => c.channelId !== channelId);
     return {
       channels: [
-        { ...updated, lastMessageId: messageId, lastMessage: content, lastMessageAt: timestamp, unreadCount: updated.unreadCount + 1 },
+        { ...updated, lastMessageId: messageId, lastMessage: content, lastMessageAt: timestamp, lastFile: file, unreadCount: updated.unreadCount + 1 },
         ...rest,
       ],
     };
@@ -80,6 +84,7 @@ export function updateDmLastMessagePreview(
   messageId: number,
   content: string,
   timestamp: string,
+  file: DmFile | null = null,
 ): void {
   dmStore.setState((prev) => {
     const updated = prev.channels.find((c) => c.channelId === channelId);
@@ -87,7 +92,7 @@ export function updateDmLastMessagePreview(
     const rest = prev.channels.filter((c) => c.channelId !== channelId);
     return {
       channels: [
-        { ...updated, lastMessageId: messageId, lastMessage: content, lastMessageAt: timestamp },
+        { ...updated, lastMessageId: messageId, lastMessage: content, lastMessageAt: timestamp, lastFile: file },
         ...rest,
       ],
     };

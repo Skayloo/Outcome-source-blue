@@ -17,7 +17,9 @@ namespace Outcome.Realtime;
 /// </remarks>
 public sealed class ConnectionRegistry : IConnectionHub
 {
-    private sealed record Entry(Guid Id, long ServerId, Func<byte[], ValueTask> Send, Action Close);
+    // Attending: what the client last said with an `attention` frame; null = never said (an
+    // older client), which counts as attending.
+    private sealed record Entry(Guid Id, long ServerId, Func<byte[], ValueTask> Send, Action Close, bool? Attending = null);
 
     // (spaceId, userId) -> (connectionId -> entry). The space is part of the key because ids
     // are tenant-local: user 5 in one space and user 5 in another are different people.
@@ -87,6 +89,18 @@ public sealed class ConnectionRegistry : IConnectionHub
     }
 
     public bool IsOnline(long spaceId, long userId) => _byUser.ContainsKey((spaceId, userId));
+
+    public bool IsAttending(long spaceId, long userId) =>
+        _byUser.TryGetValue((spaceId, userId), out var conns) && conns.Values.Any(e => e.Attending != false);
+
+    public void SetAttention(long spaceId, long userId, Guid connectionId, bool attending)
+    {
+        lock (_gate)
+        {
+            if (_byUser.TryGetValue((spaceId, userId), out var conns) && conns.TryGetValue(connectionId, out var e))
+                conns[connectionId] = e with { Attending = attending };
+        }
+    }
 
     public async Task BroadcastAsync(long spaceId, byte[] message)
     {

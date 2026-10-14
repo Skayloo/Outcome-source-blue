@@ -14,6 +14,14 @@ public interface IConnectionHub
     void UpdateServer(long spaceId, long userId, Guid connectionId, long serverId);
     void Remove(long spaceId, long userId, Guid connectionId);
     bool IsOnline(long spaceId, long userId);
+    /// <summary>Whether the person is at one of their connections right now — the app on screen
+    /// (or in a call), the web or desktop window in front and touched lately — as the clients
+    /// report it with an <c>attention</c> frame. A connection that never said (an older client)
+    /// counts as attending, which is how every connection counted before. Push uses this, not
+    /// <see cref="IsOnline"/>: a phone in a pocket and a forgotten browser tab are online, and
+    /// the person still has to be told.</summary>
+    bool IsAttending(long spaceId, long userId);
+    void SetAttention(long spaceId, long userId, Guid connectionId, bool attending);
     /// <summary>Distinct users online, across every space (health reporting only).</summary>
     int Count { get; }
 

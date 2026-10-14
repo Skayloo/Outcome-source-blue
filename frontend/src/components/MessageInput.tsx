@@ -174,7 +174,8 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
    *  edited again. The superseded upload is simply not waited for: its result finds no tile. */
   function stage(f: File, asFile: boolean, source: File | null, doc: EditDoc | null, replaceKey: number | null): void {
     const key = keySeq.current++;
-    const preview = f.type.startsWith("image/") ? URL.createObjectURL(f) : null;
+    // No thumbnail for HEIC: outside Safari the browser cannot draw it (the server makes it a JPEG).
+    const preview = f.type.startsWith("image/") && !/^image\/hei[cf]/i.test(f.type) ? URL.createObjectURL(f) : null;
     const entry: Pending = { key, filename: f.name, progress: 0, serverId: null, preview, source, doc };
     setPending((p) => {
       const old = replaceKey === null ? undefined : p.find((x) => x.key === replaceKey);

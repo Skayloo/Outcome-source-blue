@@ -134,8 +134,9 @@ public sealed partial class PushNotifier(
         else
             return;
 
-        // Someone with a live socket is already being told, on this device or another.
-        candidates.RemoveAll(id => hub.IsOnline(space.Id, id));
+        // Someone AT one of their connections is being told there; a phone in a pocket or a tab
+        // nobody has touched for minutes is online but not attending, and gets the push.
+        candidates.RemoveAll(id => hub.IsAttending(space.Id, id));
         if (candidates.Count == 0) return;
 
         var mutes = sp.GetRequiredService<IChannelMuteRepository>();

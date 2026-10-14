@@ -39,6 +39,30 @@ npm run dist:linux # AppImage + .deb → release/
 npm run dist:mac   # .dmg            → release/   (only on macOS)
 ```
 
+## Building the Windows and Linux packages on a Mac
+
+The workstation is an Apple Silicon Mac with no wine; 1.0.3 was built in Docker (2026-10-14) with
+`docker/build-in-container.sh` inside `electronuserland/builder:22-wine-01.25` (`--platform
+linux/amd64`), on a scratch copy of `frontend/` and `desktop/` mounted at `/src` — the host's
+`node_modules` are macOS builds and must not be clobbered. Traps:
+
+- The `:wine` tag carries wine 11, which aborts at start under qemu; wine 9 works.
+- The MSI is WiX under wine. It needs wine-mono (8.1.0) and Microsoft's own `cabinet.dll`
+  (`winetricks cabinet`) — with wine's built-in one the MSI comes out uncompressed, 318 MB.
+  32-bit wine crashes at process EXIT under qemu after candle/light have written their output;
+  `docker/wine-wrapper.sh`, installed as `/usr/local/bin/wine` in the container only, tolerates
+  exactly that. electron-builder kills wine after 120 s and `light.exe` takes ~180 s emulated,
+  so the MSI comes from `electron-builder --win msi --prepackaged <win-unpacked>` with `light.exe`
+  then run by hand with the arguments it logged, on a copy of `win-unpacked` WITHOUT
+  `resources/elevate.exe` (what a combined `--win` build gives).
+- Check before publishing: the sha512 in `latest.yml`/`latest-linux.yml` (`openssl dgst -sha512
+  -binary | base64`), the same `app.asar` in every package, and the bundle being the RED one.
+
+Publishing: the files go into the folder the frontend container serves at `/download/`
+(`DOWNLOADS_DIR` in the compose file), the packages first and `latest.yml`/`latest-linux.yml`
+LAST — they are what installed copies update to. Keep the previous version's files: the URLs are
+cached `immutable`. Then point whatever page links the downloads at the new names and sizes.
+
 ## What the shell adds over the browser
 
 - **A system-wide push-to-talk key.** In a tab the PTT key only works while the tab has focus —

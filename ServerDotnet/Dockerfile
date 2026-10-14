@@ -39,7 +39,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 # curl is used by the container HEALTHCHECK (the aspnet image ships neither curl nor wget).
 # ffmpeg normalizes voice messages to m4a/AAC (every platform plays it) and extracts the
 # waveform peaks — see VoiceTranscoder. libgssapi/curl as before (Npgsql GSSAPI + healthcheck).
+# libheif turns an iPhone's HEIC photos into JPEG (ImageProbe.HeifToJpegAsync): this ffmpeg cannot
+# read HEIC, and no browser but Safari draws it. The libde265 plugin is the HEVC decoder itself —
+# without it heif-convert answers "Unsupported codec".
 RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 curl ffmpeg \
+       libheif-examples libheif-plugin-libde265 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app ./

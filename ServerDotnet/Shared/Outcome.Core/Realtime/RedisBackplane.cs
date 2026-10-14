@@ -57,6 +57,10 @@ public sealed class RedisBackplaneRegistry : IConnectionHub
     /// <summary>Local-replica check only. Presence may briefly flicker for a user who holds
     /// sockets on two replicas at once — acceptable for the offline-broadcast heuristic.</summary>
     public bool IsOnline(long spaceId, long userId) => _local.IsOnline(spaceId, userId);
+    // Per replica, like IsOnline: the connection lives on one of them.
+    public bool IsAttending(long spaceId, long userId) => _local.IsAttending(spaceId, userId);
+    public void SetAttention(long spaceId, long userId, Guid connectionId, bool attending) =>
+        _local.SetAttention(spaceId, userId, connectionId, attending);
 
     public Task BroadcastAsync(long spaceId, byte[] message) => PublishAsync(KindAll, spaceId, 0, message);
 
