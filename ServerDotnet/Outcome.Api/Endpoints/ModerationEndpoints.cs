@@ -96,6 +96,9 @@ public static class ModerationEndpoints
                 throw new DomainException("RATE_LIMITED", 429, "too many reports, please slow down");
 
             var msg = await messages.GetByIdAsync(id) ?? throw DomainException.NotFound("message not found");
+            // A deleted message is not on anyone's screen to report, and filing one copied whatever its
+            // row still held into the queue — history and search both skip these rows.
+            if (msg.Deleted) throw DomainException.NotFound("message not found");
             if (msg.UserId == current.UserId) throw DomainException.BadRequest("cannot report your own message");
 
             // The reporter must be able to SEE the message: a DM participant, or a member of
@@ -160,7 +163,7 @@ public static class ModerationEndpoints
         app.MapPost("/api/v1/admin/reports/{id:long}/action", async (long id, ReportActionBody body,
             ICurrentUser current, ICurrentServer srv, IMessageReportRepository reports,
             IMessageRepository messages, IChannelRepository channels, IDmRepository dms,
-            IUserRepository users, IConnectionRegistry hub, IAuditRepository audit) =>
+            IUserRepository users, IConnectionRegistry hub, IAuditRepository audit, IBlockRepository blocks) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             var action = (body.Action ?? string.Empty).Trim().ToLowerInvariant();
@@ -218,6 +221,15 @@ public static class ModerationEndpoints
                     await reports.SetStatusAsync(id, MessageReport.StatusResolved);
                     await audit.AddAsync(current.UserId, "report_dismiss", "message", report.MessageId,
                         $"report #{id} resolved by its own reporter; no answer sent");
+                    return Results.NoContent();
+                }
+                // A block closes direct messages both ways, and this is a direct message: the
+                // dismiss path was a way to keep writing to someone who had blocked you.
+                if (await blocks.IsBlockedEitherWayAsync(current.UserId, report.ReporterId))
+                {
+                    await reports.SetStatusAsync(id, MessageReport.StatusResolved);
+                    await audit.AddAsync(current.UserId, "report_dismiss", "message", report.MessageId,
+                        $"report #{id} resolved; no answer sent (blocked)");
                     return Results.NoContent();
                 }
 
@@ -306,6 +318,11 @@ public static class ModerationEndpoints
             && rsid == srv.ServerId
             && (current.Permissions & Outcome.Domain.Permissions.Permission.ManageMessages) != 0;
         if (!isAdmin && !mine) throw DomainException.Forbidden("you cannot act on this report");
+        // A complaint about your own message is somebody else's to decide. Every server owner
+        // moderates their server, so the author of the reported line could dismiss it — and
+        // answer the reporter in a DM — themselves. The space's administrators still can.
+        if (!isAdmin && report.AuthorId == current.UserId)
+            throw DomainException.Forbidden("a report about your own message is for another moderator");
     }
 
     /// <summary>Whoever moderates messages in the CURRENT server. Administrator is checked

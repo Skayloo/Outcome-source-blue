@@ -21,3 +21,15 @@ export async function copyGuestLink(channelId: number): Promise<void> {
     showToast(e instanceof Error ? e.message : t("voice.guestLinkFailed"), "error");
   }
 }
+
+
+/**
+ * A guest's name as the voice UI shows it: always marked as a guest. The server appends
+ * " (guest)" when it mints the token, but a participant may rename itself in the room (the token
+ * lets it set its own name and attributes), and a guest who renamed itself to a member's name was
+ * shown as that member. The marker comes from the identity ("guest-…"), not from the name.
+ */
+export function guestLabel(name: string, tag: string): string {
+  const bare = name.replace(/\s*\((guest|гость)\)\s*$/i, "").trim();
+  return `${bare || "?"} (${tag})`;
+}

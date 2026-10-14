@@ -23,6 +23,7 @@ import { InboxView } from "@components/InboxView";
 import { VoiceUserMenu } from "@components/VoiceUserMenu";
 import { CreateChannelModal } from "@components/CreateChannelModal";
 import { ServerHeaderMenu } from "@components/ServerHeaderMenu";
+import { canInviteToServer, canManageServer, isSpaceAdmin } from "@lib/access";
 
 export function Sidebar() {
   useStoreState(channelsStore);
@@ -47,18 +48,16 @@ export function Sidebar() {
   }
   const roomChatIds = new Set([...chatOfRoom.values()].map((c) => c.id));
   const onlineCount = [...members.members.values()].filter((m) => m.status !== "offline").length;
-  const role = (auth.user?.role ?? "").toLowerCase();
-  const isGlobalAdmin = role === "owner";
-  const canManageGlobal = ["owner", "admin"].includes(role);
-  // Per-server ownership: the creator is an admin of the server they own (active tenant).
+  // Gates come from lib/access.ts: the role INSIDE this server and the space-admin flag.
+  const isGlobalAdmin = isSpaceAdmin(auth.user);
   const activeServerId = getActiveServerId();
   const myId = auth.user?.id ?? -1;
   const activeServer = serversStore.select((s) => s.servers).find((s) => s.id === activeServerId);
   // Header shows the ACTIVE tenant server's name (not auth.serverName, which is the global instance name).
   const serverName = activeServer?.name ?? auth.serverName ?? "Outcome";
   const isServerOwner = activeServer?.owner_id === myId;
-  const canManage = canManageGlobal || isServerOwner;
-  const canInvite = ["owner", "admin", "moderator"].includes(role) || isServerOwner;
+  const canManage = canManageServer(auth.user);
+  const canInvite = canInviteToServer(auth.user);
   const canDeleteServer = isGlobalAdmin || isServerOwner;
 
   // undefined = modal closed; null|string = open for that category

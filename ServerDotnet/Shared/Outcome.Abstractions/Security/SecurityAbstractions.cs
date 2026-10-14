@@ -70,7 +70,9 @@ public interface IPendingTotpStore
 
 /// <summary>A pending 2FA challenge issued at login. <see cref="Code"/> is the expected
 /// email-OTP code, or null for an authenticator (TOTP) challenge.</summary>
-public sealed record PartialChallenge(long UserId, string? Device, string Ip, string? Code = null);
+/// <param name="PendingPasswordHash">A password reset waiting for its second factor: the new hash is
+/// applied only once the TOTP code checks out (VerifyTotpHandler), never before.</param>
+public sealed record PartialChallenge(long UserId, string? Device, string Ip, string? Code = null, string? PendingPasswordHash = null);
 
 /// <summary>Short-lived store of partial 2FA challenges (TTL 10 min, 5-attempt budget).</summary>
 public interface IPartialAuthStore
@@ -78,6 +80,8 @@ public interface IPartialAuthStore
     string Issue(long userId, string? device, string ip);
     /// <summary>Issues a challenge carrying an expected email-OTP <paramref name="code"/>.</summary>
     string IssueWithCode(long userId, string? device, string ip, string code);
+    /// <summary>Issues a challenge that carries a password reset's new hash, applied after the TOTP step.</summary>
+    string IssueForReset(long userId, string? device, string ip, string passwordHash);
     PartialChallenge? Lookup(string partialToken);
     PartialChallenge? Consume(string partialToken);
     void RegisterFailure(string partialToken, int maxFailures);

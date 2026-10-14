@@ -22,8 +22,14 @@ public static class SetupEndpoints
         // The one unauthenticated endpoint that CREATES the owner. The handler refuses once any
         // user exists, but that is a read followed by a write: two requests arriving together on
         // an empty database could both pass it. One at a time, and not many.
-        app.MapPost("/api/v1/setup", async (SetupBody body, HttpContext ctx, ISender mediator, IRateLimiter limiter) =>
+        app.MapPost("/api/v1/setup", async (SetupBody body, HttpContext ctx, ISender mediator, IRateLimiter limiter,
+            Outcome.Infrastructure.Tenancy.ICurrentSpace here) =>
         {
+            // The ROOT space only. A tenant gets its owner from the instance admin (created with the
+            // space, or POST /admin/spaces/{id}/owner); a tenant created without one was otherwise
+            // claimable by whoever opened its address first.
+            if (!here.Space.IsRoot)
+                throw Outcome.Domain.Errors.DomainException.Forbidden("this space is set up by the instance administrator");
             if (!limiter.Allow("setup", 5, TimeSpan.FromMinutes(1)))
                 throw new Outcome.Domain.Errors.DomainException("RATE_LIMITED", 429, "too many attempts");
             await SetupGate.WaitAsync(ctx.RequestAborted);

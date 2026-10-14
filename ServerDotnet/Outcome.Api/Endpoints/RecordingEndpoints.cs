@@ -23,34 +23,42 @@ public static class RecordingEndpoints
 
     public sealed record CompleteBody(int Parts, string? Filename, string? Mime);
 
-    /// <summary>Parts live under the uploader's id, so nobody can append to or finish another
-    /// person's upload, and an upload id alone is useless to anyone else.</summary>
-    private static string PartKey(long userId, Guid upload, int index) => $"rec-{userId}-{upload:N}-{index:D4}";
+    /// <summary>Parts live under the uploader's space and id, so nobody can append to or finish
+    /// another person's upload (user ids repeat across spaces, which share one bucket), and an
+    /// upload id alone is useless to anyone else. The prefix is what the bucket expires them by.</summary>
+    private static string PartKey(long spaceId, long userId, Guid upload, int index) =>
+        $"{Outcome.Infrastructure.Storage.StorageLifecycle.RecordingPartPrefix}s{spaceId}-{userId}-{upload:N}-{index:D4}";
+
+    // About 12 GB of parts a day per account: a long meeting is well under a tenth of it.
+    private const int MaxPartsPerDay = 400;
 
     public static void MapRecordingEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPut("/api/v1/recordings/{upload:guid}/parts/{index:int}", async (Guid upload, int index, HttpContext ctx,
-            ICurrentUser current, IFileStorage storage) =>
+            ICurrentUser current, IFileStorage storage, IRateLimiter limiter, Outcome.Infrastructure.Tenancy.ICurrentSpace space) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             if (index < 0 || index >= MaxParts) throw DomainException.BadRequest("part index out of range");
+            // Any account could fill the bucket every space shares; parts are now limited per day.
+            if (!limiter.Allow($"rec-parts:{space.Space.Id}:{current.UserId}", MaxPartsPerDay, TimeSpan.FromDays(1)))
+                throw DomainException.RateLimited("too much recording uploaded today");
             var size = ctx.Features.Get<IHttpMaxRequestBodySizeFeature>();
             if (size is { IsReadOnly: false }) size.MaxRequestBodySize = MaxPartBytes;
             if (ctx.Request.ContentLength is > MaxPartBytes) throw DomainException.BadRequest("part too large");
-            await storage.SaveAsync(PartKey(current.UserId, upload, index), ctx.Request.Body, ctx.RequestAborted);
+            await storage.SaveAsync(PartKey(space.Space.Id, current.UserId, upload, index), ctx.Request.Body, ctx.RequestAborted);
             return Results.NoContent();
         });
 
         app.MapPost("/api/v1/recordings/{upload:guid}/complete", async (Guid upload, CompleteBody body, HttpContext ctx,
             ICurrentUser current, IFileStorage storage, ISender mediator, IFileUrlSigner fileUrls,
-            Outcome.Infrastructure.Media.RecordingRemuxer remuxer) =>
+            Outcome.Infrastructure.Media.RecordingRemuxer remuxer, Outcome.Infrastructure.Tenancy.ICurrentSpace space) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             if (body.Parts is < 1 or > MaxParts) throw DomainException.BadRequest("bad part count");
             var mime = (body.Mime ?? "").Split(';')[0].Trim().ToLowerInvariant();
             if (!Types.Contains(mime)) throw DomainException.BadRequest("a recording is WebM or MP4");
 
-            var keys = Enumerable.Range(0, body.Parts).Select(i => PartKey(current.UserId, upload, i)).ToList();
+            var keys = Enumerable.Range(0, body.Parts).Select(i => PartKey(space.Space.Id, current.UserId, upload, i)).ToList();
             // By content, not the label: WebM starts with the EBML magic, MP4 with an ftyp box.
             await using (var first = storage.OpenRead(keys[0]) ?? throw DomainException.BadRequest("part 0 is missing"))
             {

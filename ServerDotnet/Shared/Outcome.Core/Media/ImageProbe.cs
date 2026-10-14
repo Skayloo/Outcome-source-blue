@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 namespace Outcome.Infrastructure.Media;
 
 /// <summary>
@@ -22,12 +20,9 @@ public static class ImageProbe
         try
         {
             await File.WriteAllBytesAsync(tmp, bytes, ct);
-            using var p = Start($"-v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x \"{tmp}\"");
-            if (p is null) return null;
-
-            var outp = await p.StandardOutput.ReadToEndAsync(ct);
-            await p.WaitForExitAsync(ct);
-            if (p.ExitCode != 0) return null;
+            var r = await Run($"-v error {Guard} -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x \"{tmp}\"", ct);
+            if (r is null || r.ExitCode != 0) return null;
+            var outp = System.Text.Encoding.UTF8.GetString(r.Stdout);
 
             var parts = outp.Trim().Split('x');
             if (parts.Length < 2) return null;
@@ -80,11 +75,10 @@ public static class ImageProbe
     {
         try
         {
-            using var p = Start($"-v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{path}\"");
-            if (p is null) return true;
-            var fmt = (await p.StandardOutput.ReadToEndAsync(ct)).Trim();
-            await p.WaitForExitAsync(ct);
-            return p.ExitCode != 0 || fmt.Length == 0 || AlphaFormats.Contains(fmt);
+            var r = await Run($"-v error {Guard} -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 \"{path}\"", ct);
+            if (r is null) return true;
+            var fmt = System.Text.Encoding.UTF8.GetString(r.Stdout).Trim();
+            return r.ExitCode != 0 || fmt.Length == 0 || AlphaFormats.Contains(fmt);
         }
         catch
         {
@@ -110,12 +104,10 @@ public static class ImageProbe
             // from the original at this size and still an order of magnitude smaller than what
             // a phone camera writes.
             var q = maxDim >= 1024 ? 2 : 6;
-            using var p = Start(
-                $"-v error -y -i \"{src}\" -vf \"scale='min({maxDim},iw)':'min({maxDim},ih)':force_original_aspect_ratio=decrease\" -q:v {q} \"{dst}\"",
-                exe: "ffmpeg");
-            if (p is null) return null;
-            await p.WaitForExitAsync(ct);
-            if (p.ExitCode != 0 || !File.Exists(dst)) return null;
+            var r = await Run(
+                $"-v error -y {Guard} -i \"{src}\" -vf \"scale='min({maxDim},iw)':'min({maxDim},ih)':force_original_aspect_ratio=decrease\" -q:v {q} \"{dst}\"",
+                ct, exe: "ffmpeg");
+            if (r is null || r.ExitCode != 0 || !File.Exists(dst)) return null;
             var outBytes = await File.ReadAllBytesAsync(dst, ct);
             // A "preview" bigger than the original helps nobody.
             return outBytes.Length > 0 && outBytes.Length < bytes.Length ? outBytes : null;
@@ -131,23 +123,9 @@ public static class ImageProbe
         }
     }
 
-    private static Process? Start(string args, string exe = "ffprobe")
-    {
-        try
-        {
-            return Process.Start(new ProcessStartInfo
-            {
-                FileName = exe,
-                Arguments = args,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-        }
-        catch
-        {
-            return null; // ffmpeg/ffprobe not installed → the caller carries on without
-        }
-    }
+    private static readonly string Guard = MediaProcess.InputGuard(MediaProcess.ImageFormats);
+
+    // A picture decodes in well under a second; a crafted one that does not is cut off here.
+    private static Task<MediaProcess.Result?> Run(string args, CancellationToken ct, string exe = "ffprobe") =>
+        MediaProcess.RunAsync(exe, args, TimeSpan.FromSeconds(20), captureStdout: exe == "ffprobe", ct);
 }

@@ -69,7 +69,7 @@ public interface IMessageRepository
 {
     Task<IReadOnlyList<MessageDto>> GetForApiAsync(long channelId, long before, int limit, long requestingUserId, CancellationToken ct = default, bool pinnedOnly = false);
     Task<bool> SetPinnedAsync(long channelId, long messageId, bool pinned, CancellationToken ct = default);
-    Task<IReadOnlyList<SearchRow>> SearchAsync(string query, long? channelId, int limit, CancellationToken ct = default);
+    Task<IReadOnlyList<SearchRow>> SearchAsync(string query, long? channelId, int limit, long serverId, CancellationToken ct = default);
     Task<(long Id, DateTime Timestamp)> CreateAsync(long channelId, long userId, string content, long? replyTo, string? forwardedFrom = null, CancellationToken ct = default);
     /// <summary>A guest's message in a voice room's chat, authored by the guest author.</summary>
     Task<(long Id, DateTime Timestamp)> CreateGuestAsync(long channelId, long guestAuthorId, string guestName, string content, CancellationToken ct = default);

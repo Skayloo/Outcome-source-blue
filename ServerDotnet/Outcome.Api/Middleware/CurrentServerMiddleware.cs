@@ -56,33 +56,15 @@ public sealed class CurrentServerMiddleware(RequestDelegate next)
 
         if (user.IsAuthenticated)
         {
-            // Per-server role: if the user has a role assigned in THIS server (server_members.role_id) that
-            // differs from their global role, re-resolve their permissions for the active server (adds the
-            // per-server role's server-scoped perms; instance-global perms still come only from the global
-            // role). No assignment → JwtCurrentUserMiddleware's global perms stand (unchanged behavior).
-            // Cached as a plain long with 0 = "no per-server assignment" so the common no-role
-            // case is cacheable too (a null result would bypass the cache every request).
-            var memberRole = await CachedAsync(cache, AuthCacheKeys.MemberRole(spaceId, user.UserId, serverId), ShortTtl,
-                async () => await servers.GetMemberRoleAsync(serverId, user.UserId, ct) ?? 0L);
-            if (memberRole is var psr && psr != 0 && psr != user.RoleId)
-            {
-                var names = await CachedAsync(cache, AuthCacheKeys.Perm(spaceId, user.UserId, serverId), ShortTtl,
-                    () => permissions.GetEffectiveForServerAsync(user.UserId, serverId, ct));
-                user.Set(user.UserId, psr, Perms.ToBits(names), names, user.SessionTokenHash ?? string.Empty);
-            }
-
-            // The owner of the active server is an admin WITHIN it (server-scoped manage perms only — not
-            // the global Administrator bypass). Skip if already a global admin.
-            if ((user.Permissions & Outcome.Domain.Permissions.Permission.Administrator) == 0)
-            {
-                var ownerId = await CachedAsync(cache, AuthCacheKeys.Owner(spaceId, serverId), LongTtl, async () =>
-                {
-                    var info = await servers.GetAsync(serverId, ct);
-                    return info?.OwnerId ?? 0L;
-                });
-                if (ownerId == user.UserId)
-                    user.GrantServerAdmin();
-            }
+            // The person's role INSIDE the active server (owner / admin / moderator / member) adds a
+            // fixed server-scoped set, ServerRoles.Grant — the same set the socket computes through
+            // IPermissionRepository.GetEffectiveForServerAsync, so REST and WS never disagree. The
+            // space role and its claims stay exactly as JwtCurrentUserMiddleware loaded them.
+            // Cached as a long (ServerRole) so "plain member" is cacheable too.
+            var serverRole = (Outcome.Domain.Permissions.ServerRole)await CachedAsync(cache,
+                AuthCacheKeys.MemberRole(spaceId, user.UserId, serverId), ShortTtl,
+                async () => (long)await servers.GetServerRoleAsync(serverId, user.UserId, ct));
+            user.GrantServerScope(Outcome.Domain.Permissions.ServerRoles.Grant(serverRole));
         }
 
         await next(ctx);

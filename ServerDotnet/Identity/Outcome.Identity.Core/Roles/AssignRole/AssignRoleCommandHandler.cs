@@ -22,6 +22,12 @@ public sealed class AssignRoleHandler(IRoleRepository roles, IUserRepository use
         // nobody holding Administrator.
         if (target.RoleId == DefaultRole.Owner)
             throw DomainException.Forbidden("the owner's role can't be changed");
+        // A space has ONE owner: the account that set it up (the setup wizard, or the owner seeded
+        // when the space was created). The role is never handed out — not by an Admin (Owner and
+        // Admin both carry Administrator, so GuardEscalation alone let one through), and not by the
+        // Owner either: the owner's decision, 2026-10-13. The Owner makes Admins.
+        if (cmd.RoleId == DefaultRole.Owner)
+            throw DomainException.Forbidden("the space has one owner — the account that set it up; the role can't be given");
         await users.AssignRoleAsync(cmd.UserId, cmd.RoleId, ct);
     }
 }

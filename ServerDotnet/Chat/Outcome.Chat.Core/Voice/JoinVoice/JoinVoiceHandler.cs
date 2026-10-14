@@ -65,7 +65,9 @@ public sealed class JoinVoiceHandler(
         await voice.UpsertJoinAsync(cmd.UserId, cmd.ChannelId, keepFlags: isRejoin && cmd.Rejoin, ct);
 
         var canPublish = await PermCheck.HasAsync(overrides, cmd.Permissions, cmd.RoleId, cmd.ChannelId, Perms.SpeakVoice, ct);
-        var token = lk.GenerateToken(cmd.UserId, cmd.Username, cmd.ChannelId, canPublish, canSubscribe: true, cmd.SessionId);
+        var canVideo = canPublish && await PermCheck.HasAsync(overrides, cmd.Permissions, cmd.RoleId, cmd.ChannelId, Perms.UseVideo, ct);
+        var canShare = canPublish && await PermCheck.HasAsync(overrides, cmd.Permissions, cmd.RoleId, cmd.ChannelId, Perms.ShareScreen, ct);
+        var token = lk.GenerateToken(cmd.UserId, cmd.Username, cmd.ChannelId, canPublish, canVideo, canShare, canSubscribe: true, cmd.SessionId);
 
         // ONE live voice session per account: this drops the account's sessions on OTHER devices.
         // Every connection joins under its own identity, and a client that names its device

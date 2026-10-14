@@ -13,7 +13,7 @@
  */
 import { Logo } from "@components/Logo";
 
-const UPDATED = "11 October 2026";
+const UPDATED = "14 October 2026";
 const CONTACT = "admin@outcome.ru";
 
 /**

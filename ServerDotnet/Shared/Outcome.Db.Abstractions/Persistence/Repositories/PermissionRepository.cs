@@ -33,9 +33,12 @@ public sealed class PermissionRepository(OutcomeDbContext db) : IPermissionRepos
     public async Task<IReadOnlyList<string>> GetEffectiveForServerAsync(long userId, long serverId, CancellationToken ct = default)
     {
         var globalRoleId = await db.Users.Where(u => u.Id == userId).Select(u => u.RoleId).FirstOrDefaultAsync(ct);
-        var perServerRoleId = await db.ServerMembers.AsNoTracking()
+        var owner = await db.Servers.AsNoTracking().Where(s => s.Id == serverId && !s.Deleted).Select(s => (long?)s.OwnerId).FirstOrDefaultAsync(ct);
+        var member = await db.ServerMembers.AsNoTracking()
             .Where(m => m.ServerId == serverId && m.UserId == userId)
-            .Select(m => m.RoleId).FirstOrDefaultAsync(ct); // long? — null if not a member or unassigned
+            .Select(m => new { m.RoleId }).FirstOrDefaultAsync(ct);
+        var serverRole = owner is null ? Outcome.Domain.Permissions.ServerRole.None
+            : Outcome.Domain.Permissions.ServerRoles.FromMember(owner == userId, member is not null, member?.RoleId);
 
         var userPerms = await db.Set<IdentityUserClaim<long>>()
             .Where(c => c.UserId == userId && c.ClaimType == Permissions.ClaimType)
@@ -47,15 +50,12 @@ public sealed class PermissionRepository(OutcomeDbContext db) : IPermissionRepos
         var result = new HashSet<string>(userPerms);
         result.UnionWith(globalRolePerms);
 
-        // Layer the per-server role on top — server-scoped perms only (instance-global stripped).
-        if (perServerRoleId is { } psr && psr != globalRoleId)
-        {
-            var perServerPerms = await db.Set<IdentityRoleClaim<long>>()
-                .Where(c => c.RoleId == psr && c.ClaimType == Permissions.ClaimType)
-                .Select(c => c.ClaimValue!).ToListAsync(ct);
-            foreach (var p in perServerPerms)
-                if (!InstanceGlobalPerms.Contains(p)) result.Add(p);
-        }
+        // The role INSIDE the server adds a fixed, server-scoped set (ServerRoles.Grant). It used to
+        // add that role's role_claims minus InstanceGlobalPerms — the same rows as the space roles,
+        // so a server "Admin" (claim: Administrator) was stripped to nothing, and a server
+        // "Moderator" carried KickMembers into handlers that act on the whole space.
+        foreach (var p in Permissions.FromBits(Outcome.Domain.Permissions.ServerRoles.Grant(serverRole)))
+            if (!InstanceGlobalPerms.Contains(p)) result.Add(p);
         return result.ToList();
     }
 

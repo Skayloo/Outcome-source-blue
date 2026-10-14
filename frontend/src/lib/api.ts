@@ -31,6 +31,7 @@ import type {
   EmojiResponse,
   SoundResponse,
   InviteResponse,
+  AdminInvite,
   RoleResponse,
   ServerDto,
   PublicServerDto,
@@ -575,8 +576,9 @@ export function createApiClient(
     },
 
     /** Assign (or clear with null) a member's PER-SERVER role. Owner of that server or global admin. */
-    assignServerRole(serverId: number, userId: number, roleId: number | null, signal?: AbortSignal): Promise<void> {
-      return request<void>("POST", `/servers/${serverId}/members/${userId}/role`, { role_id: roleId }, signal);
+    /** A member's role INSIDE that server (the owner is fixed). */
+    assignServerRole(serverId: number, userId: number, role: "admin" | "moderator" | "member", signal?: AbortSignal): Promise<void> {
+      return request<void>("POST", `/servers/${serverId}/members/${userId}/role`, { role }, signal);
     },
 
     /** Remove a member from a server (per-server kick — not a global ban). Owner / server-admin. */
@@ -783,6 +785,7 @@ export function createApiClient(
       onProgress: (pct: number) => void,
       asFile = false,
       signal?: AbortSignal,
+      fields?: Readonly<Record<string, string>>,
     ): Promise<UploadResponse> {
       return new Promise<UploadResponse>((resolve, reject) => {
         if (file.size > MAX_UPLOAD_BYTES) {
@@ -809,6 +812,7 @@ export function createApiClient(
         const fd = new FormData();
         fd.append("file", file);
         if (asFile) fd.append("as_file", "1");
+        for (const [k, v] of Object.entries(fields ?? {})) fd.append(k, v);
         xhr.send(fd);
       });
     },
@@ -1214,6 +1218,17 @@ export function createApiClient(
     },
     adminListAllServersPaged(limit: number, offset: number, signal?: AbortSignal): Promise<{ items: { id: number; name: string; owner_id: number; icon: string | null; owner_username: string | null; owner_email: string | null }[]; total: number }> {
       return pagedGet("Admin API", adminBaseUrl(), "/servers", limit, offset, signal);
+    },
+    /** Every server's invites in the space (the space's Administrator), or one server's. */
+    adminListInvites(serverId: number | null, limit: number, offset: number, signal?: AbortSignal): Promise<{ items: AdminInvite[]; total: number }> {
+      return pagedGet<AdminInvite>("Admin API", adminBaseUrl(), serverId ? `/invites?server_id=${serverId}` : "/invites", limit, offset, signal);
+    },
+    /** An invite into ANY live server of the space — /invites can only make one for the active server. */
+    adminCreateInvite(data: { server_id: number; max_uses?: number; expires_in_hours?: number }, signal?: AbortSignal): Promise<InviteResponse> {
+      return adminRequest<InviteResponse>("POST", "/invites", data, signal);
+    },
+    adminRevokeInvite(code: string, signal?: AbortSignal): Promise<void> {
+      return adminRequest<void>("DELETE", `/invites/${encodeURIComponent(code)}`, undefined, signal);
     },
     adminDeleteServer(serverId: number, signal?: AbortSignal): Promise<void> {
       return adminRequest<void>("DELETE", `/servers/${serverId}`, undefined, signal);

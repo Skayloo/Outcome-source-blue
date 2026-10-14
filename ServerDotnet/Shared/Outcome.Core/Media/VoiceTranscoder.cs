@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Newtonsoft.Json;
 
 namespace Outcome.Infrastructure.Media;
@@ -25,7 +24,8 @@ public sealed class VoiceTranscoder
 
             // 1) Transcode to mono AAC in an m4a container. -vn drops any cover art; 48 kbps mono
             //    is transparent for speech and keeps clips tiny.
-            if (!await RunAsync("ffmpeg", $"-nostdin -y -i \"{tmpIn}\" -vn -ac 1 -c:a aac -b:a 48k -movflags +faststart \"{tmpOut}\"", ct))
+            var guard = MediaProcess.InputGuard(MediaProcess.AudioVideoFormats);
+            if (!await RunAsync("ffmpeg", $"-nostdin -y {guard} -i \"{tmpIn}\" -vn -ac 1 -c:a aac -b:a 48k -movflags +faststart \"{tmpOut}\"", ct))
                 return null;
             if (!File.Exists(tmpOut)) return null;
             var m4a = await File.ReadAllBytesAsync(tmpOut, ct);
@@ -33,7 +33,7 @@ public sealed class VoiceTranscoder
 
             // 2) Decode to raw mono PCM (s16le) on stdout and fold it into WaveformBars peaks.
             var (pcm, ok) = await RunCaptureAsync("ffmpeg",
-                $"-nostdin -i \"{tmpIn}\" -vn -ac 1 -ar {PcmSampleRate} -f s16le -", ct);
+                $"-nostdin {guard} -i \"{tmpIn}\" -vn -ac 1 -ar {PcmSampleRate} -f s16le -", ct);
             if (!ok || pcm.Length < 2) return new Result(m4a, 0, "[]");
 
             var totalSamples = pcm.Length / 2;
@@ -79,42 +79,16 @@ public sealed class VoiceTranscoder
         return bars;
     }
 
-    private static async Task<bool> RunAsync(string exe, string args, CancellationToken ct)
-    {
-        using var p = Start(exe, args, captureStdout: false);
-        if (p is null) return false;
-        await p.WaitForExitAsync(ct);
-        return p.ExitCode == 0;
-    }
+    // A voice message is minutes of speech at most; a decode that runs longer is stuck or hostile.
+    private static readonly TimeSpan Limit = TimeSpan.FromSeconds(60);
+
+    private static async Task<bool> RunAsync(string exe, string args, CancellationToken ct) =>
+        (await MediaProcess.RunAsync(exe, args, Limit, captureStdout: false, ct))?.ExitCode == 0;
 
     private static async Task<(byte[] data, bool ok)> RunCaptureAsync(string exe, string args, CancellationToken ct)
     {
-        using var p = Start(exe, args, captureStdout: true);
-        if (p is null) return (Array.Empty<byte>(), false);
-        using var ms = new MemoryStream();
-        await p.StandardOutput.BaseStream.CopyToAsync(ms, ct);
-        await p.WaitForExitAsync(ct);
-        return (ms.ToArray(), p.ExitCode == 0);
-    }
-
-    private static Process? Start(string exe, string args, bool captureStdout)
-    {
-        try
-        {
-            return Process.Start(new ProcessStartInfo
-            {
-                FileName = exe,
-                Arguments = args,
-                RedirectStandardOutput = captureStdout,
-                RedirectStandardError = true, // swallow ffmpeg's progress spam
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-        }
-        catch
-        {
-            return null; // ffmpeg not installed → caller falls back
-        }
+        var r = await MediaProcess.RunAsync(exe, args, Limit, captureStdout: true, ct);
+        return r is null ? ([], false) : (r.Stdout, r.ExitCode == 0);
     }
 
     private static void TryDelete(string path)

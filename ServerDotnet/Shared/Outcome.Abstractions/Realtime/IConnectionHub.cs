@@ -22,6 +22,9 @@ public interface IConnectionHub
     Task SendToUserAsync(long spaceId, long userId, byte[] message);
     Task SendToUserExceptAsync(long spaceId, long userId, Guid exceptConnectionId, byte[] message);
     Task CloseUserAsync(long spaceId, long userId);
+    /// <summary>Closes only the connections whose ACTIVE server is <paramref name="serverId"/> —
+    /// those are the ones holding that server's role snapshot. <paramref name="userId"/> null = everyone there.</summary>
+    Task CloseOnServerAsync(long spaceId, long serverId, long? userId);
 }
 
 /// <summary>
@@ -47,4 +50,5 @@ public sealed class SpaceScopedConnectionRegistry(IConnectionHub hub, long space
     public Task SendToUserExceptAsync(long userId, Guid exceptConnectionId, byte[] message) =>
         hub.SendToUserExceptAsync(spaceId, userId, exceptConnectionId, message);
     public Task CloseUserAsync(long userId) => hub.CloseUserAsync(spaceId, userId);
+    public Task CloseOnServerAsync(long serverId, long? userId = null) => hub.CloseOnServerAsync(spaceId, serverId, userId);
 }

@@ -22,6 +22,7 @@ import { ServerSettingsModal } from "@components/ServerSettingsModal";
 import { initials } from "@lib/format";
 import { t } from "@lib/i18n";
 import { assetUrlSmall } from "@lib/serverHost";
+import { isSpaceAdmin } from "@lib/access";
 
 /** Icons that failed to load, by server id. A stored icon can outlive the file it points at —
  *  the object is deleted, the bucket is migrated, a link expires — and an <img> that 404s draws
@@ -52,13 +53,12 @@ export function ServerRail() {
   const [menu, setMenu] = useState<{ serverId: number; x: number; y: number } | null>(null);
   const [settingsFor, setSettingsFor] = useState<number | null>(null);
   const me = useStoreState(authStore).user;
-  const globalRole = (me?.role ?? "").toLowerCase();
+  const spaceAdmin = isSpaceAdmin(me);
 
-  /** Who may open a server's settings straight from the rail. Owner or instance admin only: a
-   *  ManageServer grant is per server and the server answers it from the ACTIVE one, so for any
-   *  other server it would open a panel whose every save is refused. */
-  const canManageFromRail = (ownerId: number): boolean =>
-    ownerId === me?.id || globalRole === "owner" || globalRole === "admin";
+  /** Who may open a server's settings straight from the rail: its owner, or a space admin. A
+   *  server ADMIN is known only for the active server (READY), so for the others the rail
+   *  offers it to those two alone — the settings of the active server open from its header. */
+  const canManageFromRail = (ownerId: number): boolean => ownerId === me?.id || spaceAdmin;
 
   const homeActive = ui.sidebarMode === "dms";
   const dmUnread = dm.channels.reduce((sum, c) => sum + c.unreadCount, 0) + friends.incoming.length;
@@ -176,7 +176,7 @@ export function ServerRail() {
         return (
           <ServerSettingsModal
             serverId={settingsFor}
-            canDelete={isOwner || globalRole === "owner"}
+            canDelete={isOwner || spaceAdmin}
             canModerate={settingsFor === activeServerId}
             // The other tabs read the channel, member and invite stores, and those hold the
             // ACTIVE server. For any other server they would show — and edit — the wrong one.

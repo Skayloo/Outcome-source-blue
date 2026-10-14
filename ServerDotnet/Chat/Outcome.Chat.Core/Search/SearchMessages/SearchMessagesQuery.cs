@@ -7,5 +7,7 @@ using Outcome.Domain.Permissions;
 
 namespace Outcome.Application.Search;
 
-public sealed record SearchMessagesQuery(string Query, long? ChannelId, int Limit, long Permissions, long RoleId)
+/// <summary><paramref name="ServerId"/> is the caller's ACTIVE server, which CurrentServerMiddleware
+/// admits only for a member — search reads what history reads, nothing wider.</summary>
+public sealed record SearchMessagesQuery(string Query, long? ChannelId, int Limit, long Permissions, long RoleId, long ServerId = 0)
     : IQuery<SearchResponse>;

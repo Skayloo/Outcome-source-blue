@@ -31,3 +31,46 @@
     /* no stored session we can see — show the landing */
   }
 })();
+
+/**
+ * The intro video at the top of the landing (#intro-video). The markup alone is a complete
+ * player: poster, the browser's controls, preload="none", so with JavaScript off nothing is
+ * downloaded until someone presses play. This only starts it — muted, never with sound — once
+ * at least half of it is on screen, and pauses it again when it scrolls away.
+ *
+ * Not started at all for prefers-reduced-motion (a looping film is exactly what that setting
+ * asks to be spared) or Save-Data (3 MB nobody asked for). A reader who paused it by hand keeps
+ * it paused: scrolling back does not overrule them.
+ */
+document.addEventListener("DOMContentLoaded", function () {
+  var video = document.getElementById("intro-video");
+  if (!video || !("IntersectionObserver" in window)) return;
+  try {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (navigator.connection && navigator.connection.saveData) return;
+  } catch (e) {
+    return;
+  }
+
+  var ours = false;      // the current pause is one we made, not the reader's
+  var heldByUser = false;
+
+  video.addEventListener("pause", function () {
+    if (ours) { ours = false; return; }
+    if (!video.ended) heldByUser = true;
+  });
+  video.addEventListener("play", function () { heldByUser = false; });
+
+  new IntersectionObserver(function (entries) {
+    var visible = entries[0].isIntersecting;
+    if (visible && video.paused && !heldByUser) {
+      // Muted by the markup: autoplay is only allowed muted, and the owner wants it silent.
+      // A reader who turned the sound on keeps it on when they scroll back.
+      var p = video.play();
+      if (p && p.catch) p.catch(function () { /* blocked — the poster and controls remain */ });
+    } else if (!visible && !video.paused) {
+      ours = true;
+      video.pause();
+    }
+  }, { threshold: 0.5 }).observe(video);
+});

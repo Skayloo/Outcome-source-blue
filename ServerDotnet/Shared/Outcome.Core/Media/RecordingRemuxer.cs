@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 
 namespace Outcome.Infrastructure.Media;
@@ -23,25 +22,17 @@ public sealed class RecordingRemuxer(ILogger<RecordingRemuxer> log)
     {
         var webm = mime.EndsWith("/webm", StringComparison.Ordinal);
         var output = Path.Combine(Path.GetTempPath(), $"rec_{Guid.NewGuid():N}");
+        var guard = MediaProcess.InputGuard(MediaProcess.AudioVideoFormats);
         var args = webm
-            ? $"-nostdin -v error -nostats -y -i \"{input}\" -map 0 -c copy -f webm \"{output}\""
-            : $"-nostdin -v error -nostats -y -i \"{input}\" -map 0 -c copy -movflags +faststart -f mp4 \"{output}\"";
+            ? $"-nostdin -v error -nostats -y {guard} -i \"{input}\" -map 0 -c copy -f webm \"{output}\""
+            : $"-nostdin -v error -nostats -y {guard} -i \"{input}\" -map 0 -c copy -movflags +faststart -f mp4 \"{output}\"";
         try
         {
-            using var p = Process.Start(new ProcessStartInfo
-            {
-                FileName = "ffmpeg",
-                Arguments = args,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-            if (p is null) return Fail(output, "ffmpeg did not start");
-            // Read what it says while it runs: an unread pipe fills and ffmpeg blocks on it forever.
-            var stderr = p.StandardError.ReadToEndAsync(ct);
-            await p.WaitForExitAsync(ct);
-            var said = await stderr;
-            if (p.ExitCode != 0) return Fail(output, $"ffmpeg exit {p.ExitCode}: {said.Trim()}");
+            // A copy, not a re-encode: even hours of call are a few minutes of disk at most.
+            var r = await MediaProcess.RunAsync("ffmpeg", args, TimeSpan.FromMinutes(15), captureStdout: false, ct);
+            ct.ThrowIfCancellationRequested();
+            if (r is null) return Fail(output, "ffmpeg did not start or ran out of time");
+            if (r.ExitCode != 0) return Fail(output, $"ffmpeg exit {r.ExitCode}: {r.Stderr.Trim()}");
             var info = new FileInfo(output);
             if (!info.Exists || info.Length == 0) return Fail(output, "ffmpeg wrote nothing");
             return output;

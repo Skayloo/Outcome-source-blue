@@ -148,7 +148,13 @@ export function setMessages(
     : converted;
   messagesStore.setState((prev) => {
     const updatedMessages = new Map(prev.messagesByChannel);
-    updatedMessages.set(channelId, trimmed);
+    // The page was asked for before anything newer than it existed, and a message that arrived
+    // over the socket while it was on its way is already here: replacing the list wholesale lost
+    // it (a line sent in the first moment after opening a chat never showed until it was
+    // reopened — reply-quote.mjs caught it). Whatever is newer than the page stays after it.
+    const newest = trimmed.length > 0 ? trimmed[trimmed.length - 1]!.id : 0;
+    const live = (prev.messagesByChannel.get(channelId) ?? []).filter((m) => m.id > newest);
+    updatedMessages.set(channelId, live.length > 0 ? [...trimmed, ...live] : trimmed);
 
     const updatedLoaded = new Set(prev.loadedChannels);
     updatedLoaded.add(channelId);

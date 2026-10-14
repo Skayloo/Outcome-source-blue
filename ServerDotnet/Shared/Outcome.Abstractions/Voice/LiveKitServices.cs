@@ -34,6 +34,10 @@ public interface ILiveKitRoomService
     /// voice_join after a reconnect gets a new identity but keeps its own live session.</summary>
     Task RemoveOtherUserSessionsAsync(long channelId, long userId, string keepIdentity, CancellationToken ct = default);
 
+    /// <summary>Drops exactly one session (identity) from a channel's room — the one a connection
+    /// joined with, when that connection leaves the call or moves to another room.</summary>
+    Task RemoveIdentityAsync(long channelId, string identity, CancellationToken ct = default);
+
     /// <summary>Is any session of this user still connected to the room?</summary>
     Task<bool> HasUserSessionAsync(long channelId, long userId, CancellationToken ct = default);
     /// <summary>The members (identity "user-*") with a session connected to the room right now.
@@ -53,6 +57,10 @@ public interface ILiveKitRoomService
     /// room ("" clears it) — what everyone in the call reads, guests included. False when the user
     /// has no session there.</summary>
     Task<bool> SetUserAttributeAsync(long channelId, long userId, string key, string value, CancellationToken ct = default);
+
+    /// <summary>Puts the attribute back on every session of the user where it differs (and only
+    /// there). False when the user has no session in the room.</summary>
+    Task<bool> EnsureUserAttributeAsync(long channelId, long userId, string key, string value, CancellationToken ct = default);
 }
 
 /// <summary>Verifies and parses LiveKit webhook payloads.</summary>

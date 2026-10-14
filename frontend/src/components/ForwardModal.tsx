@@ -64,7 +64,17 @@ export function ForwardModal({ message, onClose }: { message: Message; onClose: 
   ].filter((x) => x.name.toLowerCase().includes(q.trim().toLowerCase()));
   const sel = Math.min(idx, Math.max(0, targets.length - 1));
 
-  function send(x: Target): void {
+  // Forwarding a DM's file into a channel opens and uploads it again, which takes seconds; a
+  // second click or Enter meanwhile would forward the message twice.
+  const sendingRef = useRef(false);
+  async function send(x: Target): Promise<void> {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    try { await sendTo(x); } finally { sendingRef.current = false; }
+  }
+
+  async function sendTo(x: Target): Promise<void> {
+    const files = { attachments: message.attachments.map((a) => a.id) };
     // Telegram order: your comment first, the forwarded message right after.
     const note = comment.trim();
     if (note.length > 0) {
@@ -75,7 +85,7 @@ export function ForwardModal({ message, onClose }: { message: Message; onClose: 
       channel_id: x.id,
       content,
       forwarded_from: message.forwardedFrom ?? message.user.username,
-      attachments: message.attachments.map((a) => a.id),
+      ...files,
     });
     setTransientSuccess(t("chat.forwardedTo", { name: x.dm ? x.name : `#${x.name}` }));
     onClose();
@@ -85,7 +95,7 @@ export function ForwardModal({ message, onClose }: { message: Message; onClose: 
     if (e.key === "Escape") { onClose(); return true; }
     if (e.key === "ArrowDown") { e.preventDefault(); setIdx((i) => Math.min(i + 1, targets.length - 1)); return true; }
     if (e.key === "ArrowUp") { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)); return true; }
-    if (e.key === "Enter" && targets[sel]) { e.preventDefault(); send(targets[sel]); return true; }
+    if (e.key === "Enter" && targets[sel]) { e.preventDefault(); void send(targets[sel]); return true; }
     return false;
   }
 
@@ -109,7 +119,7 @@ export function ForwardModal({ message, onClose }: { message: Message; onClose: 
             <div
               key={`${x.dm ? "d" : "c"}${x.id}`}
               className={"forward-item" + (i === sel ? " active" : "")}
-              onClick={() => send(x)}
+              onClick={() => void send(x)}
               onMouseEnter={() => setIdx(i)}
             >
               {x.dm

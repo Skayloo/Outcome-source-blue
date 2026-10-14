@@ -93,6 +93,9 @@ export function assetUrlMedium(path: string | null | undefined): string | undefi
 function sized(path: string | null | undefined, sz: "sm" | "md"): string | undefined {
   const url = assetUrl(path);
   if (!url) return undefined;
+  // A file already in the browser (a DM file opened here) has no server-made copies, and a
+  // query string on a blob: or data: URL makes it a different, non-existent URL.
+  if (/^(blob:|data:)/i.test(url)) return url;
   return url + (url.includes("?") ? "&" : "?") + "sz=" + sz;
 }
 

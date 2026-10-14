@@ -76,6 +76,10 @@ public static class SpaceAdminEndpoints
             var existing = await spaces.ListAsync(ct);
             if (existing.Any(s => s.Slug == slug)) throw DomainException.Conflict("a space with this slug already exists");
             if (domain is not null && existing.Any(s => s.Domain == domain)) throw DomainException.Conflict("this domain is already in use");
+            // Before anything is created: a bad owner used to fail AFTER the space was provisioned,
+            // leaving a live space with no users — whose /setup then made the first visitor its owner.
+            if (!string.IsNullOrWhiteSpace(body.OwnerEmail))
+                ValidateOwner(body.OwnerEmail!, body.OwnerUsername, body.OwnerPassword);
 
             var space = await spaces.CreateAsync(slug, name, domain, ct);
             // The database is created and migrated NOW, so the space is usable the moment the
@@ -241,15 +245,16 @@ public static class SpaceAdminEndpoints
     {
         email = email.Trim();
         var name = (username ?? "").Trim();
-        if (AuthRules.ValidateEmail(email) is { } emailErr) throw DomainException.InvalidInput(emailErr);
-        if (AuthRules.ValidateUsername(name) is { } nameErr) throw DomainException.InvalidInput(nameErr);
-        if (AuthRules.ValidatePassword(password ?? "") is { } pwErr) throw DomainException.InvalidInput(pwErr);
+        ValidateOwner(email, name, password);
 
         await using var scope = scopes.CreateAsyncScopeFor(space);
         var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
         var servers = scope.ServiceProvider.GetRequiredService<IServerRepository>();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
 
+        // Seeds the FIRST owner only. A space has one — the account that set it up — and this route
+        // was a way round that rule: any root Admin could mint a fresh Owner, in the root space too.
+        if (await users.HasOwnerAsync(ct)) throw DomainException.Conflict("that space already has its owner");
         if (await users.ExistsByEmailAsync(email, ct)) throw DomainException.Conflict("this email already exists in that space");
         if (await users.ExistsByUsernameAsync(name, ct)) throw DomainException.Conflict("this username already exists in that space");
 
@@ -268,6 +273,13 @@ public static class SpaceAdminEndpoints
         // A space with no server is a dead end — give the owner one to land in.
         await servers.CreateAsync(space.Name, owner.Id, ct);
         return owner.Id;
+    }
+
+    private static void ValidateOwner(string email, string? username, string? password)
+    {
+        if (AuthRules.ValidateEmail(email.Trim()) is { } emailErr) throw DomainException.InvalidInput(emailErr);
+        if (AuthRules.ValidateUsername((username ?? "").Trim()) is { } nameErr) throw DomainException.InvalidInput(nameErr);
+        if (AuthRules.ValidatePassword(password ?? "") is { } pwErr) throw DomainException.InvalidInput(pwErr);
     }
 
     private static void RequireRootAdmin(ICurrentUser current, ICurrentSpace here)

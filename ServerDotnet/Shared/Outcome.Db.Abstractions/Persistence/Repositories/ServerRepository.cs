@@ -63,6 +63,9 @@ public sealed class ServerRepository(OutcomeDbContext db) : IServerRepository
     public Task<bool> IsMemberAsync(long serverId, long userId, CancellationToken ct = default) =>
         db.ServerMembers.AsNoTracking().AnyAsync(m => m.ServerId == serverId && m.UserId == userId, ct);
 
+    public Task<bool> IsLiveAsync(long serverId, CancellationToken ct = default) =>
+        db.Servers.AsNoTracking().AnyAsync(s => s.Id == serverId && !s.Deleted, ct);
+
     public async Task<ServerInfo?> GetAsync(long serverId, CancellationToken ct = default)
     {
         var s = await db.Servers.AsNoTracking().Where(x => x.Id == serverId)
@@ -161,6 +164,26 @@ public sealed class ServerRepository(OutcomeDbContext db) : IServerRepository
             .Where(m => m.ServerId == serverId && m.UserId == userId)
             .Select(m => m.RoleId)
             .FirstOrDefaultAsync(ct);
+
+    public async Task<Outcome.Domain.Permissions.ServerRole> GetServerRoleAsync(long serverId, long userId, CancellationToken ct = default)
+    {
+        var owner = await db.Servers.AsNoTracking().Where(s => s.Id == serverId && !s.Deleted).Select(s => (long?)s.OwnerId).FirstOrDefaultAsync(ct);
+        if (owner is null) return Outcome.Domain.Permissions.ServerRole.None;
+        var member = await db.ServerMembers.AsNoTracking()
+            .Where(m => m.ServerId == serverId && m.UserId == userId)
+            .Select(m => new { m.RoleId }).FirstOrDefaultAsync(ct);
+        return Outcome.Domain.Permissions.ServerRoles.FromMember(owner == userId, member is not null, member?.RoleId);
+    }
+
+    public async Task<IReadOnlyDictionary<long, Outcome.Domain.Permissions.ServerRole>> ServerRolesAsync(long serverId, CancellationToken ct = default)
+    {
+        var owner = await db.Servers.AsNoTracking().Where(s => s.Id == serverId && !s.Deleted).Select(s => (long?)s.OwnerId).FirstOrDefaultAsync(ct);
+        var rows = await db.ServerMembers.AsNoTracking().Where(m => m.ServerId == serverId)
+            .Select(m => new { m.UserId, m.RoleId }).ToListAsync(ct);
+        var map = rows.ToDictionary(r => r.UserId, r => Outcome.Domain.Permissions.ServerRoles.FromMember(r.UserId == owner, true, r.RoleId));
+        if (owner is { } o) map[o] = Outcome.Domain.Permissions.ServerRole.Owner;
+        return map;
+    }
 
     public async Task<bool> AssignMemberRoleAsync(long serverId, long userId, long? roleId, CancellationToken ct = default) =>
         await db.ServerMembers.Where(m => m.ServerId == serverId && m.UserId == userId)

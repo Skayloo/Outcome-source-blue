@@ -106,7 +106,10 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
     public async Task<IReadOnlyList<AdminUserDto>> ListAdminUsersAsync(int limit = int.MaxValue, int offset = 0, string? search = null, CancellationToken ct = default) =>
         await AdminUsersQuery(search).OrderBy(u => u.Id)
             .Skip(offset).Take(limit)
-            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.RoleId, u.Status, u.Banned, u.CreatedAt, u.Email))
+            // Servers they created: the space role says "Member" for most people who run a server of
+            // their own, and the console used to give no hint of it.
+            .Select(u => new AdminUserDto(u.Id, u.UserName!, u.RoleId, u.Status, u.Banned, u.CreatedAt, u.Email,
+                db.Servers.Where(s => s.OwnerId == u.Id && !s.Deleted).OrderBy(s => s.Id).Select(s => s.Name).ToList()))
             .ToListAsync(ct);
 
     public Task<int> CountAdminUsersAsync(string? search = null, CancellationToken ct = default) =>
@@ -140,6 +143,9 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
             .SetProperty(u => u.BanReason, (string?)null)
             .SetProperty(u => u.BanExpires, (DateTime?)null), ct);
 
+    public Task<bool> HasOwnerAsync(CancellationToken ct = default) =>
+        db.Users.AnyAsync(u => u.RoleId == DefaultRole.Owner && !u.Deleted, ct);
+
     public Task<int> CountAdminsExceptAsync(long exceptUserId, CancellationToken ct = default) =>
         db.Users.CountAsync(u =>
             (u.RoleId == DefaultRole.Owner || u.RoleId == DefaultRole.Admin) && u.Id != exceptUserId && !u.Banned && !u.Deleted, ct);
@@ -164,13 +170,15 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
         await db.Users.Where(u => u.Id == id).ExecuteDeleteAsync(ct);
     }
 
-    // Self-service account deletion (recoverable). The user's content is soft-deleted, not purged:
-    // their messages stay in the DB with deleted=true so that replies to them can still render a
-    // "Deleted message" placeholder, and the account itself is hidden from auth + member lists.
+    // Self-service account deletion. The user's messages stay as rows with deleted=true so that
+    // replies to them can still render a "Deleted message" placeholder, and the account itself is
+    // hidden from auth + member lists. Their TEXT goes, as pdn.html promises ("their content and
+    // authorship are not kept"): it stayed in the row, and a report on the old id copied it into
+    // the moderation queue and back to the reporter. Same blanking as an ordinary delete.
     public async Task SoftDeleteAsync(long id, CancellationToken ct = default)
     {
-        await db.Messages.Where(m => m.UserId == id && !m.Deleted)
-            .ExecuteUpdateAsync(s => s.SetProperty(m => m.Deleted, true), ct);
+        await db.Messages.Where(m => m.UserId == id && (!m.Deleted || m.Content != ""))
+            .ExecuteUpdateAsync(s => s.SetProperty(m => m.Deleted, true).SetProperty(m => m.Content, ""), ct);
         // Kick from every server they belong to; revoke invites they issued.
         await db.ServerMembers.Where(sm => sm.UserId == id).ExecuteDeleteAsync(ct);
         await db.Invites.Where(i => i.CreatedBy == id && !i.Revoked)
@@ -225,12 +233,18 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
     public Task UpdatePasswordAsync(long id, string passwordHash, CancellationToken ct = default) =>
         db.Users.Where(u => u.Id == id).ExecuteUpdateAsync(s => s.SetProperty(u => u.PasswordHash, passwordHash), ct);
 
+    // A name by any part of it; an e-mail only WHOLE. The directory is open to everyone signed in,
+    // and matching addresses by substring made it an oracle: extend "@gmail.com" one letter at a
+    // time while the target keeps coming back, and their address is spelled out. The query is
+    // escaped for the same reason — "%" and "_" were wildcards.
     public async Task<IReadOnlyList<UserSearchDto>> SearchAsync(string query, long excludeUserId, int limit, CancellationToken ct = default)
     {
-        var pattern = "%" + query + "%";
+        var q = query.Trim();
+        var pattern = "%" + q.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+        var email = q.ToLowerInvariant();
         return await db.Users.AsNoTracking()
             .Where(u => !u.Deleted && u.Id != excludeUserId
-                && (EF.Functions.ILike(u.UserName!, pattern) || EF.Functions.ILike(u.Email!, pattern)))
+                && (EF.Functions.ILike(u.UserName!, pattern, "\\") || (u.Email != null && u.Email.ToLower() == email)))
             .OrderBy(u => u.UserName)
             .Take(limit)
             .Select(u => new UserSearchDto(u.Id, u.UserName!, u.Avatar, u.Status))
@@ -381,8 +395,11 @@ public sealed class SettingsRepository(OutcomeDbContext db) : ISettingsRepositor
 
 public sealed class InviteRepository(OutcomeDbContext db) : IInviteRepository
 {
+    // A deleted server's codes go with it: joining one used to add the person to a server that
+    // no longer exists — registration "succeeded" into nowhere.
     public Task<Invite?> GetByCodeAsync(string code, CancellationToken ct = default) =>
-        db.Invites.AsNoTracking().FirstOrDefaultAsync(i => i.Code == code, ct);
+        db.Invites.AsNoTracking()
+            .FirstOrDefaultAsync(i => i.Code == code && db.Servers.Any(s => s.Id == i.ServerId && !s.Deleted), ct);
 
     public Task ConsumeAsync(long inviteId, long redeemedBy, CancellationToken ct = default) =>
         db.Invites.Where(i => i.Id == inviteId).ExecuteUpdateAsync(s => s
@@ -408,6 +425,24 @@ public sealed class InviteRepository(OutcomeDbContext db) : IInviteRepository
     public async Task<bool> RevokeAsync(long serverId, string code, CancellationToken ct = default) =>
         await db.Invites.Where(i => i.Code == code && i.ServerId == serverId)
             .ExecuteUpdateAsync(s => s.SetProperty(i => i.Revoked, true), ct) > 0;
+
+    public async Task<IReadOnlyList<AdminInviteDto>> ListInSpaceAsync(long? serverId, int limit = int.MaxValue, int offset = 0, CancellationToken ct = default) =>
+        await (from i in InSpace(serverId)
+               join s in db.Servers.AsNoTracking() on i.ServerId equals s.Id
+               join u in db.Users.AsNoTracking() on i.CreatedBy equals u.Id into authors
+               from u in authors.DefaultIfEmpty()
+               orderby i.Id descending
+               select new AdminInviteDto(i.Id, i.Code, i.ServerId, s.Name, i.CreatedBy, u != null ? u.UserName! : "",
+                   i.MaxUses, i.UseCount, i.ExpiresAt, i.CreatedAt))
+            .Skip(offset).Take(limit).ToListAsync(ct);
+
+    public Task<int> CountInSpaceAsync(long? serverId, CancellationToken ct = default) =>
+        InSpace(serverId).CountAsync(ct);
+
+    private IQueryable<Invite> InSpace(long? serverId) =>
+        db.Invites.AsNoTracking().Where(i => !i.Revoked
+            && (serverId == null || i.ServerId == serverId)
+            && db.Servers.Any(s => s.Id == i.ServerId && !s.Deleted));
 }
 
 public sealed class AuditRepository(OutcomeDbContext db) : IAuditRepository
@@ -434,7 +469,7 @@ public sealed class AdminMetricsRepository(OutcomeDbContext db) : IAdminMetricsR
         var messages = await db.Messages.CountAsync(m => !m.Deleted, ct);
         var channels = await db.Channels.CountAsync(c => !c.Deleted, ct);
         var servers  = await db.Servers.CountAsync(s => !s.Deleted, ct);
-        var invites  = await db.Invites.CountAsync(i => !i.Revoked, ct);
+        var invites  = await db.Invites.CountAsync(i => !i.Revoked && db.Servers.Any(s => s.Id == i.ServerId && !s.Deleted), ct);
         long dbSize  = 0;
         try
         {
@@ -538,6 +573,7 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
         if (ids.Count == 0) return Array.Empty<Attachment>();
         var atts = await db.Attachments.Where(a => ids.Contains(a.Id)).ToListAsync(ct);
         var result = new List<Attachment>();
+        var readable = new Dictionary<long, bool>();
         // `ids` IS the sender's order — this loop is the only place it is ever known, so it is
         // the only place the position can be recorded.
         for (var position = 0; position < ids.Count; position++)
@@ -560,6 +596,14 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
             {
                 // Already parented (a FORWARD): clone the row, sharing the stored object.
                 // Message deletion never removes storage, so the shared file is safe.
+                // Only from a message the sender can read. An attachment id rides in every signed
+                // URL it was ever served from, and "forwarding" it made a copy of somebody else's
+                // file theirs — readable for good, past the signature's expiry and past their
+                // removal from the server or the conversation it was posted in.
+                var source = a.MessageId.Value;
+                if (!readable.TryGetValue(source, out var ok))
+                    readable[source] = ok = await CanReadMessageAsync(source, senderId, ct);
+                if (!ok) continue;
                 var clone = new Attachment
                 {
                     UploaderId = senderId,
@@ -582,6 +626,16 @@ public sealed class AttachmentRepository(OutcomeDbContext db) : IAttachmentRepos
         await db.SaveChangesAsync(ct);
         return result;
     }
+
+    /// <summary>The message is not deleted, and its channel is a DM the user takes part in, or a live
+    /// channel of a server they belong to. A deleted message's file is gone for its readers: its id
+    /// still rode in every copy they received, and forwarding it brought the file back for good.</summary>
+    private Task<bool> CanReadMessageAsync(long messageId, long userId, CancellationToken ct) =>
+        db.Messages.AsNoTracking().Where(m => m.Id == messageId && !m.Deleted)
+            .Join(db.Channels, m => m.ChannelId, c => c.Id, (m, c) => c)
+            .AnyAsync(c => !c.Deleted && (c.ServerId == null
+                ? db.DmParticipants.Any(p => p.ChannelId == c.Id && p.UserId == userId)
+                : db.ServerMembers.Any(sm => sm.ServerId == c.ServerId && sm.UserId == userId)), ct);
 
     public async Task<IReadOnlyList<Attachment>> ListByMessageIdsAsync(IReadOnlyList<long> messageIds, CancellationToken ct = default)
     {

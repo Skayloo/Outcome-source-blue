@@ -8,4 +8,4 @@ using Outcome.Domain.Permissions;
 namespace Outcome.Application.Roles;
 
 // ── assign ───────────────────────────────────────────────────────────────────
-public sealed record AssignRoleCommand(long UserId, long RoleId, long ActorPermissions) : ICommand;
+public sealed record AssignRoleCommand(long UserId, long RoleId, long ActorPermissions, long ActorUserId = 0) : ICommand;

@@ -20,7 +20,7 @@ function errMsg(err: unknown, fallback: string): string {
 const PAGE_SIZE = 25;
 
 /** Parse a number field where empty/0 means "no limit". Returns undefined when blank/zero. */
-function parseLimit(raw: string): number | undefined {
+export function parseLimit(raw: string): number | undefined {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return undefined;
   const n = Number(trimmed);
@@ -35,7 +35,7 @@ function formatExpiry(expiresAt: string | null): string {
   return new Date(ts).toLocaleString();
 }
 
-function formatUses(invite: InviteResponse): string {
+export function formatUses(invite: Pick<InviteResponse, "use_count" | "max_uses">): string {
   const used = invite.use_count ?? 0;
   const max = invite.max_uses;
   return max === null ? `${used} / ∞` : `${used} / ${max}`;

@@ -16,10 +16,12 @@ public sealed class CreateMessageHandler(
     IDmRepository dms,
     IBlockRepository blocks,
     IServerRepository servers,
-    IRoleRepository roles,
+    IPermissionRepository permissions,
     IFileUrlSigner fileUrls) : IRequestHandler<CreateMessageCommand, CreatedMessage>
 {
     private const int MaxMessageLength = 4000;
+    // A recording posts two files, the composer a handful; ten matches what Discord allows.
+    private const int MaxAttachments = 10;
 
     public async Task<CreatedMessage> Handle(CreateMessageCommand cmd, CancellationToken ct)
     {
@@ -43,13 +45,14 @@ public sealed class CreateMessageHandler(
             var roleId = cmd.RoleId;
             if (channel.ServerId is { } sid && sid != cmd.ServerId)
             {
-                // Cross-server post (forwarding): allowed for MEMBERS of the target server,
-                // judged by the role they hold THERE — not the active tenant's bits.
+                // Cross-server post (forwarding): allowed for MEMBERS of the target server, judged
+                // by what they hold THERE — computed exactly as for the active server (space role's
+                // claims + that server role's grant). It read the drifted roles.permissions column
+                // of a role id that fell back to the ACTIVE server's role, so a Moderator somewhere
+                // else (say, in a server of one's own) passed a private channel's overrides here.
                 if (!await servers.IsMemberAsync(sid, cmd.UserId, ct))
                     throw DomainException.Forbidden("you are not a member of that server");
-                // A NULL per-server role = plain member → their base role (roles are instance-global).
-                roleId = await servers.GetMemberRoleAsync(sid, cmd.UserId, ct) ?? cmd.RoleId;
-                permBits = (await roles.GetByIdAsync(roleId, ct))?.Permissions ?? 0;
+                permBits = Perms.ToBits(await permissions.GetEffectiveForServerAsync(cmd.UserId, sid, ct));
             }
 
             var baseNames = Perms.FromBits(permBits);
@@ -62,6 +65,11 @@ public sealed class CreateMessageHandler(
                     throw DomainException.Forbidden("no permission to send in this channel");
             }
         }
+
+        // One frame used to carry ~27 000 copies of one id: a read check and a cloned row each,
+        // inside one transaction, and a multi-megabyte chat_message to everyone in the channel.
+        if (cmd.Attachments.Distinct().Count() > MaxAttachments)
+            throw DomainException.BadRequest($"a message can carry at most {MaxAttachments} files");
 
         var content = TextSanitizer.StripHtml(cmd.Content);
         if (content.Length == 0 && cmd.Attachments.Count == 0)
@@ -87,7 +95,7 @@ public sealed class CreateMessageHandler(
         var (id, timestamp) = await messages.CreateAsync(cmd.ChannelId, cmd.UserId, content, cmd.ReplyTo, forwardedFrom, ct);
 
         var linked = cmd.Attachments.Count > 0
-            ? await attachments.AttachToMessageAsync(cmd.Attachments, id, cmd.UserId, ct)
+            ? await attachments.AttachToMessageAsync(cmd.Attachments.Distinct().ToList(), id, cmd.UserId, ct)
             : (IReadOnlyList<Domain.Entities.Attachment>)Array.Empty<Domain.Entities.Attachment>();
         var attachmentDtos = linked
             .Select(a => new AttachmentDto(a.Id, a.Filename, a.Size, a.MimeType, fileUrls.Sign(a.Id), a.Width, a.Height, a.DurationMs, a.Waveform))

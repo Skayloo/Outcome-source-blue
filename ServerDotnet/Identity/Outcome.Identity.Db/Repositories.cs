@@ -42,6 +42,8 @@ public interface IUserRepository
     Task BanAsync(long id, string reason, CancellationToken ct = default);
     Task UnbanAsync(long id, CancellationToken ct = default);
     Task<int> CountAdminsExceptAsync(long exceptUserId, CancellationToken ct = default);
+    /// <summary>Does this space already have its owner (a live account with the Owner role)?</summary>
+    Task<bool> HasOwnerAsync(CancellationToken ct = default);
     Task DeleteAsync(long id, CancellationToken ct = default);
     /// <summary>Soft-deletes the account: soft-deletes the user's messages (kept for "Deleted message"
     /// reply placeholders), removes memberships/sessions, and marks the user deleted.</summary>
@@ -94,7 +96,7 @@ public interface ISessionRepository
 public interface IDeviceTokenRepository
 {
     /// <summary>Registers the token for this user, moving it off any other account that held it.</summary>
-    Task RegisterAsync(long userId, string token, string platform, string kind, CancellationToken ct = default);
+    Task RegisterAsync(long userId, string token, string platform, string kind, string? sessionHash = null, CancellationToken ct = default);
     /// <param name="userId">When given, only that user's row goes — nobody should be able to
     /// silence someone else's phone by guessing its token.</param>
     Task RemoveAsync(string token, long? userId = null, CancellationToken ct = default);
@@ -121,4 +123,7 @@ public interface IInviteRepository
     /// <summary>Active (non-revoked) invites for the server — pairs with ListAsync's filter.</summary>
     Task<int> CountAsync(long serverId, CancellationToken ct = default);
     Task<bool> RevokeAsync(long serverId, string code, CancellationToken ct = default);
+    /// <summary>Active invites of every live server in the space (or of one), newest first.</summary>
+    Task<IReadOnlyList<AdminInviteDto>> ListInSpaceAsync(long? serverId, int limit = int.MaxValue, int offset = 0, CancellationToken ct = default);
+    Task<int> CountInSpaceAsync(long? serverId, CancellationToken ct = default);
 }

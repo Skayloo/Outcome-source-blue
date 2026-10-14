@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using MediatR;
 using Outcome.Shared.Abstractions.Messaging;
 using Outcome.Shared.Abstractions.Persistence;
@@ -12,7 +13,9 @@ public sealed class VerifyTotpHandler(
     ITotpService totp,
     IPartialAuthStore partialStore,
     IJwtTokenService jwt,
-    ISessionRepository sessions) : IRequestHandler<VerifyTotpCommand, AuthResult>
+    ISessionRepository sessions,
+    UserManager<User> userManager,
+    IAuditRepository audit) : IRequestHandler<VerifyTotpCommand, AuthResult>
 {
     public async Task<AuthResult> Handle(VerifyTotpCommand cmd, CancellationToken ct)
     {
@@ -30,6 +33,20 @@ public sealed class VerifyTotpHandler(
         }
 
         partialStore.Consume(cmd.PartialToken);
+
+        // The second step of a password reset (ResetPasswordHandler): only now, with both factors
+        // proven, does the new password take effect and every other session end.
+        if (challenge.PendingPasswordHash is { } hash)
+        {
+            var managed = await userManager.FindByIdAsync(user.Id.ToString())
+                          ?? throw DomainException.Unauthorized("invalid or expired two-factor challenge");
+            managed.PasswordHash = hash;
+            managed.PasswordSet = true;
+            managed.EmailConfirmed = true;
+            await userManager.UpdateSecurityStampAsync(managed);
+            await sessions.DeleteAllForUserAsync(user.Id, ct);
+            await audit.AddAsync(user.Id, "password_reset", "user", user.Id, "password reset via emailed code + TOTP", ct);
+        }
 
         var token = jwt.Issue(user.Id);
         await Outcome.Application.Common.SessionIssuer.RecordAsync(sessions, jwt, user.Id, token, challenge.Device, challenge.Ip, ct);

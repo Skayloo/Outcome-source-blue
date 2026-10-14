@@ -50,7 +50,7 @@ public static class GuestEndpoints
         // ── Member side: mint / revoke the channel's link ─────────────────────────
         app.MapPost("/api/v1/channels/{id:long}/guest-link", async (long id, HttpContext ctx,
             ICurrentUser current, ICurrentServer srv, IChannelRepository channels, IGuestLinkRepository links,
-            IConnectionRegistry registry, ICurrentSpace space) =>
+            IConnectionRegistry registry, ICurrentSpace space, IVoiceStateRepository voice) =>
         {
             RequireInviter(current);
             var channel = await ValidateVoiceChannelAsync(id, srv, channels);
@@ -72,7 +72,7 @@ public static class GuestEndpoints
         app.MapDelete("/api/v1/channels/{id:long}/guest-link", async (long id,
             ICurrentUser current, ICurrentServer srv, IChannelRepository channels,
             IGuestLinkRepository links, ILiveKitRoomService livekit,
-            GuestPresence guests, IConnectionRegistry registry, ICurrentSpace space) =>
+            GuestPresence guests, IConnectionRegistry registry, ICurrentSpace space, IVoiceStateRepository voice) =>
         {
             RequireInviter(current);
             var channel = await ValidateVoiceChannelAsync(id, srv, channels);
@@ -82,21 +82,26 @@ public static class GuestEndpoints
             // And the roster must drop them NOW, directly — the eviction's participant_left
             // webhooks normally handle this, but revoke shouldn't depend on that path working.
             foreach (var gid in guests.Clear(space.Space.Id, channel.Id))
-                await registry.BroadcastAsync(WsFrames.VoiceLeave(channel.Id, gid));
+            {
+                var frame = WsFrames.VoiceLeave(channel.Id, gid);
+                if (channel.ServerId is { } sid) await registry.BroadcastToServerAsync(sid, frame);
+                await SendToRoomAsync(registry, voice, channel.Id, frame);
+            }
             return Results.NoContent();
         });
 
         // ── Guest side (NO auth) ─────────────────────────────────────────────────
         app.MapGet("/api/v1/guest/{code}", async (string code, HttpContext ctx,
-            IGuestLinkRepository links, IChannelRepository channels, IServerRepository servers, IRateLimiter limiter) =>
+            IGuestLinkRepository links, IChannelRepository channels, IServerRepository servers, IRateLimiter limiter, ICurrentSpace space) =>
         {
-            // The global ceiling is not decoration: behind a NAT that hides every client the
-            // per-client bucket above is shared, so this is what actually bounds the endpoint.
-            if (!ClientRate.Allow(limiter, ctx, "guest_info", 30, TimeSpan.FromMinutes(1))
-                || !limiter.Allow("global:guest_info", 1200, TimeSpan.FromMinutes(1)))
+            if (!ClientRate.Allow(limiter, ctx, "guest_info", 30, TimeSpan.FromMinutes(1)))
                 throw new DomainException("RATE_LIMITED", 429, "too many requests");
-
             var (link, channel) = await ResolveAsync(code, links, channels);
+            // The overall ceiling bounds one LINK, charged after the code is known to be real: as one
+            // process-wide bucket, made-up codes from a few dozen addresses filled it and every guest
+            // link of every space answered "invalid".
+            if (!limiter.Allow($"guest_info:{space.Space.Id}:{link.Code}", 1200, TimeSpan.FromMinutes(1)))
+                throw new DomainException("RATE_LIMITED", 429, "too many requests");
             var server = channel.ServerId is { } sid ? await servers.GetAsync(sid) : null;
             return Results.Json(new
             {
@@ -132,14 +137,15 @@ public static class GuestEndpoints
         });
 
         app.MapPost("/api/v1/guest/{code}/join", async (string code, GuestJoinBody? body, HttpContext ctx,
-            IGuestLinkRepository links, IChannelRepository channels, ILiveKitTokenService livekit, IRateLimiter limiter) =>
+            IGuestLinkRepository links, IChannelRepository channels, ILiveKitTokenService livekit, IRateLimiter limiter, ICurrentSpace space) =>
         {
             // Strict: minting media tokens for anonymous visitors is the whole attack surface.
-            if (!ClientRate.Allow(limiter, ctx, "guest_join", 5, TimeSpan.FromMinutes(1))
-                || !limiter.Allow("global:guest_join", 120, TimeSpan.FromMinutes(1)))
+            if (!ClientRate.Allow(limiter, ctx, "guest_join", 5, TimeSpan.FromMinutes(1)))
                 throw new DomainException("RATE_LIMITED", 429, "too many join attempts, please wait a moment");
-
             var (link, channel) = await ResolveAsync(code, links, channels);
+            // Per link, after the code is checked (see guest_info above).
+            if (!limiter.Allow($"guest_join:{space.Space.Id}:{link.Code}", 120, TimeSpan.FromMinutes(1)))
+                throw new DomainException("RATE_LIMITED", 429, "too many join attempts, please wait a moment");
             if (!livekit.IsConfigured) throw DomainException.Server("voice is not configured on this instance");
 
             var name = TextSanitizer.StripHtml(body?.DisplayName ?? "").Trim();
@@ -147,7 +153,7 @@ public static class GuestEndpoints
             if (name.Length > 24) name = name[..24];
 
             // "(гость)" is appended server-side so a visitor can't impersonate a member.
-            var token = livekit.GenerateGuestToken($"{name} (guest)", channel.Id);
+            var token = livekit.GenerateGuestToken($"{name} (guest)", channel.Id, link.Code);
             return Results.Json(new { token, url = "/livekit", channel_name = channel.Name });
         });
 
@@ -245,10 +251,18 @@ public static class GuestEndpoints
         return (link, channel);
     }
 
+    /// <summary>Every member in the room's call, wherever their socket is looking.</summary>
+    private static async Task SendToRoomAsync(IConnectionRegistry registry, IVoiceStateRepository voice, long channelId, byte[] frame)
+    {
+        foreach (var p in await voice.GetForChannelAsync(channelId))
+            await registry.SendToUserAsync(p.UserId, frame);
+    }
+
     private static async Task<Domain.Entities.Channel> ValidateVoiceChannelAsync(
         long id, ICurrentServer srv, IChannelRepository channels)
     {
         var channel = await channels.GetByIdAsync(id) ?? throw DomainException.NotFound("channel not found");
+        if (channel.Deleted) throw DomainException.NotFound("channel not found");
         if (channel.Type != "voice") throw DomainException.BadRequest("guest links are for voice channels");
         if (channel.ServerId is { } sid && sid != srv.ServerId)
             throw DomainException.Forbidden("channel is not in your active server");

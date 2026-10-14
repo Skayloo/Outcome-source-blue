@@ -10,12 +10,8 @@ import { ModalPortal } from "@components/ModalPortal";
 import { Avatar } from "@components/Avatar";
 import { Icon } from "@lib/icons";
 import { t } from "@lib/i18n";
+import { serverRoleLabel } from "@lib/access";
 
-const ROLE_LABELS: Record<string, string> = {
-  owner: "Владелец",
-  admin: "Админ",
-  moderator: "Модератор",
-};
 
 const MONTHS = [
   "январь", "февраль", "март", "апрель", "май", "июнь",
@@ -111,7 +107,7 @@ export function UserProfileModal(
               <Icon name={role === "member" ? "user" : "shield"} size={17} />
               <span className="pf-label">Роль</span>
               <span className={"pf-value" + (role === "member" ? "" : " accent")}>
-                {ROLE_LABELS[role] ?? "Участник"}
+                {serverRoleLabel(role)}
               </span>
             </div>
             {since != null && (

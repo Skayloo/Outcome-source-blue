@@ -4110,6 +4110,8 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
   font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
   padding: 2px 7px; border-radius: 12px; background: color-mix(in oklab, var(--role-owner) 20%, transparent); color: var(--role-owner);
 }
+/* A member's role in the server, shown read-only to people who cannot change it. */
+.srvset-role-tag { font-size: 12px; color: var(--text-muted); padding: 2px 8px; border-radius: 6px; background: var(--bg-modifier-hover); }
 .account-delete-btn { color: var(--red); }
 .account-delete-btn:hover { background: color-mix(in oklab, var(--red) 16%, transparent); }
 

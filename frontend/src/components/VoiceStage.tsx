@@ -11,7 +11,7 @@ import {
   onVoiceReaction, sendVoiceReaction, sendVoiceGif, setHandRaisedLocal,
 } from "@lib/livekitSession";
 import { Icon } from "@lib/icons";
-import { copyGuestLink } from "@lib/guestLink";
+import { copyGuestLink, guestLabel } from "@lib/guestLink";
 import { Avatar } from "@components/Avatar";
 import { QualityBars } from "@components/QualityBars";
 import { t } from "@lib/i18n";
@@ -171,7 +171,7 @@ export function VoiceStage({ channelId }: { channelId: number }) {
                   <QualityBars quality={v.connQuality.get(u.userId)} size={11} />
                   {u.muted && <span className="vstage-badge muted" title={t("voice.muted")}><Icon name="mic-off" size={12} /></span>}
                   {u.deafened && <span className="vstage-badge deaf" title={t("voice.deafened")}><Icon name="volume-x" size={12} /></span>}
-                  <span className="vstage-name-text">{u.username}{u.userId === me ? ` ${t("voice.youSuffix")}` : ""}</span>
+                  <span className="vstage-name-text">{u.userId < 0 ? guestLabel(u.username, t("chat.guestTag")) : u.username}{u.userId === me ? ` ${t("voice.youSuffix")}` : ""}</span>
                 </div>
               </div>
             );

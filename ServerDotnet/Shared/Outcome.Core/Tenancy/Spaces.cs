@@ -65,11 +65,15 @@ public sealed class SpaceRegistry : ISpaceRegistry
         {
             // The instance's own space. Its domain stays NULL: it is the fallback for every
             // host no tenant claims, including bare IPs and the apex domain.
+            // The sequence only ever moves FORWARD (past the explicit id 1 above): setting it to
+            // max(id) rewound it after the newest space was deleted, and the next space got the
+            // dead one's id — and with it the Redis replay buffer and LiveKit rooms keyed by it.
             cmd.CommandText = """
                 INSERT INTO spaces (id, slug, name, domain, db_name)
                 VALUES (1, 'root', 'Outcome', NULL, @db)
                 ON CONFLICT (id) DO NOTHING;
-                SELECT setval(pg_get_serial_sequence('spaces','id'), GREATEST((SELECT max(id) FROM spaces), 1));
+                SELECT setval(q.seq, GREATEST((SELECT max(id) FROM spaces), 1, nextval(q.seq) - 1))
+                FROM (SELECT pg_get_serial_sequence('spaces','id') AS seq) q;
                 """;
             cmd.Parameters.AddWithValue("db", _rootDb);
             await cmd.ExecuteNonQueryAsync(ct);

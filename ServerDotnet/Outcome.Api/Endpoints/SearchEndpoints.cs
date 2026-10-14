@@ -10,10 +10,10 @@ public static class SearchEndpoints
     public static void MapSearchEndpoints(this IEndpointRouteBuilder app)
     {
         // GET /api/v1/search?q=...&channel_id=...&limit=...
-        app.MapGet("/api/v1/search", async (string? q, long? channel_id, int? limit, ICurrentUser current, ISender mediator) =>
+        app.MapGet("/api/v1/search", async (string? q, long? channel_id, int? limit, ICurrentUser current, ICurrentServer srv, ISender mediator) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
-            return await mediator.Send(new SearchMessagesQuery(q ?? string.Empty, channel_id, limit ?? 50, current.Permissions, current.RoleId));
+            return await mediator.Send(new SearchMessagesQuery(q ?? string.Empty, channel_id, limit ?? 50, current.Permissions, current.RoleId, srv.ServerId));
         });
     }
 }

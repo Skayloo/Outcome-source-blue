@@ -35,8 +35,13 @@ public sealed class DeleteAccountHandler(
         }
         limiter.Reset($"delete_fail:{user.Id}");
 
-        // Last admin/owner guard.
-        if (user.RoleId is DefaultRole.Owner or DefaultRole.Admin)
+        // The owner is the account that set the space up, and nobody can be made owner after it: its
+        // deletion would leave the space with no owner for good.
+        if (user.RoleId == DefaultRole.Owner)
+            throw DomainException.Forbidden("the space owner's account can't be deleted");
+
+        // Last admin guard.
+        if (user.RoleId is DefaultRole.Admin)
         {
             var otherAdmins = await users.CountAdminsExceptAsync(user.Id, ct);
             if (otherAdmins == 0)

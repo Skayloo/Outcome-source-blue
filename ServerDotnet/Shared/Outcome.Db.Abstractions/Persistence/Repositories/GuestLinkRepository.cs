@@ -48,8 +48,12 @@ public sealed class GuestLinkRepository(OutcomeDbContext db) : IGuestLinkReposit
         return link;
     }
 
+    // A link lives only as long as its room and that room's server: deleting either left the
+    // link working — a guest still got a seat (and a token) in the room of a server that is gone.
     public Task<GuestLink?> GetByCodeAsync(string code, CancellationToken ct = default) =>
-        db.GuestLinks.AsNoTracking().FirstOrDefaultAsync(g => g.Code == code && !g.Revoked, ct);
+        db.GuestLinks.AsNoTracking().FirstOrDefaultAsync(g => g.Code == code && !g.Revoked
+            && db.Channels.Any(c => c.Id == g.ChannelId && !c.Deleted
+                && (c.ServerId == null || db.Servers.Any(s => s.Id == c.ServerId && !s.Deleted))), ct);
 
     public Task<string?> GetActiveCodeForChannelAsync(long channelId, CancellationToken ct = default) =>
         db.GuestLinks.AsNoTracking()

@@ -8,6 +8,7 @@ using Outcome.Shared.Abstractions.Security;
 using Outcome.Infrastructure.Mail;
 using Outcome.Application.Admin;
 using Outcome.Application.Channels;
+using Outcome.Application.Invites;
 using Outcome.Application.Roles;
 using Outcome.Domain.Errors;
 using Perms = Outcome.Shared.Abstractions.Authorization.Permissions;
@@ -35,6 +36,9 @@ public static class AdminEndpoints
 
     /// <summary>Messages of one folder and what to do with them (flags / move / delete / empty).</summary>
     public sealed record MailUidsBody(string? Folder, uint[]? Uids, bool? Seen, bool? Flagged, string? To);
+
+    /// <summary>An invite the space's administrator makes for a server of their choosing.</summary>
+    public sealed record AdminInviteBody(long ServerId, int MaxUses, int ExpiresInHours);
 
     private static readonly System.Text.Json.JsonSerializerOptions MailJson = new(System.Text.Json.JsonSerializerDefaults.Web)
     {
@@ -116,6 +120,37 @@ public static class AdminEndpoints
             return await mediator.Send(new PatchSettingsCommand(body, current.Permissions));
         });
 
+        // ── Invites across the space ─────────────────────────────────────────────
+        // /api/v1/invites works on the server the request resolves to, and X-Server-Id is honoured
+        // only for a member — so the console showed one server's codes without naming it, and the
+        // administrator could not invite anyone into a server they were not in. These name the
+        // server and take any live one. Administrator only: the bit comes from the SPACE's role,
+        // never from a per-server one (InstanceGlobalPerms), so a server owner cannot reach them.
+        group.MapGet("/invites", async ([Microsoft.AspNetCore.Mvc.FromQuery(Name = "server_id")] long? serverId,
+            int? limit, int? offset, HttpContext ctx, ICurrentUser current, IInviteRepository invites, CancellationToken ct) =>
+        {
+            RequireAdmin(current);
+            var sid = serverId is > 0 ? serverId : null;
+            var page = await invites.ListInSpaceAsync(sid, Math.Clamp(limit ?? int.MaxValue, 1, int.MaxValue), Math.Max(0, offset ?? 0), ct);
+            ctx.Response.Headers["X-Total-Count"] = (await invites.CountInSpaceAsync(sid, ct)).ToString();
+            return page;
+        });
+
+        group.MapPost("/invites", async (AdminInviteBody body, ICurrentUser current, IServerRepository servers, ISender mediator, CancellationToken ct) =>
+        {
+            RequireAdmin(current);
+            if (!await servers.IsLiveAsync(body.ServerId, ct)) throw DomainException.NotFound("server not found");
+            return await mediator.Send(new CreateInviteCommand(body.MaxUses, body.ExpiresInHours, current.UserId, current.Permissions, body.ServerId), ct);
+        });
+
+        group.MapDelete("/invites/{code}", async (string code, ICurrentUser current, IInviteRepository invites, ISender mediator, CancellationToken ct) =>
+        {
+            RequireAdmin(current);
+            var invite = await invites.GetByCodeAsync(code, ct) ?? throw DomainException.NotFound("invite not found");
+            await mediator.Send(new RevokeInviteCommand(code, current.Permissions, invite.ServerId), ct);
+            return Results.NoContent();
+        });
+
         // ── Users ────────────────────────────────────────────────────────────────
         // Paged when limit/offset are passed; the body stays a plain array either way and the
         // unpaged total rides the X-Total-Count header (keeps the mobile admin, which never
@@ -131,11 +166,12 @@ public static class AdminEndpoints
             return page.Items;
         });
 
-        group.MapPost("/users/{id:long}/ban", async (long id, BanBody? body, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, ISender mediator) =>
+        group.MapPost("/users/{id:long}/ban", async (long id, BanBody? body, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, VoiceEviction voice, ISender mediator) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             await mediator.Send(new BanUserCommand(id, body?.Reason ?? string.Empty, current.UserId, current.Permissions));
             await registry.CloseUserAsync(id);
+            await voice.EvictUserAsync(id);
             await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.MemberBan(id));
             return Results.NoContent();
         });
@@ -148,21 +184,25 @@ public static class AdminEndpoints
         });
 
         // Unified PATCH the web client uses for adminBanMember / adminChangeRole.
-        group.MapPatch("/users/{id:long}", async (long id, AdminUserPatchBody body, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, IRoleRepository roles, ISender mediator) =>
+        group.MapPatch("/users/{id:long}", async (long id, AdminUserPatchBody body, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, IRoleRepository roles, VoiceEviction voice, ISender mediator) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
 
             if (body.RoleId is { } roleId)
             {
-                await mediator.Send(new AssignRoleCommand(id, roleId, current.Permissions));
-                var role = await roles.GetByIdAsync(roleId);
-                await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.MemberUpdate(id, (role?.Name ?? "member").ToLowerInvariant()));
+                // The SPACE role. Rosters show the role inside each server, so nothing is broadcast:
+                // the old member_update here painted the space role over the server roster.
+                await mediator.Send(new AssignRoleCommand(id, roleId, current.Permissions, current.UserId));
+                // Every socket's permission snapshot carries the space role: a space Admin demoted to
+                // Member went on deleting other people's messages over the socket opened before.
+                await registry.CloseUserAsync(id);
             }
 
             if (body.Banned is true)
             {
                 await mediator.Send(new BanUserCommand(id, body.BanReason ?? string.Empty, current.UserId, current.Permissions));
                 await registry.CloseUserAsync(id);
+                await voice.EvictUserAsync(id);
                 await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.MemberBan(id));
             }
             else if (body.Banned is false)
@@ -174,21 +214,31 @@ public static class AdminEndpoints
         });
 
         // Kick = revoke all sessions + force-close the socket + broadcast member_leave.
-        group.MapDelete("/users/{id:long}/sessions", async (long id, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, ISender mediator) =>
+        // Space-wide, so the space's Administrator only: KickMembers alone was enough before, and a
+        // per-server role carries it — a server owner could make a second account of theirs that
+        // server's Moderator and sign anyone in the space out. Removing someone from ONE server is
+        // DELETE /servers/{id}/members/{uid}.
+        group.MapDelete("/users/{id:long}/sessions", async (long id, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, VoiceEviction voice, ISender mediator) =>
         {
-            if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
+            RequireAdmin(current);
             await mediator.Send(new KickUserCommand(id, current.UserId, current.Permissions));
             await registry.CloseUserAsync(id);
+            await voice.EvictUserAsync(id);
             await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.MemberLeave(id));
             return Results.NoContent();
         });
 
         // HARD-delete a user (instance admin): permanently removes the account + its messages,
         // invites, uploads. NOT a soft delete — the row is gone. Owner/global-admin only.
-        group.MapDelete("/users/{id:long}", async (long id, ICurrentUser current, IConnectionRegistry registry, IUserRepository users) =>
+        group.MapDelete("/users/{id:long}", async (long id, ICurrentUser current, IConnectionRegistry registry, IUserRepository users, VoiceEviction voice) =>
         {
             RequireAdmin(current);
             if (id == current.UserId) throw DomainException.BadRequest("you can't delete your own account here");
+            // An Admin carries the same Administrator bit as the Owner; the space's owner is not
+            // theirs to erase (ban and kick already refused this).
+            if ((await users.GetByIdAsync(id))?.RoleId == Outcome.Domain.Permissions.DefaultRole.Owner)
+                throw DomainException.Forbidden("the space owner's account can't be deleted");
+            await voice.EvictUserAsync(id);
             await users.DeleteAsync(id);
             await registry.CloseUserAsync(id);
             await registry.BroadcastAsync(WsFrames.MemberDelete(id));
@@ -217,10 +267,13 @@ public static class AdminEndpoints
             return Results.NoContent();
         });
 
-        group.MapDelete("/users/{id:long}/permissions/{permission}", async (long id, string permission, ICurrentUser current, IPermissionRepository perms) =>
+        group.MapDelete("/users/{id:long}/permissions/{permission}", async (long id, string permission, ICurrentUser current, IPermissionRepository perms,
+            IConnectionRegistry registry) =>
         {
             RequireAdmin(current);
             await perms.RemoveFromUserAsync(id, permission);
+            // The grant is in every socket snapshot the user holds (see the role change above).
+            await registry.CloseUserAsync(id);
             return Results.NoContent();
         });
 
@@ -246,10 +299,13 @@ public static class AdminEndpoints
             }));
         });
 
-        group.MapDelete("/servers/{id:long}", async (long id, ICurrentUser current, IServerRepository servers) =>
+        group.MapDelete("/servers/{id:long}", async (long id, ICurrentUser current, IServerRepository servers, VoiceEviction voice,
+            IConnectionRegistry registry) =>
         {
             RequireAdmin(current);
             if (!await servers.AdminDeleteAsync(id)) throw DomainException.NotFound("server not found");
+            await voice.EvictServerAsync(id);
+            await registry.CloseOnServerAsync(id);
             return Results.NoContent();
         });
 
@@ -261,11 +317,15 @@ public static class AdminEndpoints
         });
 
         // Force-delete ANY channel by id (any server). Broadcasts to that channel's owning server.
-        group.MapDelete("/channels/{id:long}/force", async (long id, ICurrentUser current, IConnectionRegistry registry, IChannelRepository channels) =>
+        group.MapDelete("/channels/{id:long}/force", async (long id, ICurrentUser current, IConnectionRegistry registry, IChannelRepository channels,
+            VoiceEviction voice) =>
         {
             RequireAdmin(current);
             var ch = await channels.GetByIdAsync(id) ?? throw DomainException.NotFound("channel not found");
             if (!await channels.DeleteAsync(id)) throw DomainException.NotFound("channel not found");
+            // A deleted room's call went on — members on their day-long tokens, guests on the link's
+            // key — and nothing could find the room again to end it (every lookup skips deleted ones).
+            if (ch.Type == "voice") await voice.EvictRoomAsync(id, ch.ServerId);
             if (ch.ServerId is { } sid)
             {
                 await registry.BroadcastToServerAsync(sid, WsFrames.ChannelDelete(id));
@@ -304,11 +364,14 @@ public static class AdminEndpoints
             return dto;
         });
 
-        group.MapDelete("/channels/{id:long}", async (long id, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, ISender mediator, IChannelRepository channels) =>
+        group.MapDelete("/channels/{id:long}", async (long id, ICurrentUser current, ICurrentServer srv, IConnectionRegistry registry, ISender mediator, IChannelRepository channels,
+            VoiceEviction voice) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
-            var chat = (await channels.GetByIdAsync(id))?.ChatChannelId;
+            var target = await channels.GetByIdAsync(id);
+            var chat = target?.ChatChannelId;
             await mediator.Send(new DeleteChannelCommand(id, current.Permissions));
+            if (target?.Type == "voice") await voice.EvictRoomAsync(id, target.ServerId); // see the force route
             await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelDelete(id));
             if (chat is { } c) await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelDelete(c));
             return Results.NoContent();

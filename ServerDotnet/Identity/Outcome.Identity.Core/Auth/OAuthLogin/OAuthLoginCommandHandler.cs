@@ -63,6 +63,15 @@ public sealed class OAuthLoginCommandHandler(
                 throw DomainException.Server("could not create the account");
             await audit.AddAsync(user.Id, "user_register", "user", user.Id, $"new account via {cmd.Provider} sso", ct);
         }
+        else if (!user.EmailConfirmed)
+        {
+            // Registered with a password and an address nobody confirmed. Signing the mailbox's
+            // owner into it handed them an account SOMEONE ELSE made — who keeps its password and
+            // sees everything the owner then does there. A password reset through the mail proves
+            // the address (and ends the other sessions); after that, SSO finds the account.
+            await audit.AddAsync(user.Id, "login_sso_unconfirmed", "user", user.Id, $"{cmd.Provider} sso refused: e-mail not confirmed ({cmd.Ip})", ct);
+            throw DomainException.Forbidden("an account with this e-mail exists but the address was never confirmed — sign in with its password, or reset the password by e-mail");
+        }
         else if (IsEffectivelyBanned(user))
         {
             await audit.AddAsync(user.Id, "login_blocked_banned", "user", user.Id, $"banned user attempted {cmd.Provider} sso login from {cmd.Ip}", ct);
@@ -90,6 +99,10 @@ public sealed class OAuthLoginCommandHandler(
         // Keep only characters the username validator accepts; collapse the rest.
         var cleaned = new string(raw.Where(c => char.IsLetterOrDigit(c) || c is '_' or '-' or '.').ToArray());
         if (cleaned.Length < 3) cleaned = "user" + cleaned;
+        // "deleted_<id>" is what account deletion renames to, under a unique index: a provider name
+        // spelled that way squatted someone's id and made their own deletion fail (AuthRules has
+        // the same rule for the sign-up form, which this path never went through).
+        if (cleaned.StartsWith("deleted_", StringComparison.OrdinalIgnoreCase)) cleaned = "user_" + cleaned;
         if (cleaned.Length > 24) cleaned = cleaned[..24];
 
         var candidate = cleaned;

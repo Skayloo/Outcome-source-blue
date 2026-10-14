@@ -251,14 +251,18 @@ public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUr
         await db.Messages.Where(m => m.Id == messageId && m.ChannelId == channelId && !m.Deleted)
             .ExecuteUpdateAsync(s => s.SetProperty(m => m.Pinned, pinned), ct) > 0;
 
-    public async Task<IReadOnlyList<SearchRow>> SearchAsync(string query, long? channelId, int limit, CancellationToken ct = default)
+    public async Task<IReadOnlyList<SearchRow>> SearchAsync(string query, long? channelId, int limit, long serverId, CancellationToken ct = default)
     {
+        // Channels of that one server, not deleted — the scope a member reads through history.
+        var channels = db.Channels.AsNoTracking().Where(c => c.ServerId == serverId && !c.Deleted);
         var q = db.Messages.AsNoTracking().Where(m => !m.Deleted &&
             EF.Functions.ToTsVector("simple", m.Content).Matches(EF.Functions.WebSearchToTsQuery("simple", query)));
         if (channelId is { } cid) q = q.Where(m => m.ChannelId == cid);
 
-        return await q.OrderByDescending(m => m.Id).Take(limit)
-            .Join(db.Channels.AsNoTracking(), m => m.ChannelId, c => c.Id, (m, c) => new { m, c })
+        return await q
+            .Join(channels, m => m.ChannelId, c => c.Id, (m, c) => new { m, c })
+            .OrderByDescending(mc => mc.m.Id).Take(limit)
+            .Select(mc => new { mc.m, mc.c })
             .Join(db.Users.AsNoTracking(), mc => mc.m.UserId, u => u.Id, (mc, u) =>
                 new SearchRow(mc.m.Id, mc.m.ChannelId, mc.c.Name, mc.c.Type, u.Id, u.UserName!, u.Avatar, mc.m.Content, mc.m.Timestamp))
             .ToListAsync(ct);

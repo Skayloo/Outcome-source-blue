@@ -113,4 +113,10 @@ public sealed class DeviceToken
     public bool Sandbox { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime LastSeen { get; set; }
+    /// <summary>The session (its token hash) that registered this token. Pushes go only while
+    /// that session lives: a phone signed out by "sign out everywhere", a password change or
+    /// reset, or a lost logout request kept receiving the account's messages and calls for good.
+    /// Null on rows registered before 1.31.60 — those keep working until the app re-registers,
+    /// which it does on every session start.</summary>
+    public string? SessionHash { get; set; }
 }

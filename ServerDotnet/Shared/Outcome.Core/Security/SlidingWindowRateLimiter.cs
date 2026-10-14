@@ -9,7 +9,14 @@ namespace Outcome.Infrastructure.Security;
 /// </summary>
 public sealed class SlidingWindowRateLimiter : IRateLimiter
 {
-    private readonly ConcurrentDictionary<string, List<long>> _hits = new();
+    /// <summary>One key's recorded hits and the longest window it has been asked about.</summary>
+    private sealed class Bucket
+    {
+        public readonly List<long> Hits = [];
+        public long WindowTicks;
+    }
+
+    private readonly ConcurrentDictionary<string, Bucket> _hits = new();
     private readonly ConcurrentDictionary<string, long> _lockouts = new();
     /// <summary>How often the sweep below runs, counted in calls rather than by a timer — this
     /// class has no lifetime of its own and a timer would keep the process awake for nothing.</summary>
@@ -20,10 +27,12 @@ public sealed class SlidingWindowRateLimiter : IRateLimiter
     {
         var now = DateTime.UtcNow.Ticks;
         var cutoff = now - window.Ticks;
-        var list = _hits.GetOrAdd(key, static _ => []);
+        var bucket = _hits.GetOrAdd(key, static _ => new Bucket());
+        var list = bucket.Hits;
         bool allowed;
         lock (list)
         {
+            if (window.Ticks > bucket.WindowTicks) bucket.WindowTicks = window.Ticks;
             list.RemoveAll(t => t < cutoff);
             // Only an ALLOWED request is recorded. Counting the refusals too was the difference
             // between "wait a minute" and "wait until you give up": every retry pushed the window
@@ -39,26 +48,29 @@ public sealed class SlidingWindowRateLimiter : IRateLimiter
         if (Interlocked.Increment(ref _sinceSweep) >= SweepEvery)
         {
             Interlocked.Exchange(ref _sinceSweep, 0);
-            Sweep(now, window);
+            Sweep(now);
         }
         return allowed;
     }
 
     /// <summary>Drops keys whose hits have all aged out, and lockouts that have expired.
     /// A key that is still in use is refilled by the very next call, so losing it costs
-    /// nothing; the window it would have remembered is empty by definition.</summary>
-    private void Sweep(long now, TimeSpan window)
+    /// nothing; the window it would have remembered is empty by definition.
+    /// Each key by ITS OWN window: the sweep used the window of whichever call happened to trigger
+    /// it, so a one-minute call wiped every 15-minute budget (reset mails per address, deletion
+    /// password failures, the contact form) every 4096 requests.</summary>
+    private void Sweep(long now)
     {
-        var cutoff = now - window.Ticks;
-        foreach (var (k, v) in _hits)
+        foreach (var (k, b) in _hits)
         {
             bool empty;
-            lock (v)
+            lock (b.Hits)
             {
-                v.RemoveAll(t => t < cutoff);
-                empty = v.Count == 0;
+                var cutoff = now - b.WindowTicks;
+                b.Hits.RemoveAll(t => t < cutoff);
+                empty = b.Hits.Count == 0;
             }
-            if (empty) _hits.TryRemove(new KeyValuePair<string, List<long>>(k, v));
+            if (empty) _hits.TryRemove(new KeyValuePair<string, Bucket>(k, b));
         }
         foreach (var (k, until) in _lockouts)
             if (until <= now) _lockouts.TryRemove(new KeyValuePair<string, long>(k, until));

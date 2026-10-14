@@ -16,7 +16,7 @@ public sealed class CreateInviteHandler(IInviteRepository invites, ICurrentServe
         InviteAuth.Require(cmd.ActorPermissions);
         var invite = new Invite
         {
-            ServerId = server.ServerId,
+            ServerId = cmd.ServerId ?? server.ServerId,
             Code = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(5)),
             CreatedBy = cmd.ActorUserId,
             MaxUses = cmd.MaxUses > 0 ? cmd.MaxUses : null,

@@ -216,6 +216,12 @@ public static class OAuthEndpoints
         var iss = root.GetProperty("iss").GetString();
         if (aud != cfg.ClientId || (iss != "https://accounts.google.com" && iss != "accounts.google.com"))
             throw new InvalidOperationException("id_token aud/iss mismatch");
+        // Only an address Google has verified. Accounts are linked by e-mail and SSO skips the local
+        // password and second factor, so an unverified address would sign its claimant into whoever
+        // registered that address here.
+        var verified = root.TryGetProperty("email_verified", out var ev)
+            && (ev.ValueKind == JsonValueKind.True || (ev.ValueKind == JsonValueKind.String && ev.GetString() == "true"));
+        if (!verified) throw new InvalidOperationException("google account e-mail is not verified");
         var email = root.GetProperty("email").GetString() ?? "";
         var name = root.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
         return (email, name);

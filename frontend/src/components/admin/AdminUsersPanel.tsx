@@ -12,6 +12,10 @@ import { Pager } from "@components/BugReportModal";
 import type { AdminUserResponse, RoleResponse } from "@lib/types";
 
 const PAGE_SIZE = 25;
+/** The space roles that can be GIVEN: Admin and Member. The Owner (1) is the account that set the
+ *  space up, the only one there is; it is never offered, taken away or moved (the owner's decision). */
+const SPACE_ROLE_IDS = [2, 4];
+const OWNER_ROLE_ID = 1;
 
 function errMsg(e: unknown, f: string): string {
   return e instanceof Error ? e.message : f;
@@ -152,20 +156,29 @@ export function AdminUsersPanel() {
                       <div>
                         <div className="adm-cell-main">{u.username}</div>
                         {u.email && <div className="adm-cell-email">{u.email}</div>}
+                        {u.owned_servers && u.owned_servers.length > 0 && (
+                          <div className="adm-cell-sub">{t("admin.ownsServers", { names: u.owned_servers.join(", ") })}</div>
+                        )}
                         <div className="adm-cell-sub">ID {u.id}{u.created_at ? ` · ${t("admin.joined", { date: joined(u.created_at) })}` : ""}</div>
                       </div>
                     </div>
                   </td>
                   <td>
-                    <select
-                      className="form-input admin-role-select"
-                      value={u.role_id}
-                      disabled={busy}
-                      onChange={(e) => changeRole(u.id, Number(e.target.value))}
-                    >
-                      {roles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                      {!roles.some((r) => r.id === u.role_id) && <option value={u.role_id}>{roleName(u.role_id)}</option>}
-                    </select>
+                    {u.role_id === OWNER_ROLE_ID ? (
+                      <Badge tone="neutral">{t("admin.spaceRole_1")}</Badge>
+                    ) : (
+                      <select
+                        className="form-input admin-role-select"
+                        value={u.role_id}
+                        disabled={busy}
+                        onChange={(e) => changeRole(u.id, Number(e.target.value))}
+                      >
+                        {/* Admin and Member. Moderator (3) is no longer offered; it stays listed only
+                            for someone who still has it, so the select shows the truth. */}
+                        {SPACE_ROLE_IDS.map((id) => <option key={id} value={id}>{t(`admin.spaceRole_${id}`)}</option>)}
+                        {!SPACE_ROLE_IDS.includes(u.role_id) && <option value={u.role_id}>{roleName(u.role_id)}</option>}
+                      </select>
+                    )}
                   </td>
                   <td>
                     {u.banned
@@ -177,13 +190,13 @@ export function AdminUsersPanel() {
                       <Btn kind={expanded ? "secondary" : "ghost"} size="sm" icon="key" disabled={busy} onClick={() => togglePerms(u.id)}>
                         {t("admin.permissions")}
                       </Btn>
-                      <RowMenu items={[
+                      {u.role_id !== OWNER_ROLE_ID && <RowMenu items={[
                         u.banned
                           ? { label: t("admin.unban"), icon: "undo-2", disabled: busy, onClick: () => runAction(() => api.adminUnbanMember(u.id)) }
                           : { label: t("admin.ban"), icon: "ban", disabled: busy, onClick: () => runAction(() => api.adminBanMember(u.id, "")) },
                         { label: t("admin.kick"), icon: "log-out", disabled: busy, onClick: () => runAction(() => api.adminKickMember(u.id), false) },
                         { label: t("admin.deleteUser"), icon: "user-x", danger: true, disabled: busy, onClick: () => void deleteUser(u) },
-                      ]} />
+                      ]} />}
                     </div>
                   </td>
                 </tr>

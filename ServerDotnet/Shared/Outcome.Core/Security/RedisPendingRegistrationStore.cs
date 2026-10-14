@@ -29,24 +29,25 @@ public sealed class RedisPendingRegistrationStore(IConnectionMultiplexer redis, 
 
     public PendingRegistration? Consume(string token)
     {
+        _db.KeyDelete(FailKey(token));
         var raw = _db.StringGetDelete(Key(token));
         if (raw.IsNullOrEmpty) return null;
         return JsonSerializer.Deserialize<Entry>((string)raw!)?.Reg;
     }
 
+    private string FailKey(string token) => Key(token) + ":f";
+
     public void RegisterFailure(string token, int maxFailures)
     {
-        var e = Load(token);
-        if (e is null) return;
-        var failures = e.Failures + 1;
+        if (!_db.KeyExists(Key(token))) return;
+        // INCR, not read-bump-write: parallel wrong codes all read the same count (RedisPartialAuthStore).
+        var failures = _db.StringIncrement(FailKey(token));
+        if (failures == 1) _db.KeyExpire(FailKey(token), Ttl);
         if (failures >= maxFailures)
         {
             _db.KeyDelete(Key(token));
-            return;
+            _db.KeyDelete(FailKey(token));
         }
-        // Preserve the remaining TTL when writing the bumped failure count back.
-        var ttl = _db.KeyTimeToLive(Key(token)) ?? Ttl;
-        _db.StringSet(Key(token), JsonSerializer.Serialize(e with { Failures = failures }), ttl);
     }
 
     private Entry? Load(string token)

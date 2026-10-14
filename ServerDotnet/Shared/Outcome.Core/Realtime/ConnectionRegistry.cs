@@ -62,6 +62,20 @@ public sealed class ConnectionRegistry : IConnectionHub
         return Task.CompletedTask;
     }
 
+    public Task CloseOnServerAsync(long spaceId, long serverId, long? userId)
+    {
+        foreach (var (key, conns) in _byUser)
+        {
+            if (key.SpaceId != spaceId || (userId is { } u && key.UserId != u)) continue;
+            foreach (var e in conns.Values)
+            {
+                if (e.ServerId != serverId) continue;
+                try { e.Close(); } catch { /* connection already gone */ }
+            }
+        }
+        return Task.CompletedTask;
+    }
+
     public void Remove(long spaceId, long userId, Guid connectionId)
     {
         lock (_gate)

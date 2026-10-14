@@ -24,6 +24,7 @@ public sealed class RedisBackplaneRegistry : IConnectionHub
     private const byte KindUser = 2;
     private const byte KindClose = 3;
     private const byte KindUserExcept = 4; // [kind][spaceId 8][userId 8][connGuid 16][frame] — skip one conn
+    private const byte KindCloseServer = 5; // [kind][spaceId 8][serverId 8][userId 8, 0 = all]
 
     private static readonly RedisChannel Bus = RedisChannel.Literal("outcome:bus");
 
@@ -79,6 +80,13 @@ public sealed class RedisBackplaneRegistry : IConnectionHub
 
     public Task CloseUserAsync(long spaceId, long userId) => PublishAsync(KindClose, spaceId, userId, []);
 
+    public Task CloseOnServerAsync(long spaceId, long serverId, long? userId)
+    {
+        var who = new byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(who, userId ?? 0);
+        return PublishAsync(KindCloseServer, spaceId, serverId, who);
+    }
+
     private Task PublishAsync(byte kind, long spaceId, long id, byte[] frame)
     {
         var payload = new byte[1 + 8 + 8 + frame.Length];
@@ -115,6 +123,12 @@ public sealed class RedisBackplaneRegistry : IConnectionHub
             return;
         }
         var frame = payload[17..];
+        if (kind == KindCloseServer)
+        {
+            var who = BinaryPrimitives.ReadInt64LittleEndian(frame);
+            _ = _local.CloseOnServerAsync(spaceId, id, who == 0 ? null : who);
+            return;
+        }
         _ = kind switch
         {
             KindAll => _local.BroadcastAsync(spaceId, frame),

@@ -67,8 +67,14 @@ Bound from `Minio`.
 | `UseSsl` | `false` | |
 | `EncryptionKey` | *(empty)* | RED only — base64 of exactly 32 bytes, AES-256-GCM at rest. The BLUE edition has no cipher at all and ignores it; see [encryption.md](encryption.md) |
 
-Upload size is `Upload:MaxSizeMb` (default 100). The edge has to allow at least as much or the
-request never arrives.
+## Uploads
+
+Bound from `Upload` (`UploadOptions`).
+
+| Key | Default | |
+| --- | --- | --- |
+| `MaxSizeMb` | `100` | **Bound but not read** — the cap is the 100 MB constant in `UploadEndpoints.cs`. The edge has to allow at least that much or the request never arrives |
+| `StorageDir` | `data/uploads` | Not read: the disk storage it configured is no longer registered, uploads go to MinIO |
 
 ## Voice (LiveKit)
 

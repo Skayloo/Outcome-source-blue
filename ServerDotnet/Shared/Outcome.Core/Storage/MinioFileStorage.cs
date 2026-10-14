@@ -53,6 +53,10 @@ public sealed class MinioFileStorage : IFileStorage
             var exists = await _client.BucketExistsAsync(new BucketExistsArgs().WithBucket(_bucket), ct);
             if (!exists)
                 await _client.MakeBucketAsync(new MakeBucketArgs().WithBucket(_bucket), ct);
+            // Unfinished recording uploads expire (StorageLifecycle). A backend without lifecycle
+            // support must not stop the bucket from working.
+            try { await StorageLifecycle.ExpireRecordingPartsAsync(_client, _bucket, ct); }
+            catch (Exception ex) { Console.Error.WriteLine($"storage: recording-part expiry not set: {ex.Message}"); }
             _bucketReady = true;
         }
         finally
@@ -83,13 +87,10 @@ public sealed class MinioFileStorage : IFileStorage
         try
         {
             EnsureBucketAsync(CancellationToken.None).GetAwaiter().GetResult();
-            var ms = new MemoryStream();
-            _client.GetObjectAsync(new GetObjectArgs()
-                .WithBucket(_bucket)
-                .WithObject(id)
-                .WithCallbackStream(s => s.CopyTo(ms))).GetAwaiter().GetResult();
-            ms.Position = 0;
-            return ms;
+            var stat = _client.StatObjectAsync(new StatObjectArgs().WithBucket(_bucket).WithObject(id)).GetAwaiter().GetResult();
+            // Read on demand, a block per ranged GET (MinioRangeStream): copying every object
+            // whole into memory first cost a full read per Range request of a video.
+            return new MinioRangeStream(_client, _bucket, id, stat.Size);
         }
         catch (ObjectNotFoundException)
         {

@@ -23,19 +23,19 @@ public sealed class CurrentUserContext : ICurrentUser
         SessionTokenHash = sessionTokenHash;
     }
 
-    /// <summary>Grants the SERVER-scoped permissions of the ACTIVE server's owner for the rest of
-    /// this request — see <see cref="Outcome.Domain.Permissions.Permission.ServerOwnerGrant"/> for
-    /// what is in that set and why it is as small as it is. No global Administrator bypass, and
-    /// nothing an instance-wide handler will accept. Idempotent.</summary>
-    public void GrantServerAdmin()
+    /// <summary>Adds what the caller's role INSIDE the active server grants
+    /// (<see cref="Outcome.Domain.Permissions.ServerRoles.Grant"/>) for the rest of this request.
+    /// Server-scoped bits only — no Administrator bypass, nothing an instance-wide handler accepts.
+    /// Idempotent.</summary>
+    public void GrantServerScope(long bits)
     {
-        const long bits = Outcome.Domain.Permissions.Permission.ServerOwnerGrant;
-        if ((Permissions & bits) == bits) return;
+        if (bits == 0 || (Permissions & bits) == bits) return;
         Permissions |= bits;
         // The bitfield and the name list are read by different call sites (PermCheck reads names),
-        // so they have to move together or a permission holds in one check and not the other.
+        // so they have to move together or a permission holds in one check and not the other —
+        // the hand-written name list this replaced had left RecordCalls out.
         var names = new List<string>(PermissionNames);
-        foreach (var n in new[] { P.ManageChannels, P.ManageInvites, P.ManageMessages })
+        foreach (var n in P.FromBits(bits))
             if (!names.Contains(n)) names.Add(n);
         PermissionNames = names;
     }

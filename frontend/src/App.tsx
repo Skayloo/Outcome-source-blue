@@ -14,6 +14,7 @@ import { AdminPage, AdminDenied } from "@pages/AdminPage";
 import { GuestVoicePage } from "@pages/GuestVoicePage";
 import { PrivacyPage } from "@pages/PrivacyPage";
 import { loadSpace } from "@lib/space";
+import { isSpaceAdmin } from "@lib/access";
 
 /** Stop waiting on a silent server and let the user sign in by hand. */
 const BOOT_TIMEOUT_MS = 8_000;
@@ -80,11 +81,12 @@ export function App() {
     return signingBackIn ? <BootSplash /> : <ConnectPage />;
   }
 
-  // Dedicated /admin route: a separate owner-only dashboard, not the in-app modal.
+  // Dedicated /admin route: the space's administrators (Owner and Admin of the SPACE — not the
+  // owner of some server, which is what the old `role === "owner"` let in, while shutting out a
+  // space Admin the API itself accepts).
   const path = window.location.pathname;
   if (path === "/admin" || path.startsWith("/admin/")) {
-    const isOwner = (auth.user?.role ?? "").toLowerCase() === "owner";
-    return isOwner ? <AdminPage /> : <AdminDenied />;
+    return isSpaceAdmin(auth.user) ? <AdminPage /> : <AdminDenied />;
   }
 
   // Every authenticated route goes through here: an account created by a provider sign-in

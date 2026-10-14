@@ -67,20 +67,28 @@ public static class AuthEndpoints
             .AddEndpointFilter(RateLimit("login", 60, TimeSpan.FromMinutes(1)))
             .AddEndpointFilter(GlobalRateLimit("login", 1200, TimeSpan.FromMinutes(1)));
 
-        group.MapPost("/logout", async (ISender mediator) =>
+        group.MapPost("/logout", async (ISender mediator, ICurrentUser current, Outcome.Infrastructure.Tenancy.ICurrentSpace space, SessionRevocations revocations) =>
         {
+            var uid = current.IsAuthenticated ? current.UserId : 0;
             await mediator.Send(new LogoutCommand());
+            // The socket of the session just ended goes now, not at its next minute's re-check.
+            if (uid > 0) revocations.Revoked(space.Space.Id, uid);
             return Results.NoContent();
         });
 
         group.MapGet("/me", async (ISender mediator) => await mediator.Send(new GetMeQuery()));
 
         // POST /api/v1/auth/verify-totp — partial token in Authorization header, { code } in body.
-        group.MapPost("/verify-totp", async (VerifyTotpBody body, HttpContext ctx, ISender mediator) =>
+        group.MapPost("/verify-totp", async (VerifyTotpBody body, HttpContext ctx, ISender mediator,
+            Outcome.Infrastructure.Tenancy.ICurrentSpace space, SessionRevocations revocations) =>
         {
             var partial = ExtractBearer(ctx.Request.Headers.Authorization.ToString())
                           ?? throw DomainException.Unauthorized("missing or invalid authorization header");
-            return await mediator.Send(new VerifyTotpCommand(partial, body.Code));
+            var result = await mediator.Send(new VerifyTotpCommand(partial, body.Code));
+            // The second step of a reset ends the other sessions (VerifyTotpHandler): their sockets
+            // re-check now rather than at the next minute's sweep. For a plain sign-in nothing is gone.
+            if (result.User is { } u) revocations.Revoked(space.Space.Id, u.Id);
+            return result;
         }).AddEndpointFilter(RateLimit("verify_totp", 10, TimeSpan.FromMinutes(1)));
 
         // POST /api/v1/auth/verify-email-otp — partial token in Authorization header, { code } in body.
@@ -94,11 +102,16 @@ public static class AuthEndpoints
           .AddEndpointFilter(GlobalRateLimit("password_forgot", 300, TimeSpan.FromMinutes(1)));
 
         // POST /api/v1/auth/password/reset — code + new password → sets it and logs the user in.
-        group.MapPost("/password/reset", async (ResetPasswordBody body, HttpContext ctx, ISender mediator) =>
-            await mediator.Send(new ResetPasswordCommand(
+        group.MapPost("/password/reset", async (ResetPasswordBody body, HttpContext ctx, ISender mediator, IUserRepository users,
+            Outcome.Infrastructure.Tenancy.ICurrentSpace space, SessionRevocations revocations) =>
+        {
+            var result = await mediator.Send(new ResetPasswordCommand(
                 body.Email, body.Code, body.NewPassword,
-                ctx.Request.Headers.UserAgent.ToString(), ClientIp(ctx))))
-            .AddEndpointFilter(RateLimit("password_reset", 10, TimeSpan.FromMinutes(1)));
+                ctx.Request.Headers.UserAgent.ToString(), ClientIp(ctx)));
+            // A reset ends every session — including whoever's live sockets made the owner reset.
+            if (await users.GetByEmailAsync(body.Email.Trim()) is { } user) revocations.Revoked(space.Space.Id, user.Id);
+            return result;
+        }).AddEndpointFilter(RateLimit("password_reset", 10, TimeSpan.FromMinutes(1)));
 
         group.MapPost("/verify-email-otp", async (VerifyEmailOtpBody body, HttpContext ctx, ISender mediator) =>
         {
@@ -108,13 +121,16 @@ public static class AuthEndpoints
         }).AddEndpointFilter(RateLimit("verify_email_otp", 10, TimeSpan.FromMinutes(1)));
 
         // DELETE /api/v1/auth/account — password-confirmed self-deletion (soft delete).
-        group.MapDelete("/account", async ([Microsoft.AspNetCore.Mvc.FromBody] PasswordBody body, ICurrentUser current, IConnectionRegistry registry, ISender mediator) =>
+        group.MapDelete("/account", async ([Microsoft.AspNetCore.Mvc.FromBody] PasswordBody body, ICurrentUser current, IConnectionRegistry registry, VoiceEviction voice, ISender mediator) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             var uid = current.UserId;
             await mediator.Send(new DeleteAccountCommand(uid, body.Password));
             // Tell every client to drop this member and mark their messages as deleted.
             await registry.BroadcastAsync(WsFrames.MemberDelete(uid));
+            // …and close the account's own sockets: they were authenticated as a user who is gone.
+            await registry.CloseUserAsync(uid);
+            await voice.EvictUserAsync(uid);
             return Results.NoContent();
         }).AddEndpointFilter(RateLimit("delete_account", 5, TimeSpan.FromMinutes(1)));
 

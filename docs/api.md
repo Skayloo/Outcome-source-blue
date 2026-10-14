@@ -26,9 +26,9 @@ exists so you can read it without a running server.
 ## Uploads
 
 `POST /api/v1/uploads` takes multipart and streams to object storage without buffering the
-file. The cap is `Upload:MaxSizeMb` (100 by default) and the edge enforces the same limit, so
-an oversized body is rejected before it reaches the API. Attachments are then referenced by id
-when the message is sent over the socket.
+file. The cap is 100 MB — a constant in `UploadEndpoints.cs`; `Upload:MaxSizeMb` is bound but not
+read — and the edge enforces the same limit, so an oversized body is rejected before it reaches
+the API. Attachments are then referenced by id when the message is sent over the socket.
 
 Downloads support Range, which is not a detail: iOS refuses to play progressive audio from a
 response with no `Content-Length`, so a voice message served sequentially downloads fine and

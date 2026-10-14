@@ -32,6 +32,13 @@ public sealed class PartialAuthStore(IMemoryCache cache, ICurrentSpace space) : 
         return token;
     }
 
+    public string IssueForReset(long userId, string? device, string ip, string passwordHash)
+    {
+        var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        cache.Set(Key(token), new Entry { Challenge = new PartialChallenge(userId, device, ip, PendingPasswordHash: passwordHash) }, Ttl);
+        return token;
+    }
+
     public PartialChallenge? Lookup(string partialToken) =>
         cache.TryGetValue(Key(partialToken), out Entry? e) ? e!.Challenge : null;
 

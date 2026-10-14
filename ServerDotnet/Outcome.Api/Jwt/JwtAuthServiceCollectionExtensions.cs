@@ -12,7 +12,7 @@ namespace Outcome.Api.Jwt;
 /// </summary>
 public static class JwtAuthServiceCollectionExtensions
 {
-    public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration, bool isDevelopment = false)
     {
         services.Configure<JwtAuthOptions>(configuration.GetSection("JwtAuth"));
         // Scoped: a token is minted for, and only valid in, the request's space.
@@ -20,7 +20,7 @@ public static class JwtAuthServiceCollectionExtensions
 
         var jwtKey = configuration["JwtAuth:JwtKey"]
                      ?? throw new InvalidOperationException("JwtAuth:JwtKey is not configured.");
-        RejectAKeyEverybodyHas(jwtKey);
+        RejectAKeyEverybodyHas(jwtKey, isDevelopment);
         var issuer = configuration["JwtAuth:JwtIssuer"] ?? "outcome";
 
         // Keep JWT claim types verbatim (e.g. "nameid" stays "nameid" rather than being
@@ -63,11 +63,18 @@ public static class JwtAuthServiceCollectionExtensions
     /// key. Shipping a placeholder that silently works is how that happens; refusing to boot is
     /// the only version of this check that cannot be ignored.
     /// </summary>
-    private static void RejectAKeyEverybodyHas(string key)
+    private static void RejectAKeyEverybodyHas(string key, bool isDevelopment)
     {
         // The literal that was published in docker-compose.yml, and the shape of every
         // placeholder in .env.example / deploy/k8s.
         const string published = "ae95a466fe9ea37bac64a27f34e7663377b5b275a8efc37a21c97b1b5b219c4b";
+        // appsettings.json's own, for `dotnet run`: it is in every copy of the source, so outside
+        // Development a deployment that forgot OUTCOME_JwtAuth__JwtKey ran on it — anyone could
+        // mint a session for any user. ("change-me" with a hyphen slipped past the check below.)
+        const string devOnly = "dev-only-change-me-outcome-jwt-signing-key-min-32-bytes-0123456789";
+        if (key == devOnly && !isDevelopment)
+            throw new InvalidOperationException(
+                "JwtAuth:JwtKey is the development key from appsettings.json. Set OUTCOME_JwtAuth__JwtKey: openssl rand -hex 32");
         if (key == published || key.Contains("CHANGE_ME", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
                 "JwtAuth:JwtKey is still the example value. Generate one: openssl rand -hex 32");

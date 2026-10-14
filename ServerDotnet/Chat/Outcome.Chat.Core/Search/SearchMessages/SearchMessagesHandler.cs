@@ -16,7 +16,11 @@ public sealed class SearchMessagesHandler(IMessageRepository messages, IChannelO
             throw DomainException.BadRequest("query parameter 'q' is required");
 
         var limit = q.Limit < 1 ? 50 : Math.Min(q.Limit, 100);
-        var rows = await messages.SearchAsync(q.Query, q.ChannelId, limit, ct);
+        // The active server only — the one the history endpoint lets this person read. Search used
+        // to run over every message in the space (other people's private servers, deleted channels)
+        // and filter by the caller's role alone: a fresh account in no server could read them all.
+        if (q.ServerId <= 0) return new SearchResponse([]);
+        var rows = await messages.SearchAsync(q.Query, q.ChannelId, limit, q.ServerId, ct);
 
         var baseNames = Perms.FromBits(q.Permissions);
         var isAdmin = baseNames.Contains(Perms.Administrator);

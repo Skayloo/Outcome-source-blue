@@ -19,8 +19,13 @@ public sealed class LiveKitTokenService(IOptions<VoiceOptions> options, ICurrent
 
     public string Url => _opt.LiveKitUrl;
 
-    public string GenerateToken(long userId, string username, long channelId, bool canPublish, bool canSubscribe, string sessionId)
+    public string GenerateToken(long userId, string username, long channelId, bool canPublish, bool canVideo, bool canShare, bool canSubscribe, string sessionId)
     {
+        // The grant LiveKit enforces. With no sources listed a token may publish ANY source, so a
+        // member without UseVideo/ShareScreen could still put a camera or a screen into the room.
+        var sources = new List<string> { "microphone" };
+        if (canVideo) sources.Add("camera");
+        if (canShare) { sources.Add("screen_share"); sources.Add("screen_share_audio"); }
         var token = new AccessToken(_opt.LiveKitApiKey, _opt.LiveKitApiSecret);
         token.WithIdentity(ILiveKitTokenService.IdentityFor(userId, sessionId))
             .WithName(username)
@@ -34,16 +39,17 @@ public sealed class LiveKitTokenService(IOptions<VoiceOptions> options, ICurrent
                 // Raising a hand is an attribute on the participant, not a message: attributes
                 // survive somebody joining late, and clear themselves when the person leaves.
                 CanUpdateOwnMetadata = true,
+                CanPublishSources = sources,
             })
             .WithTtl(TimeSpan.FromHours(24));
         return token.ToJwt();
     }
 
-    public string GenerateGuestToken(string displayName, long channelId)
+    public string GenerateGuestToken(string displayName, long channelId, string linkCode)
     {
         var nonce = Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(8));
         var token = new AccessToken(_opt.LiveKitApiKey, _opt.LiveKitApiSecret);
-        token.WithIdentity($"guest-{nonce}")
+        token.WithIdentity($"guest-{ILiveKitTokenService.GuestLinkTag(linkCode)}{nonce}")
             .WithName(displayName)
             .WithGrants(new VideoGrants
             {

@@ -15,7 +15,7 @@ import { AdminAuditPanel } from "@components/admin/AdminAuditPanel";
 import { AdminLogsPanel } from "@components/admin/AdminLogsPanel";
 import { ServerSettingsPanel } from "@components/admin/ServerSettingsPanel";
 import { RolesPanel } from "@components/admin/RolesPanel";
-import { InviteManager } from "@components/admin/InviteManager";
+import { AdminInvitesPanel } from "@components/admin/AdminInvitesPanel";
 import { AdminServersPanel } from "@components/admin/AdminServersPanel";
 import { AdminSpacesPanel } from "@components/admin/AdminSpacesPanel";
 import { loadSpace, isRootSpace } from "@lib/space";
@@ -192,7 +192,7 @@ export function AdminPage() {
             {section === "servers" && <AdminServersPanel />}
             {section === "spaces" && <AdminSpacesPanel />}
             {section === "roles" && <RolesPanel />}
-            {section === "invites" && <InviteManager />}
+            {section === "invites" && <AdminInvitesPanel />}
             {section === "bugs" && <AdminBugsPanel />}
             {section === "reports" && <AdminReportsPanel />}
             {section === "mail" && <AdminMailPanel />}

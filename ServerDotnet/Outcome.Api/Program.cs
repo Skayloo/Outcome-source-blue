@@ -41,7 +41,8 @@ builder.Services.AddApplicationCore(
 builder.Services.AddInfrastructure(builder.Configuration);
 
 // JWT bearer authentication (Microsoft.AspNetCore.Authentication.JwtBearer) + IJwtTokenService.
-builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddJwtAuthentication(builder.Configuration, builder.Environment.IsDevelopment());
+Outcome.Api.Security.PublishedSecrets.RejectLiveKitSecret(builder.Configuration["Voice:LiveKitApiSecret"]);
 
 // Request-scoped authenticated principal, populated by JwtCurrentUserMiddleware.
 builder.Services.AddScoped<CurrentUserContext>();
@@ -88,6 +89,8 @@ builder.Services.AddScoped<IConnectionRegistry>(sp => new SpaceScopedConnectionR
 
 builder.Services.AddSingleton<PushNotifier>();
 builder.Services.AddSingleton<WebSocketHandler>();
+builder.Services.AddSingleton<SessionRevocations>();
+builder.Services.AddScoped<VoiceEviction>();
 builder.Services.AddSingleton<WsConnectionLimiter>();
 // Guest presence: webhook-fed registry + a startup sweep so guests predating this process show up.
 builder.Services.AddSingleton<GuestPresence>();

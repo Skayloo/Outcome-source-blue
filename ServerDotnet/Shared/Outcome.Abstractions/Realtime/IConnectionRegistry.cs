@@ -35,5 +35,11 @@ public interface IConnectionRegistry
     /// <summary>Force-closes a user's live connection (used by kick/ban).</summary>
     Task CloseUserAsync(long userId);
 
+    /// <summary>Force-closes the connections whose ACTIVE server is <paramref name="serverId"/>
+    /// (one user's, or everyone's when <paramref name="userId"/> is null). A role change or a
+    /// deleted server makes exactly those snapshots stale; sockets looking at other servers are
+    /// left alone.</summary>
+    Task CloseOnServerAsync(long serverId, long? userId = null);
+
     bool IsOnline(long userId);
 }

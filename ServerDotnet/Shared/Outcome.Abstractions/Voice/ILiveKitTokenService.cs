@@ -12,14 +12,24 @@ public interface ILiveKitTokenService
     /// (room "channel-{id}", identity "user-{id}.{sessionId}"). The session suffix is the
     /// WS connection, so one account's devices are DISTINCT participants: LiveKit no longer
     /// evicts one as a duplicate of the other, and handover is decided by us, not by a race.</summary>
-    string GenerateToken(long userId, string username, long channelId, bool canPublish, bool canSubscribe, string sessionId);
+    /// <paramref name="canVideo"/> and <paramref name="canShare"/> limit the publish SOURCES: the UseVideo /
+    /// ShareScreen check on the voice_states flag alone left the media grant open to any source.
+    string GenerateToken(long userId, string username, long channelId, bool canPublish, bool canVideo, bool canShare, bool canSubscribe, string sessionId);
 
     /// <summary>The identity a token with these arguments carries — callers evict by it.</summary>
     static string IdentityFor(long userId, string sessionId) => $"user-{userId}.{sessionId}";
 
-    /// <summary>Short-lived AUDIO-ONLY token for an anonymous guest (identity "guest-{nonce}",
+    /// <summary>Short-lived token for an anonymous guest (identity "guest-{link tag}{nonce}", all hex,
     /// the display name they typed). No Outcome session is ever attached to it.</summary>
-    string GenerateGuestToken(string displayName, long channelId);
+    string GenerateGuestToken(string displayName, long channelId, string linkCode);
+
+    /// <summary>Eight hex characters naming the link a guest came in by. They lead the guest identity,
+    /// so the webhook can tell a guest of the room's CURRENT link from one holding a token minted on a
+    /// link since revoked (that token stays valid for hours). Hex keeps every client's guest-id hash
+    /// working unchanged.</summary>
+    static string GuestLinkTag(string linkCode) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes("outcome-guest-link:" + linkCode)))[..8];
 
     /// <summary>
     /// A guest token this server issued, verified: still in date, a guest identity, and the room

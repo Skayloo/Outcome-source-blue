@@ -37,18 +37,23 @@ public sealed class GuestPresenceSweep(
                 var links = scope.ServiceProvider.GetRequiredService<IGuestLinkRepository>();
                 var rooms = scope.ServiceProvider.GetRequiredService<ILiveKitRoomService>();
 
+                var channels = scope.ServiceProvider.GetRequiredService<IChannelRepository>();
                 var channelIds = await links.ListActiveChannelIdsAsync(ct);
                 var seeded = 0;
                 foreach (var channelId in channelIds)
                 {
+                    // To the room's own server only, as the webhook does: sent space-wide, every
+                    // socket learned the guests' names and which rooms they sat in.
+                    var serverId = (await channels.GetByIdAsync(channelId, ct))?.ServerId;
                     foreach (var (identity, name) in await rooms.ListGuestsAsync(channelId, ct))
                     {
                         if (guests.Add(space.Id, channelId, identity, name) is { } id)
                         {
                             seeded++;
-                            await hub.BroadcastAsync(space.Id, WsFrames.VoiceState(new VoiceStateDto(
-                                channelId, id, string.IsNullOrEmpty(name) ? "Гость" : name,
-                                Muted: false, Deafened: false, Speaking: false, Camera: false, Screenshare: false)));
+                            if (serverId is { } sid)
+                                await hub.BroadcastToServerAsync(space.Id, sid, WsFrames.VoiceState(new VoiceStateDto(
+                                    channelId, id, string.IsNullOrEmpty(name) ? "Гость" : name,
+                                    Muted: false, Deafened: false, Speaking: false, Camera: false, Screenshare: false)));
                         }
                     }
                 }

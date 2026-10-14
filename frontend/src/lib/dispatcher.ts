@@ -3,7 +3,7 @@
 // Each server message type maps to one or more store actions.
 
 import type { WsClient } from "./ws";
-import { authStore, setAuth, clearAuth, markSessionInvalid } from "@stores/auth.store";
+import { authStore, setAuth, clearAuth, markSessionInvalid, updateUser } from "@stores/auth.store";
 import { setTransientError, showToast, uiStore } from "@stores/ui.store";
 import { t } from "@lib/i18n";
 import {
@@ -49,6 +49,7 @@ import {
 import { playVoiceCue, startCallRingtone, stopCallRingtone, joinVoice, leaveVoiceNow, leaveVoiceLocal } from "@lib/voice";
 import { addIncomingRequest, promoteToFriend, dropFriend } from "@stores/friends.store";
 import {
+  callStore,
   setIncomingCall,
   clearIncomingCall,
   clearOutgoingCall,
@@ -152,6 +153,14 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
 
   unsubs.push(
     ws.on(S.READY, (payload) => {
+      // Every READY (also after switch_server, which sends no auth_ok) says what we are in THIS
+      // server and whether we administer the space — lib/access.ts gates on these.
+      if (payload.server_role !== undefined || payload.space_admin !== undefined) {
+        updateUser({
+          ...(payload.server_role !== undefined ? { role: payload.server_role } : {}),
+          ...(payload.space_admin !== undefined ? { space_admin: payload.space_admin } : {}),
+        });
+      }
       setChannels(payload.channels);
       setRoles(payload.roles ?? []);
       setMembers(payload.members);
@@ -452,6 +461,7 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
     ws.on(S.MEMBER_UPDATE, (payload) => {
       log.info("Member role updated", { userId: payload.user_id, role: payload.role });
       updateMemberRole(payload.user_id, payload.role);
+      if (payload.user_id === authStore.getState().user?.id) updateUser({ role: payload.role });
     }),
   );
 
@@ -498,6 +508,12 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
 
   unsubs.push(
     ws.on(S.CALL_ACCEPTED, (payload) => {
+      // Only the answer to OUR ringing call, from the person we rang, for the room we offered.
+      // Anyone could send call_accept naming us, and this handler joined whatever room it named
+      // with the microphone live — the sender, sitting in that room, heard us (the app already
+      // checked; the web did not).
+      const out = callStore.getState().outgoing;
+      if (!out || out.calleeId !== payload.callee_id || out.channelId !== payload.channel_id) return;
       // Callee answered — stop the ringback and join the DM voice room (Home view).
       stopCallRingtone();
       clearOutgoingCall();
@@ -510,6 +526,8 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
 
   unsubs.push(
     ws.on(S.CALL_DECLINED, (payload) => {
+      // Only the person we are ringing can turn our call down.
+      if (callStore.getState().outgoing?.calleeId !== payload.callee_id) return;
       stopCallRingtone();
       clearOutgoingCall();
       setTransientError(
@@ -519,8 +537,9 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
   );
 
   unsubs.push(
-    ws.on(S.CALL_CANCELLED, () => {
-      // Caller hung up before we answered.
+    ws.on(S.CALL_CANCELLED, (payload) => {
+      // Caller hung up before we answered — only the one ringing us can stop the ringing.
+      if (callStore.getState().incoming?.callerId !== payload.caller_id) return;
       stopCallRingtone();
       stopTitleFlash();
       closeCallNotification();

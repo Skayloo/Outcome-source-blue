@@ -6,6 +6,7 @@
  * controls. Video (theirs and everyone else's) renders here; only the app-level data
  * channel stays closed to guests.
  */
+import { guestLabel } from "@lib/guestLink";
 import { useEffect, useRef, useState } from "react";
 import {
   Room, RoomEvent, Track,
@@ -433,7 +434,8 @@ export function GuestVoicePage({ code }: { code: string }) {
     for (const p of room.remoteParticipants.values()) {
       list.push({
         id: p.identity,
-        name: p.name || p.identity,
+        // Another guest is always shown as one, whatever name it gave itself in the room.
+        name: p.identity.startsWith("guest-") ? guestLabel(p.name || "", t("chat.guestTag")) : (p.name || p.identity),
         speaking: speakers.has(p.identity),
         isLocal: false,
         muted: micMuted(p),

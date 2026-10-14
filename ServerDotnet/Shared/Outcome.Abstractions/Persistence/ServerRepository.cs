@@ -23,6 +23,8 @@ public interface IServerRepository
     Task<long> GetFirstForUserAsync(long userId, CancellationToken ct = default);
     Task<bool> IsMemberAsync(long serverId, long userId, CancellationToken ct = default);
     Task<ServerInfo?> GetAsync(long serverId, CancellationToken ct = default);
+    /// <summary>Exists and is not deleted — <see cref="GetAsync"/> answers for deleted ones too.</summary>
+    Task<bool> IsLiveAsync(long serverId, CancellationToken ct = default);
     /// <summary>Number of non-deleted servers this user owns (for the create limit).</summary>
     Task<int> CountOwnedAsync(long ownerId, CancellationToken ct = default);
     /// <summary>Creates a server with default channels, makes <paramref name="ownerId"/> an owner member.</summary>
@@ -32,6 +34,10 @@ public interface IServerRepository
     Task<bool> RemoveMemberAsync(long serverId, long userId, CancellationToken ct = default);
     /// <summary>The user's per-server role id in this server, or null if not a member / unassigned.</summary>
     Task<long?> GetMemberRoleAsync(long serverId, long userId, CancellationToken ct = default);
+    /// <summary>The user's role inside that server; <c>None</c> when they are neither its owner nor a member.</summary>
+    Task<Outcome.Domain.Permissions.ServerRole> GetServerRoleAsync(long serverId, long userId, CancellationToken ct = default);
+    /// <summary>Every member's role inside the server (the owner included even with no membership row).</summary>
+    Task<IReadOnlyDictionary<long, Outcome.Domain.Permissions.ServerRole>> ServerRolesAsync(long serverId, CancellationToken ct = default);
     /// <summary>Assigns (or clears, with null) a member's per-server role. Returns false if not a member.</summary>
     Task<bool> AssignMemberRoleAsync(long serverId, long userId, long? roleId, CancellationToken ct = default);
     /// <summary>Rename a server. False if it doesn't exist.</summary>

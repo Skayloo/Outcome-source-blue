@@ -39,7 +39,7 @@ public static class DeviceEndpoints
             // Anything unrecognised is an alert token: pushing a call to it would just be
             // rejected by Apple, whereas the reverse would silently drop message notifications.
             var kind = body.Kind == "voip" ? "voip" : "alert";
-            await devices.RegisterAsync(current.UserId, token, platform, kind);
+            await devices.RegisterAsync(current.UserId, token, platform, kind, current.SessionTokenHash);
             return Results.NoContent();
         });
 

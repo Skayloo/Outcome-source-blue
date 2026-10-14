@@ -42,8 +42,10 @@ internal static class WsFrames
     public static byte[] ReplayDone() =>
         Serialize(new { type = "replay_done", payload = new { } });
 
-    public static byte[] AuthOk(long id, string username, string? avatar, string role, string serverName, string motd) =>
-        Serialize(new { type = "auth_ok", payload = new { user = new { id, username, avatar, role }, server_name = serverName, motd } });
+    /// <param name="role">The role INSIDE the active server (owner / admin / moderator / member).</param>
+    /// <param name="spaceAdmin">Administers the whole space (the /admin console).</param>
+    public static byte[] AuthOk(long id, string username, string? avatar, string role, string serverName, string motd, bool spaceAdmin = false) =>
+        Serialize(new { type = "auth_ok", payload = new { user = new { id, username, avatar, role, server_role = role, space_admin = spaceAdmin }, server_name = serverName, motd } });
 
     public static byte[] ChatSendOk(string? reqId, long messageId, DateTime timestamp) =>
         Serialize(new { type = "chat_send_ok", id = reqId, payload = new { message_id = messageId, timestamp } });

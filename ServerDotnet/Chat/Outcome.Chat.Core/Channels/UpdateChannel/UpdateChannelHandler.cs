@@ -15,7 +15,10 @@ public sealed class UpdateChannelHandler(IChannelRepository channels, ICurrentSe
     {
         ChannelAdminAuth.Require(cmd.Permissions);
         var existing = await channels.GetByIdAsync(cmd.Id, ct) ?? throw DomainException.NotFound("channel not found");
-        if (existing.ServerId is { } sid && sid != server.ServerId)
+        // Exactly the active server — a DM has no server, and the old `ServerId is { } sid && sid !=`
+        // let every DM through: anyone who made a server of their own (and so held ManageChannels in
+        // it) could rename or archive somebody else's conversation by its id.
+        if (existing.ServerId != server.ServerId)
             throw DomainException.Forbidden("channel is not in your active server");
         var name = cmd.Name is null ? null : TextSanitizer.StripHtml(cmd.Name);
         var topic = cmd.Topic is null ? null : TextSanitizer.StripHtml(cmd.Topic);

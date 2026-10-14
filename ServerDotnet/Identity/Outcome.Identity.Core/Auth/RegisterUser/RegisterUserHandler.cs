@@ -91,7 +91,8 @@ public sealed class RegisterUserHandler(
         if (AuthRules.ParseBoolean(await settings.GetAsync("registration_email_verify", ct), false))
         {
             // Per-address send budget — otherwise re-submitting the form bombs a victim's inbox.
-            if (!limiter.Allow($"regmail:{email}", 3, TimeSpan.FromMinutes(15)))
+            // Lower-cased: Victim@ and vICTIM@ are one mailbox, and each spelling had its own budget.
+            if (!limiter.Allow($"regmail:{email.ToLowerInvariant()}", 3, TimeSpan.FromMinutes(15)))
                 throw new DomainException("RATE_LIMITED", 429, "too many codes sent to this email, please try again later");
 
             var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
@@ -110,7 +111,9 @@ public sealed class RegisterUserHandler(
         var newUser = new User
         {
             UserName = username, Email = email, RoleId = DefaultRole.Member,
-            Status = "offline", EmailConfirmed = true,
+            // Nobody proved this address — the e-mail check is off on this path. Marked so, single
+            // sign-on will not hand the account to whoever owns the mailbox (see OAuthLogin).
+            Status = "offline", EmailConfirmed = false,
             ConsentAt = DateTime.UtcNow,
             ConsentVersion = string.IsNullOrWhiteSpace(cmd.ConsentVersion) ? PdnConsent.Version : cmd.ConsentVersion,
         };

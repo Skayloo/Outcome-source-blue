@@ -21,6 +21,8 @@ import { Icon } from "@lib/icons";
 import { Avatar } from "@components/Avatar";
 import { InviteManager } from "@components/admin/InviteManager";
 import { AdminReportsPanel } from "@components/admin/AdminReportsPanel";
+import { ASSIGNABLE_SERVER_ROLES, SERVER_ROLE_ORDER, canManageServer, canRemoveMember, serverRole, serverRoleLabel } from "@lib/access";
+import { authStore } from "@stores/auth.store";
 
 type Tab = "overview" | "channels" | "members" | "invites" | "reports";
 const TABS: { id: Tab; icon: string; label: () => string }[] = [
@@ -231,12 +233,13 @@ function ChannelsTab() {
 
 function MembersTab({ serverId }: { serverId: number }) {
   const m = useStoreState(membersStore);
-  const roles = channelsStore.getState().roles;
-  const assignable = roles.filter((r) => r.name.toLowerCase() !== "owner");
-  const members = [...m.members.values()].sort((a, b) => a.username.localeCompare(b.username));
+  const me = useStoreState(authStore).user;
+  // The owner first, then admins, moderators, members — roles INSIDE this server.
+  const members = [...m.members.values()].sort((a, b) =>
+    SERVER_ROLE_ORDER.indexOf(serverRole(a.role)) - SERVER_ROLE_ORDER.indexOf(serverRole(b.role)) || a.username.localeCompare(b.username));
 
-  async function setRole(userId: number, roleId: number | null) {
-    try { await api.assignServerRole(serverId, userId, roleId); await loadServers(); }
+  async function setRole(userId: number, role: "admin" | "moderator" | "member") {
+    try { await api.assignServerRole(serverId, userId, role); }
     catch (e) { setTransientError(e instanceof Error ? e.message : t("sidebar.actionFailed")); }
   }
   async function kick(userId: number, name: string) {
@@ -250,28 +253,32 @@ function MembersTab({ serverId }: { serverId: number }) {
       <h2 className="srvset-h2">{t("srvset.members")} — {members.length}</h2>
       <div className="srvset-list">
         {members.map((mem) => {
-          const isOwner = mem.role.toLowerCase() === "owner";
-          const curRole = assignable.find((r) => r.name.toLowerCase() === mem.role.toLowerCase());
+          const role = serverRole(mem.role);
+          const isOwner = role === "owner";
           return (
             <div className="srvset-list-row" key={mem.id}>
               <span className="srvset-member">
                 <Avatar username={mem.username} avatar={mem.avatar} size={28} color={roleColor(mem.role)} />
                 <span style={{ color: roleColor(mem.role) }}>{mem.username}</span>
-                {isOwner && <span className="srvset-owner-tag">{t("sidebar.role_owner")}</span>}
+                {isOwner && <span className="srvset-owner-tag">{t("srvset.serverOwner")}</span>}
               </span>
               {!isOwner && (
                 <span className="srvset-member-actions">
-                  <select
-                    className="bug-status-select"
-                    value={curRole ? String(curRole.id) : "member"}
-                    onChange={(e) => setRole(mem.id, e.target.value === "member" ? null : Number(e.target.value))}
-                  >
-                    <option value="member">{t("sidebar.role_member")}</option>
-                    {assignable.filter((r) => r.name.toLowerCase() !== "member").map((r) => (
-                      <option key={r.id} value={String(r.id)}>{r.name}</option>
-                    ))}
-                  </select>
-                  <button className="ac-btn account-delete-btn" onClick={() => kick(mem.id, mem.username)}>{t("sidebar.kick")}</button>
+                  {canManageServer(me) ? (
+                    <select
+                      className="bug-status-select"
+                      aria-label={t("sidebar.serverRole")}
+                      value={role}
+                      onChange={(e) => void setRole(mem.id, e.target.value as "admin" | "moderator" | "member")}
+                    >
+                      {ASSIGNABLE_SERVER_ROLES.map((r) => <option key={r} value={r}>{serverRoleLabel(r)}</option>)}
+                    </select>
+                  ) : (
+                    <span className="srvset-role-tag">{serverRoleLabel(role)}</span>
+                  )}
+                  {canRemoveMember(me, role) && (
+                    <button className="ac-btn account-delete-btn" onClick={() => kick(mem.id, mem.username)}>{t("sidebar.kick")}</button>
+                  )}
                 </span>
               )}
             </div>

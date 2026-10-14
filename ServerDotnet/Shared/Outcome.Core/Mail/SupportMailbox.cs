@@ -604,15 +604,24 @@ public sealed class SupportMailbox(IOptions<SupportMailOptions> options, ILogger
     /// anything remote.</summary>
     private static (string Html, bool Remote) RenderHtml(string html, MimeMessage message)
     {
+        // Anyone on the internet can mail the support box, and this runs on the API process every
+        // tenant shares. A 3 MB picture referenced a thousand times used to be copied into every
+        // reference before sanitising — gigabytes from one letter — so the inlined total is capped,
+        // and so is the markup the sanitiser is handed.
+        if (html.Length > MaxHtmlChars) html = html[..MaxHtmlChars];
+        long inlined = 0;
         foreach (var part in message.BodyParts.OfType<MimePart>())
         {
             if (string.IsNullOrEmpty(part.ContentId) || !part.ContentType.IsMimeType("image", "*")) continue;
             var reference = "cid:" + part.ContentId;
-            if (!html.Contains(reference, StringComparison.OrdinalIgnoreCase)) continue;
+            var uses = CountOf(html, reference);
+            if (uses == 0) continue;
             using var data = new MemoryStream();
             part.Content?.DecodeTo(data);
             if (data.Length == 0 || data.Length > MaxInlineImageBytes) continue;
             var uri = $"data:{part.ContentType.MimeType};base64,{Convert.ToBase64String(data.ToArray())}";
+            if (inlined + (long)uri.Length * uses > MaxInlinedChars) continue; // left as a broken picture
+            inlined += (long)uri.Length * uses;
             html = Regex.Replace(html, Regex.Escape(reference), uri, RegexOptions.IgnoreCase);
         }
         var clean = Sanitizer.SanitizeDocument(html);
@@ -631,16 +640,38 @@ public sealed class SupportMailbox(IOptions<SupportMailOptions> options, ILogger
 
     private static string Trim(string s, int max) => s.Length <= max ? s : s[..max] + "…";
 
+    private static int CountOf(string s, string what)
+    {
+        var n = 0;
+        for (var i = s.IndexOf(what, StringComparison.OrdinalIgnoreCase); i >= 0; i = s.IndexOf(what, i + what.Length, StringComparison.OrdinalIgnoreCase)) n++;
+        return n;
+    }
+
+    private const int MaxHtmlChars = 2_000_000;
+    private const long MaxInlinedChars = 12_000_000;
+    private static readonly TimeSpan RegexBudget = TimeSpan.FromSeconds(1);
+
     /// <summary>Tags out, entities decoded, whitespace collapsed. Only for the TEXT version of an
-    /// HTML-only message (a reply's quote, the plain view) — never rendered as markup.</summary>
+    /// HTML-only message (a reply's quote, the plain view) — never rendered as markup. The input is
+    /// bounded and every pattern has a time budget: '&lt;[^&gt;]+&gt;' over a letter of unclosed '&lt;'s is the
+    /// quadratic shape TextSanitizer.StripHtml was rewritten to avoid; past the budget, that linear
+    /// one does the job.</summary>
     private static string StripHtml(string html)
     {
-        var text = Regex.Replace(html, "<(script|style)[^>]*>.*?</\\1>", " ",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        text = Regex.Replace(text, "<br\\s*/?>|</p>|</div>|</tr>", "\n", RegexOptions.IgnoreCase);
-        text = Regex.Replace(text, "<[^>]+>", "");
-        text = System.Net.WebUtility.HtmlDecode(text);
-        text = Regex.Replace(text, "[ \\t]{2,}", " ");
-        return Regex.Replace(text, "\\n{3,}", "\n\n").Trim();
+        if (html.Length > MaxHtmlChars) html = html[..MaxHtmlChars];
+        try
+        {
+            var text = Regex.Replace(html, "<(script|style)[^>]*>.*?</\\1>", " ",
+                RegexOptions.Singleline | RegexOptions.IgnoreCase, RegexBudget);
+            text = Regex.Replace(text, "<br\\s*/?>|</p>|</div>|</tr>", "\n", RegexOptions.IgnoreCase, RegexBudget);
+            text = Regex.Replace(text, "<[^>]+>", "", RegexOptions.None, RegexBudget);
+            text = System.Net.WebUtility.HtmlDecode(text);
+            text = Regex.Replace(text, "[ \\t]{2,}", " ", RegexOptions.None, RegexBudget);
+            return Regex.Replace(text, "\\n{3,}", "\n\n", RegexOptions.None, RegexBudget).Trim();
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return System.Net.WebUtility.HtmlDecode(Outcome.Application.Common.TextSanitizer.StripHtml(html));
+        }
     }
 }

@@ -129,7 +129,10 @@ export interface MessageUser {
 
 /** User object with role, used in auth_ok and member_join. */
 export interface UserWithRole extends MessageUser {
+  /** In auth_ok/READY: the role INSIDE the active server (owner/admin/moderator/member). See lib/access.ts. */
   readonly role: string;
+  /** Administers the whole space (/admin). Sent by auth_ok and READY. */
+  readonly space_admin?: boolean;
   readonly totp_enabled?: boolean;
 }
 
@@ -276,6 +279,9 @@ export interface ReadyPayload {
   readonly roles: readonly ReadyRole[];
   readonly dm_channels?: readonly DmChannelPayload[];
   readonly muted_channels?: readonly number[];
+  /** The receiver's role inside this server, and whether they administer the space. */
+  readonly server_role?: string;
+  readonly space_admin?: boolean;
 }
 
 export interface ChatMessagePayload {
@@ -803,6 +809,21 @@ export interface InviteResponse {
   readonly expires_at: string | null;
 }
 
+/** An invite as the space's administrator sees it — any server's (GET /api/v1/admin/invites). */
+export interface AdminInvite {
+  readonly id: number;
+  readonly code: string;
+  readonly server_id: number;
+  readonly server_name: string;
+  readonly created_by: number;
+  /** Empty when the author's account is gone. */
+  readonly created_by_name: string;
+  readonly max_uses: number | null;
+  readonly use_count: number;
+  readonly expires_at: string | null;
+  readonly created_at: string;
+}
+
 /** Single session object from GET /api/users/me/sessions. */
 export interface SessionResponse {
   readonly id: number;
@@ -900,6 +921,8 @@ export interface AdminUserResponse {
   readonly created_at: string;
   /** Null for an account that never gave one (a guest's placeholder author). */
   readonly email?: string | null;
+  /** Names of the servers they created (their role INSIDE those is owner, whatever role_id says). */
+  readonly owned_servers?: readonly string[] | null;
 }
 
 /** A single live-log line streamed from GET /api/v1/admin/logs/stream (SSE). */

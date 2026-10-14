@@ -16,7 +16,7 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(10);
     private readonly IDatabase _db = redis.GetDatabase();
 
-    private sealed record Entry(long UserId, string? Device, string Ip, string? Code, int Failures);
+    private sealed record Entry(long UserId, string? Device, string Ip, string? Code, int Failures, string? PendingPasswordHash = null);
 
     private string Key(string token) => $"outcome:s{space.Space.Id}:partial:" + token;
 
@@ -24,6 +24,9 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
 
     public string IssueWithCode(long userId, string? device, string ip, string code) =>
         Store(new Entry(userId, device, ip, code, 0));
+
+    public string IssueForReset(long userId, string? device, string ip, string passwordHash) =>
+        Store(new Entry(userId, device, ip, null, 0, passwordHash));
 
     private string Store(Entry entry)
     {
@@ -33,30 +36,32 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
     }
 
     public PartialChallenge? Lookup(string partialToken) => Load(partialToken) is { } e
-        ? new PartialChallenge(e.UserId, e.Device, e.Ip, e.Code)
+        ? new PartialChallenge(e.UserId, e.Device, e.Ip, e.Code, e.PendingPasswordHash)
         : null;
 
     public PartialChallenge? Consume(string partialToken)
     {
         var raw = _db.StringGetDelete(Key(partialToken));
+        _db.KeyDelete(FailKey(partialToken));
         if (raw.IsNullOrEmpty) return null;
         var e = JsonSerializer.Deserialize<Entry>((string)raw!);
-        return e is null ? null : new PartialChallenge(e.UserId, e.Device, e.Ip, e.Code);
+        return e is null ? null : new PartialChallenge(e.UserId, e.Device, e.Ip, e.Code, e.PendingPasswordHash);
     }
+
+    private string FailKey(string token) => Key(token) + ":f";
 
     public void RegisterFailure(string partialToken, int maxFailures)
     {
-        var e = Load(partialToken);
-        if (e is null) return;
-        var failures = e.Failures + 1;
+        if (!_db.KeyExists(Key(partialToken))) return;
+        // INCR, not read-bump-write: parallel wrong codes each read the same count and wrote back the
+        // same "+1", so the five-guess budget stretched with the number of requests in flight.
+        var failures = _db.StringIncrement(FailKey(partialToken));
+        if (failures == 1) _db.KeyExpire(FailKey(partialToken), Ttl);
         if (failures >= maxFailures)
         {
             _db.KeyDelete(Key(partialToken));
-            return;
+            _db.KeyDelete(FailKey(partialToken));
         }
-        // Preserve the remaining TTL when writing the bumped failure count back.
-        var ttl = _db.KeyTimeToLive(Key(partialToken)) ?? Ttl;
-        _db.StringSet(Key(partialToken), JsonSerializer.Serialize(e with { Failures = failures }), ttl);
     }
 
     private Entry? Load(string token)

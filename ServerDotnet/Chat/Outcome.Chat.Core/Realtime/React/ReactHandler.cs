@@ -10,7 +10,8 @@ public sealed class ReactHandler(
     IMessageRepository messages,
     IChannelRepository channels,
     IChannelOverrideRepository overrides,
-    IReactionRepository reactions) : IRequestHandler<ReactCommand, ReactionResult>
+    IReactionRepository reactions,
+    IDmRepository dms) : IRequestHandler<ReactCommand, ReactionResult>
 {
     public async Task<ReactionResult> Handle(ReactCommand cmd, CancellationToken ct)
     {
@@ -25,7 +26,14 @@ public sealed class ReactHandler(
         var msg = await messages.GetByIdAsync(cmd.MessageId, ct) ?? throw DomainException.BadRequest("reaction failed");
         var channel = await channels.GetByIdAsync(msg.ChannelId, ct) ?? throw DomainException.BadRequest("reaction failed");
 
-        if (channel.Type != "dm")
+        if (channel.Type == "dm")
+        {
+            // Only the two people in the conversation — every other DM operation already asks this;
+            // reactions did not, so anyone could put a reaction on anyone's private messages.
+            if (!await dms.IsParticipantAsync(cmd.UserId, msg.ChannelId, ct))
+                throw DomainException.BadRequest("reaction failed");
+        }
+        else
         {
             if (channel.ServerId is { } sid && sid != cmd.ServerId)
                 throw DomainException.Forbidden("channel is not in your active server");

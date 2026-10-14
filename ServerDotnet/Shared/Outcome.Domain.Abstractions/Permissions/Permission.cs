@@ -52,6 +52,65 @@ public static class Permission
     public const long ServerOwnerGrant = ManageChannels | ManageInvites | ManageMessages | RecordCalls;
 }
 
+/// <summary>A person's role INSIDE one server. It is a different thing from the space role on
+/// <c>users.role_id</c> (Owner / Admin / Member of the whole space): the two shared one list of
+/// names, so a server's creator showed up as "Member" and a per-server "Admin" granted nothing.
+/// The owner is <c>servers.owner_id</c>; Admin and Moderator are stored in
+/// <c>server_members.role_id</c> as the seeded role ids 2 and 3 (null or anything else = Member).</summary>
+public enum ServerRole { None = 0, Member = 1, Moderator = 2, Admin = 3, Owner = 4 }
+
+public static class ServerRoles
+{
+    public static ServerRole FromMember(bool isOwner, bool isMember, long? storedRoleId) =>
+        isOwner ? ServerRole.Owner
+        : !isMember ? ServerRole.None
+        : storedRoleId == DefaultRole.Admin ? ServerRole.Admin
+        : storedRoleId == DefaultRole.Moderator ? ServerRole.Moderator
+        : ServerRole.Member;
+
+    /// <summary>What <c>server_members.role_id</c> holds for a role a manager picks.</summary>
+    public static long? StoredRoleId(ServerRole role) => role switch
+    {
+        ServerRole.Admin => DefaultRole.Admin,
+        ServerRole.Moderator => DefaultRole.Moderator,
+        _ => null,
+    };
+
+    /// <summary>The permission bits a server role adds inside THAT server. Only server-scoped bits:
+    /// see <see cref="Permission.ServerOwnerGrant"/> for why nothing an instance-wide handler gates
+    /// on may appear here. Kicking, renaming the server and assigning roles are not bits at all —
+    /// the endpoints check the server role itself.</summary>
+    public static long Grant(ServerRole role) => role switch
+    {
+        ServerRole.Owner or ServerRole.Admin => Permission.ServerOwnerGrant,
+        ServerRole.Moderator => Permission.ManageMessages | Permission.ManageInvites,
+        _ => Permission.None,
+    };
+
+    /// <summary>Manages the server: name, picture, visibility, members' roles, removing members.</summary>
+    public static bool CanManage(ServerRole role) => role is ServerRole.Owner or ServerRole.Admin;
+
+    public static string Name(ServerRole role) => role switch
+    {
+        ServerRole.Owner => "owner",
+        ServerRole.Admin => "admin",
+        ServerRole.Moderator => "moderator",
+        _ => "member",
+    };
+
+    public static bool TryParse(string? name, out ServerRole role)
+    {
+        role = (name ?? "").Trim().ToLowerInvariant() switch
+        {
+            "admin" => ServerRole.Admin,
+            "moderator" => ServerRole.Moderator,
+            "member" => ServerRole.Member,
+            _ => ServerRole.None,
+        };
+        return role != ServerRole.None;
+    }
+}
+
 /// <summary>Default role IDs inserted on first run (must match Go).</summary>
 public static class DefaultRole
 {

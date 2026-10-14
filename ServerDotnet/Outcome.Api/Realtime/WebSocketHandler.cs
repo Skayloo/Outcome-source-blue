@@ -28,8 +28,11 @@ public sealed class WebSocketHandler(
     IPendingCallStore pendingCalls,
     IServiceScopeFactory scopeFactory,
     IOptions<ServerOptions> serverOptions,
+    IOptions<OAuthOptions> oauthOptions,
     GuestPresence guestPresence,
     PushNotifier pushNotifier,
+    SessionRevocations revocations,
+    IRateLimiter limiter,
     ILogger<WebSocketHandler> logger)
 {
     // How long a call rings an offline callee before it's considered missed (kept in step with the
@@ -40,7 +43,9 @@ public sealed class WebSocketHandler(
 
     private sealed record AuthInfo(
         long UserId, string Username, string? Avatar, long RoleId, string Role, long Permissions, string ServerName, string Motd, long LastSeq, long ServerId,
-        Space Space, string? DeviceId, string Origin = "");
+        Space Space, string? DeviceId, string Origin = "", bool SpaceAdmin = false, string SessionHash = "");
+    // RoleId is the SPACE role (users.role_id); Role is the role INSIDE the active server
+    // ("owner" / "admin" / "moderator" / "member") — what every roster and message carries.
 
     /// <summary>The session half of a LiveKit identity: <c>user-{id}.{device}.{conn}</c> when the
     /// client names its device, <c>user-{id}.{conn}</c> when it does not. voice_join drops the
@@ -73,7 +78,12 @@ public sealed class WebSocketHandler(
     {
         var auth = await AuthenticateAsync(ws, space, ct);
         if (auth is null) { await CloseQuietly(ws); return; }
-        auth = auth with { Origin = origin };
+        // The address push pictures are fetched from: the space's own, or the configured public one.
+        // Never the Host the socket came in with — any client can send any Host (an unknown one
+        // falls back to the root space), and the recipients' phones then fetched the picture, with
+        // its signed URL, from wherever the SENDER pointed them. The socket's own only in dev.
+        var configured = space.Domain is { Length: > 0 } d ? $"https://{d}" : oauthOptions.Value.PublicOrigin.TrimEnd('/');
+        auth = auth with { Origin = configured.Length > 0 ? configured : origin };
 
         var connId = Guid.NewGuid();
         using var connCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -91,7 +101,7 @@ public sealed class WebSocketHandler(
             catch { /* socket closed */ }
         }, cct);
 
-        await Send(WsFrames.AuthOk(auth.UserId, auth.Username, auth.Avatar, auth.Role, auth.ServerName, auth.Motd));
+        await Send(WsFrames.AuthOk(auth.UserId, auth.Username, auth.Avatar, auth.Role, auth.ServerName, auth.Motd, auth.SpaceAdmin));
         await Send(await BuildReadyAsync(auth, ct));
 
         // Register BEFORE replay so frames broadcast during the replay loop are delivered live
@@ -119,12 +129,57 @@ public sealed class WebSocketHandler(
 
         logger.LogInformation("websocket connected: user {UserId} ({Username})", auth.UserId, auth.Username);
 
+        // The session was checked at auth only, so a socket outlived logout, a password change or
+        // reset and "sign out everywhere" for good. Now it re-checks its own session at once when
+        // one of the user's sessions is revoked here (SessionRevocations), and every minute anyway
+        // — the backstop for an expired session, a ban made elsewhere, another replica's revoke.
+        var watch = Task.Run(async () =>
+        {
+            try
+            {
+                var seen = revocations.Generation(space.Id, auth.UserId);
+                var due = DateTime.UtcNow + SessionRecheck;
+                while (!cct.IsCancellationRequested)
+                {
+                    await Task.Delay(RevocationPoll, cct);
+                    var now = revocations.Generation(space.Id, auth.UserId);
+                    if (now == seen && DateTime.UtcNow < due) continue;
+                    seen = now;
+                    due = DateTime.UtcNow + SessionRecheck;
+                    if (!await SessionStillValidAsync(space, auth.UserId, auth.SessionHash, cct))
+                    {
+                        logger.LogInformation("websocket closed: session of user {UserId} no longer valid", auth.UserId);
+                        try { connCts.Cancel(); } catch { /* already disposed */ }
+                        return;
+                    }
+                }
+            }
+            catch { /* cancelled with the connection */ }
+        }, cct);
+
         try
         {
+            // One budget for everything a connection sends: a burst of FrameBurst, refilled at
+            // FramesPerSecond. Only presence and calls had limits, and every other frame (a READY
+            // rebuild, a broadcast, a LiveKit call) could be sent as fast as one socket can write,
+            // from 64 sockets an address. Far above what any client does — a fast typist and a
+            // key exchange together stay under a tenth of it.
+            double tokens = FrameBurst;
+            var refilledAt = Environment.TickCount64;
+            var warnedAt = 0L;
             while (ws.State == WebSocketState.Open)
             {
                 var raw = await ReadFrameAsync(ws, cct);
                 if (raw is null) break;
+                var now = Environment.TickCount64;
+                tokens = Math.Min(FrameBurst, tokens + (now - refilledAt) / 1000.0 * FramesPerSecond);
+                refilledAt = now;
+                if (tokens < 1)
+                {
+                    if (now - warnedAt > 5000) { warnedAt = now; await Send(WsFrames.Error("RATE_LIMITED", "too many messages, slow down")); }
+                    continue;
+                }
+                tokens -= 1;
                 // DispatchAsync returns the (possibly re-scoped) auth so a switch_server
                 // over the live socket updates the tenant for all subsequent frames + cleanup.
                 auth = await DispatchAsync(auth, connId, raw, Send, cct);
@@ -150,7 +205,32 @@ public sealed class WebSocketHandler(
         }
     }
 
+    private static readonly TimeSpan SessionRecheck = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan RevocationPoll = TimeSpan.FromSeconds(2);
+
+    private async Task<bool> SessionStillValidAsync(Space space, long userId, string sessionHash, CancellationToken ct)
+    {
+        try
+        {
+            await using var scope = scopeFactory.CreateAsyncScopeFor(space);
+            var session = await scope.ServiceProvider.GetRequiredService<ISessionRepository>().GetByTokenHashAsync(sessionHash, ct);
+            if (session is null || session.ExpiresAt <= DateTime.UtcNow || session.UserId != userId) return false;
+            var user = await scope.ServiceProvider.GetRequiredService<IUserRepository>().GetByIdAsync(userId, ct);
+            return user is { Deleted: false } && !(user.Banned && (user.BanExpires is null || user.BanExpires > DateTime.UtcNow));
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            // A database hiccup must not throw everyone out; the next round decides.
+            logger.LogDebug(ex, "session re-check failed for user {UserId}", userId);
+            return true;
+        }
+    }
+
     // ── Dispatch ─────────────────────────────────────────────────────────────
+    private const double FrameBurst = 120;
+    private const double FramesPerSecond = 20;
+
     private async Task<AuthInfo> DispatchAsync(AuthInfo auth, Guid connId, byte[] raw, Func<byte[], ValueTask> send, CancellationToken ct)
     {
         string? type, reqId = null;
@@ -176,6 +256,12 @@ public sealed class WebSocketHandler(
                 break;
 
             case "switch_server":
+                // Each one rebuilds a whole READY and tells the target server someone arrived.
+                if (!limiter.Allow($"ws-switch:{connId}", 30, TimeSpan.FromMinutes(1)))
+                {
+                    await send(WsFrames.Error("RATE_LIMITED", "switching servers too fast"));
+                    return auth;
+                }
                 return await HandleSwitchServerAsync(auth, connId, payload, send, ct);
 
             case "chat_send":
@@ -202,7 +288,7 @@ public sealed class WebSocketHandler(
                 await HandleVoiceJoinAsync(auth, connId, payload, send, ct);
                 break;
             case "voice_leave":
-                await HandleVoiceLeaveAsync(auth, ct);
+                await HandleVoiceLeaveAsync(auth, connId, ct);
                 break;
             case "voice_mute":
                 await HandleVoiceFlagAsync(auth, payload, VoiceFlag.Muted, "muted", send, ct);
@@ -235,8 +321,10 @@ public sealed class WebSocketHandler(
                 break;
 
             case "typing_start":
-                if (TryGetLong(payload, "channel_id", out var typingCh))
-                    await hub.BroadcastToServerAsync(auth.Space.Id, auth.ServerId, WsFrames.Typing(typingCh, auth.UserId, auth.Username));
+                // Clients repeat it every few seconds while someone types; more often is noise fanned
+                // out to a whole server.
+                if (TryGetLong(payload, "channel_id", out var typingCh) && limiter.Allow($"ws-typing:{connId}:{typingCh}", 1, TimeSpan.FromSeconds(2)))
+                    await HandleTypingAsync(auth, typingCh, ct);
                 break;
 
             // ── direct call signaling (relay only; media rides LiveKit) ──────────
@@ -256,7 +344,12 @@ public sealed class WebSocketHandler(
             case "presence_update":
                 {
                     var status = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("status", out var s)
-                        ? s.GetString() ?? "online" : "online";
+                                 && s.ValueKind == JsonValueKind.String ? s.GetString() ?? "online" : "online";
+                    // The statuses the clients offer, and not often: anything else was stored and
+                    // sent to every socket in the space as it came — up to the 1 MB frame cap,
+                    // escaped to ~6 MB, as fast as the sender could type.
+                    if (status is not ("online" or "idle" or "dnd" or "offline")) break;
+                    if (!limiter.Allow($"presence:{auth.Space.Id}:{auth.UserId}", 20, TimeSpan.FromMinutes(1))) break;
                     await UpdateStatusAsync(auth.Space, auth.UserId, status, ct);
                     // Global: status is per-user, visible on every server they're a member of.
                     await hub.BroadcastAsync(auth.Space.Id, WsFrames.Presence(auth.UserId, status));
@@ -286,25 +379,17 @@ public sealed class WebSocketHandler(
             return auth;
         }
 
-        var roles = scope.ServiceProvider.GetRequiredService<IRoleRepository>();
         var permissions = scope.ServiceProvider.GetRequiredService<IPermissionRepository>();
 
-        // Per-server role + permissions for the newly-active tenant (mirrors AuthenticateAsync).
-        var effectiveRole = await serverRepo.GetMemberRoleAsync(newServer, auth.UserId, ct) ?? auth.RoleId;
+        // The role and permissions INSIDE the newly-active server (mirrors AuthenticateAsync; the
+        // server role's grant is part of GetEffectiveForServerAsync).
+        var serverRole = await serverRepo.GetServerRoleAsync(newServer, auth.UserId, ct);
         var permBits = Permissions.ToBits(await permissions.GetEffectiveForServerAsync(auth.UserId, newServer, ct));
-        var role = await roles.GetByIdAsync(effectiveRole, ct);
-        if ((permBits & Outcome.Domain.Permissions.Permission.Administrator) == 0)
-        {
-            var info = await serverRepo.GetAsync(newServer, ct);
-            if (info is not null && info.OwnerId == auth.UserId)
-                permBits |= Outcome.Domain.Permissions.Permission.ServerOwnerGrant;
-        }
 
         var newAuth = auth with
         {
             ServerId = newServer,
-            RoleId = effectiveRole,
-            Role = (role?.Name ?? "member").ToLowerInvariant(),
+            Role = Outcome.Domain.Permissions.ServerRoles.Name(serverRole),
             Permissions = permBits,
         };
 
@@ -396,12 +481,52 @@ public sealed class WebSocketHandler(
             await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();
             var res = await sender.Send(new EditMessageCommand(mid, content, auth.UserId, auth.Permissions, auth.RoleId, auth.ServerId), ct);
-            await hub.BroadcastToServerAsync(auth.Space.Id, auth.ServerId, WsFrames.ChatEdited(res.MessageId, res.ChannelId, res.Content, res.EditedAt));
+            await SendToChannelAudienceAsync(scope.ServiceProvider, auth, res.ChannelId,
+                WsFrames.ChatEdited(res.MessageId, res.ChannelId, res.Content, res.EditedAt), ct);
         }
         catch (DomainException ex)
         {
             await send(WsFrames.Error(ex.Code, ex.Message));
         }
+    }
+
+    /// <summary>A frame about a message goes to the people who can see that message: a DM's two
+    /// participants, or the sockets of the channel's own server. Edits and reactions used to go to
+    /// the SENDER's active server — a DM edit's new text reached everyone looking at that server.</summary>
+    private async Task SendToChannelAudienceAsync(IServiceProvider sp, AuthInfo auth, long channelId, byte[] frame, CancellationToken ct)
+    {
+        var channel = await sp.GetRequiredService<IChannelRepository>().GetByIdAsync(channelId, ct);
+        if (channel is null) return;
+        if (channel.Type == "dm" || channel.ServerId is null)
+        {
+            foreach (var pid in await sp.GetRequiredService<IDmRepository>().GetParticipantIdsAsync(channelId, ct))
+                await hub.SendToUserAsync(auth.Space.Id, pid, frame);
+            return;
+        }
+        await hub.BroadcastToServerAsync(auth.Space.Id, channel.ServerId.Value, frame);
+    }
+
+    /// <summary>"Is typing" goes where the channel is read: a DM's other participant, or the sockets of
+    /// the channel's own server. It used to go to the typer's ACTIVE server — everyone looking at it
+    /// learned who was writing to whom in private, and when.</summary>
+    private async Task HandleTypingAsync(AuthInfo auth, long channelId, CancellationToken ct)
+    {
+        await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
+        var sp = scope.ServiceProvider;
+        var channel = await sp.GetRequiredService<IChannelRepository>().GetByIdAsync(channelId, ct);
+        if (channel is null) return;
+        var frame = WsFrames.Typing(channelId, auth.UserId, auth.Username);
+        if (channel.Type == "dm" || channel.ServerId is null)
+        {
+            var dms = sp.GetRequiredService<IDmRepository>();
+            if (!await dms.IsParticipantAsync(auth.UserId, channelId, ct)) return;
+            foreach (var pid in await dms.GetParticipantIdsAsync(channelId, ct))
+                if (pid != auth.UserId) await hub.SendToUserAsync(auth.Space.Id, pid, frame);
+            return;
+        }
+        var sid = channel.ServerId.Value;
+        if (sid != auth.ServerId && !await sp.GetRequiredService<IServerRepository>().IsMemberAsync(sid, auth.UserId, ct)) return;
+        await hub.BroadcastToServerAsync(auth.Space.Id, sid, frame);
     }
 
     private async Task HandleDeleteAsync(AuthInfo auth, JsonElement payload, Func<byte[], ValueTask> send, CancellationToken ct)
@@ -448,7 +573,8 @@ public sealed class WebSocketHandler(
             await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();
             var res = await sender.Send(new ReactCommand(mid, emoji, add, auth.UserId, auth.Permissions, auth.RoleId, auth.ServerId), ct);
-            await hub.BroadcastToServerAsync(auth.Space.Id, auth.ServerId, WsFrames.ReactionUpdate(res.MessageId, res.ChannelId, res.Emoji, res.UserId, res.Action));
+            await SendToChannelAudienceAsync(scope.ServiceProvider, auth, res.ChannelId,
+                WsFrames.ReactionUpdate(res.MessageId, res.ChannelId, res.Emoji, res.UserId, res.Action), ct);
         }
         catch (DomainException ex)
         {
@@ -465,6 +591,14 @@ public sealed class WebSocketHandler(
             await send(WsFrames.Error("BAD_REQUEST", "callee_id and channel_id must be positive integers"));
             return;
         }
+        // Every offer to someone offline is a VoIP push, and iOS shows a CallKit call for each one:
+        // without a limit anyone could ring a phone over and over. A real caller redials a few times.
+        if (!limiter.Allow($"call:{auth.Space.Id}:{auth.UserId}", 10, TimeSpan.FromMinutes(1))
+            || !limiter.Allow($"call:{auth.Space.Id}:{auth.UserId}:{callee}", 4, TimeSpan.FromMinutes(1)))
+        {
+            await send(WsFrames.Error("RATE_LIMITED", "too many calls, try again in a minute"));
+            return;
+        }
         // A block in either direction means the phone never rings (scoped resolve: this
         // handler is a singleton, repositories are per-request).
         using (var scope = scopeFactory.CreateScopeFor(auth.Space))
@@ -475,7 +609,18 @@ public sealed class WebSocketHandler(
                 await send(WsFrames.Error("FORBIDDEN", "you cannot call this user"));
                 return;
             }
+            // A 1:1 call happens in the DM of exactly these two people — the callee's client joins
+            // the room this names when it answers.
+            if (!await IsDmBetweenAsync(scope.ServiceProvider, channelId, auth.UserId, callee))
+            {
+                await send(WsFrames.Error("FORBIDDEN", "a call takes place in your direct messages with that person"));
+                return;
+            }
         }
+        if (ringing.Count > 1000)
+            foreach (var (key, until) in ringing)
+                if (until < DateTimeOffset.UtcNow) ringing.TryRemove(key, out _);
+        ringing[(auth.Space.Id, auth.UserId, callee)] = DateTimeOffset.UtcNow.Add(RingWindow);
         if (hub.IsOnline(auth.Space.Id, callee))
         {
             await hub.SendToUserAsync(auth.Space.Id, callee, WsFrames.CallIncoming(auth.UserId, auth.Username, auth.Avatar, channelId));
@@ -497,12 +642,30 @@ public sealed class WebSocketHandler(
         if (!TryGetLong(payload, "caller_id", out var caller) || caller <= 0 ||
             !TryGetLong(payload, "channel_id", out var channelId) || channelId <= 0)
             return;
+        // Only for the DM of these two people. The caller's client is the real gate (it acts only
+        // on an answer to the call it placed); this keeps an accept from naming any other room.
+        using (var scope = scopeFactory.CreateScopeFor(auth.Space))
+            if (!await IsDmBetweenAsync(scope.ServiceProvider, channelId, auth.UserId, caller)) return;
         await hub.SendToUserAsync(auth.Space.Id, caller, WsFrames.CallAccepted(auth.UserId, channelId));
+    }
+
+    private static async Task<bool> IsDmBetweenAsync(IServiceProvider sp, long channelId, long a, long b)
+    {
+        if (a == b) return false;
+        var channel = await sp.GetRequiredService<IChannelRepository>().GetByIdAsync(channelId);
+        if (channel is null || channel.Type != "dm") return false;
+        var dms = sp.GetRequiredService<IDmRepository>();
+        return await dms.IsParticipantAsync(a, channelId) && await dms.IsParticipantAsync(b, channelId);
     }
 
     private async Task HandleCallDeclineAsync(AuthInfo auth, JsonElement payload)
     {
-        if (!TryGetLong(payload, "caller_id", out var caller) || caller <= 0) return;
+        if (!TryGetLong(payload, "caller_id", out var caller) || caller <= 0 || caller == auth.UserId) return;
+        // Only between people who share a DM — calls are placed in one — and at a call's pace: it
+        // went to any user id, and the phone dropped whatever call it was placing on any decline.
+        if (!limiter.Allow($"call_decline:{auth.Space.Id}:{auth.UserId}", 20, TimeSpan.FromMinutes(1))) return;
+        using (var scope = scopeFactory.CreateScopeFor(auth.Space))
+            if (await scope.ServiceProvider.GetRequiredService<IDmRepository>().FindChannelAsync(auth.UserId, caller) is null) return;
         await hub.SendToUserAsync(auth.Space.Id, caller, WsFrames.CallDeclined(auth.UserId, "declined"));
     }
 
@@ -510,6 +673,9 @@ public sealed class WebSocketHandler(
     {
         if (!TryGetLong(payload, "callee_id", out var callee) || callee <= 0) return;
         pendingCalls.Clear(auth.Space.Id, callee, auth.UserId); // caller hung up before the offline callee saw it
+        // Only a call this caller actually placed, and is still ringing, can be cancelled. A cancel
+        // is a VoIP push too, which iOS must show as a call — unchecked, it rang phones by itself.
+        if (!ringing.TryRemove((auth.Space.Id, auth.UserId, callee), out var until) || until < DateTimeOffset.UtcNow) return;
         await hub.SendToUserAsync(auth.Space.Id, callee, WsFrames.CallCancelled(auth.UserId));
         // A phone woken by the call push is still ringing and has no socket to hear that on.
         if (!hub.IsOnline(auth.Space.Id, callee))
@@ -524,6 +690,10 @@ public sealed class WebSocketHandler(
     /// </summary>
     private static string CallIdOf(long callerId, long calleeId) =>
         $"{callerId}-{calleeId}";
+
+    /// <summary>Calls ringing now, (space, caller, callee) → until when; what a cancel may stop.
+    /// Entries die with their ring window or the cancel; an answered call's entry just expires.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(long Space, long Caller, long Callee), DateTimeOffset> ringing = new();
 
     // ── Voice (LiveKit) ──────────────────────────────────────────────────────
 
@@ -562,10 +732,14 @@ public sealed class WebSocketHandler(
             // rejoin: the client re-announces a call it is still in (after a reconnect) — see JoinVoiceCommand.
             var rejoin = payload.ValueKind == JsonValueKind.Object && payload.TryGetProperty("rejoin", out var rj) && rj.ValueKind == JsonValueKind.True;
             var res = await sender.Send(new JoinVoiceCommand(
-                ch, auth.UserId, auth.Username, auth.Permissions, auth.RoleId, VoiceSessionFor(auth, connId), rejoin), ct);
+                ch, auth.UserId, auth.Username, await RoomPermissionsAsync(auth, ch, scope.ServiceProvider, ct), auth.RoleId, VoiceSessionFor(auth, connId), rejoin), ct);
             voiceConnections[(auth.Space.Id, auth.UserId)] = connId;
             if (res.PreviousChannelId is { } prev)
+            {
                 await BroadcastVoiceAsync(auth.Space, prev, WsFrames.VoiceLeave(prev, auth.UserId), ct);
+                // Moving rooms: this connection's session in the old room goes too (see voice_leave).
+                DropStaleSessionLater(auth, prev, ILiveKitTokenService.IdentityFor(auth.UserId, VoiceSessionFor(auth, connId)));
+            }
 
             await send(WsFrames.VoiceToken(ch, res.Token, "/livekit", res.Url));
             await BroadcastVoiceAsync(auth.Space, ch, WsFrames.VoiceState(res.JoinerState), ct);
@@ -609,14 +783,52 @@ public sealed class WebSocketHandler(
             await send(WsFrames.Error("FORBIDDEN", "you may not record calls here"));
             return;
         }
+        var start = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
         var announced = await sp.GetRequiredService<ILiveKitRoomService>().SetUserAttributeAsync(
-            ch, auth.UserId, "rec", on ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString() : "", ct);
+            ch, auth.UserId, "rec", on ? start : "", ct);
         if (on && !announced)
         {
             await send(WsFrames.Error("NOT_IN_CALL", "join the call before recording it"));
             return;
         }
+        var key = (auth.Space.Id, ch, auth.UserId);
+        if (on) { recordings[key] = (auth.Space, start); WatchRecordings(); }
+        else recordings.TryRemove(key, out _);
         await send(WsFrames.Serialize(new { type = "voice_record_ok", payload = new { channel_id = ch, on } }));
+    }
+
+    /// <summary>Recordings announced through voice_record, per (space, room, user) → the start.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(long Space, long Channel, long User), (Space Space, string Start)> recordings = new();
+    private int recordingWatch;
+
+    /// <summary>
+    /// Keeps the "● recording" notice true. 'rec' is a participant attribute, and the token lets a
+    /// participant set its own attributes (raised hands use that), so a recorder could clear it right
+    /// after voice_record_ok and go on recording with no notice — which the owner ruled nobody may
+    /// hide. Every few seconds each announced recording's 'rec' is put back where it was changed;
+    /// a recording ends with voice_record off or when the recorder is no longer in the room.
+    /// </summary>
+    private void WatchRecordings()
+    {
+        if (Interlocked.Exchange(ref recordingWatch, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(4));
+                foreach (var (key, rec) in recordings.ToArray())
+                {
+                    try
+                    {
+                        await using var scope = scopeFactory.CreateAsyncScopeFor(rec.Space);
+                        var stillThere = await scope.ServiceProvider.GetRequiredService<ILiveKitRoomService>()
+                            .EnsureUserAttributeAsync(key.Channel, key.User, "rec", rec.Start);
+                        if (!stillThere) recordings.TryRemove(key, out _);
+                    }
+                    catch (Exception ex) { logger.LogDebug(ex, "recording notice check failed"); }
+                }
+            }
+        });
     }
 
     /// <summary>RecordCalls in the ROOM's server — not the one on screen, since someone in a call may
@@ -627,19 +839,46 @@ public sealed class WebSocketHandler(
         if (channel is null || channel.Type is not ("voice" or "dm")) return false;
         if (channel.ServerId is not { } sid)
             return await sp.GetRequiredService<IDmRepository>().IsParticipantAsync(auth.UserId, channelId, ct);
-        var names = new HashSet<string>(await sp.GetRequiredService<IPermissionRepository>().GetEffectiveForServerAsync(auth.UserId, sid, ct));
-        if ((await sp.GetRequiredService<IServerRepository>().GetAsync(sid, ct))?.OwnerId == auth.UserId)
-            names.UnionWith(Permissions.FromBits(Outcome.Domain.Permissions.Permission.ServerOwnerGrant));
+        // GetEffectiveForServerAsync includes what the caller's role in THAT server grants (owner and
+        // server admins record by default).
+        var names = await sp.GetRequiredService<IPermissionRepository>().GetEffectiveForServerAsync(auth.UserId, sid, ct);
         return Permissions.Grants(names, Permissions.RecordCalls);
     }
 
-    private async Task HandleVoiceLeaveAsync(AuthInfo auth, CancellationToken ct)
+    private async Task HandleVoiceLeaveAsync(AuthInfo auth, Guid connId, CancellationToken ct)
     {
+        // Another device has the call now: this one was replaced (the phone's app answers losing its
+        // room with a leave), and honouring it cleared the NEW device's seat while it went on talking.
+        if (voiceConnections.TryGetValue((auth.Space.Id, auth.UserId), out var voiceConn) && voiceConn != connId) return;
         await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
         var sender = scope.ServiceProvider.GetRequiredService<ISender>();
         var left = await sender.Send(new LeaveVoiceCommand(auth.UserId), ct);
-        if (left is { } channelId) await BroadcastVoiceAsync(auth.Space, channelId, WsFrames.VoiceLeave(channelId, auth.UserId), ct);
+        if (left is not { } channelId) return;
+        await BroadcastVoiceAsync(auth.Space, channelId, WsFrames.VoiceLeave(channelId, auth.UserId), ct);
+        // The seat is given up, so the media goes with it: a client that sent voice_leave and kept its
+        // LiveKit session listened on, invisible in the roster, with a token good for a day.
+        DropStaleSessionLater(auth, channelId, ILiveKitTokenService.IdentityFor(auth.UserId, VoiceSessionFor(auth, connId)));
     }
+
+    /// <summary>A while after a connection gave up its seat in <paramref name="channelId"/>, removes the
+    /// session it joined with — unless the user is back in that room by then. Later and conditional
+    /// on purpose: an honest client disconnects on its own a moment after its leave, and the SAME
+    /// connection re-joining gets the SAME identity, so removing at once (awaited in the frame loop)
+    /// held the leave broadcast back by LiveKit's 3-5 s RPC timeout — it reached the room after the
+    /// re-join and threw the user out of the roster and the key ledger.</summary>
+    private void DropStaleSessionLater(AuthInfo auth, long channelId, string identity) =>
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10));
+                await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
+                var sp = scope.ServiceProvider;
+                if ((await sp.GetRequiredService<IVoiceStateRepository>().GetAsync(auth.UserId))?.ChannelId == channelId) return;
+                await sp.GetRequiredService<ILiveKitRoomService>().RemoveIdentityAsync(channelId, identity);
+            }
+            catch (Exception ex) { logger.LogDebug(ex, "stale voice session check failed"); }
+        });
 
     private async Task HandleVoiceFlagAsync(AuthInfo auth, JsonElement payload, VoiceFlag flag, string key, Func<byte[], ValueTask> send, CancellationToken ct)
     {
@@ -648,17 +887,30 @@ public sealed class WebSocketHandler(
         {
             await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
             var sender = scope.ServiceProvider.GetRequiredService<ISender>();
-            var state = await sender.Send(new SetVoiceFlagCommand(auth.UserId, flag, value, auth.Permissions, auth.RoleId), ct);
+            var room = (await scope.ServiceProvider.GetRequiredService<IVoiceStateRepository>().GetAsync(auth.UserId, ct))?.ChannelId ?? 0;
+            var state = await sender.Send(new SetVoiceFlagCommand(auth.UserId, flag, value, await RoomPermissionsAsync(auth, room, scope.ServiceProvider, ct), auth.RoleId), ct);
             if (state is not null) await BroadcastVoiceAsync(auth.Space, state.ChannelId, WsFrames.VoiceState(state), ct);
         }
         catch (DomainException ex) { await send(WsFrames.Error(ex.Code, ex.Message)); }
+    }
+
+    /// <summary>The caller's permissions in the server the ROOM belongs to. The socket carries the
+    /// ACTIVE server's, and voice survives switch_server — so a role held in another server (one of
+    /// your own, say) decided connect/speak/video/share in this one. A DM call keeps the socket's.</summary>
+    private static async Task<long> RoomPermissionsAsync(AuthInfo auth, long channelId, IServiceProvider sp, CancellationToken ct)
+    {
+        if (channelId <= 0) return auth.Permissions;
+        var channel = await sp.GetRequiredService<IChannelRepository>().GetByIdAsync(channelId, ct);
+        if (channel?.ServerId is not { } sid || sid == auth.ServerId) return auth.Permissions;
+        return Permissions.ToBits(await sp.GetRequiredService<IPermissionRepository>().GetEffectiveForServerAsync(auth.UserId, sid, ct));
     }
 
     private async Task HandleVoiceTokenRefreshAsync(AuthInfo auth, Guid connId, Func<byte[], ValueTask> send, CancellationToken ct)
     {
         await using var scope = scopeFactory.CreateAsyncScopeFor(auth.Space);
         var sender = scope.ServiceProvider.GetRequiredService<ISender>();
-        var res = await sender.Send(new RefreshVoiceTokenCommand(auth.UserId, auth.Username, auth.Permissions, auth.RoleId, VoiceSessionFor(auth, connId)), ct);
+        var room = (await scope.ServiceProvider.GetRequiredService<IVoiceStateRepository>().GetAsync(auth.UserId, ct))?.ChannelId ?? 0;
+        var res = await sender.Send(new RefreshVoiceTokenCommand(auth.UserId, auth.Username, await RoomPermissionsAsync(auth, room, scope.ServiceProvider, ct), auth.RoleId, VoiceSessionFor(auth, connId)), ct);
         if (res is not null) await send(WsFrames.VoiceToken(res.ChannelId, res.Token, "/livekit", res.Url));
         else await send(WsFrames.Error("BAD_REQUEST", "not in voice"));
     }
@@ -723,7 +975,8 @@ public sealed class WebSocketHandler(
         // Session revocation check — mirrors JwtCurrentUserMiddleware: logout/kick delete the
         // session row, which must also close the door on new WebSocket connections.
         var sessionRepo = scope.ServiceProvider.GetRequiredService<ISessionRepository>();
-        var wsSession = await sessionRepo.GetByTokenHashAsync(Outcome.Shared.Abstractions.Security.TokenHash.Sha256(token), ct);
+        var sessionHash = Outcome.Shared.Abstractions.Security.TokenHash.Sha256(token);
+        var wsSession = await sessionRepo.GetByTokenHashAsync(sessionHash, ct);
         if (wsSession is null || wsSession.ExpiresAt <= DateTime.UtcNow)
         {
             await TrySendAsync(ws, WsFrames.AuthError("session expired or revoked"), ct);
@@ -731,7 +984,6 @@ public sealed class WebSocketHandler(
         }
 
         var users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-        var roles = scope.ServiceProvider.GetRequiredService<IRoleRepository>();
         var permissions = scope.ServiceProvider.GetRequiredService<IPermissionRepository>();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsRepository>();
         var serverRepo = scope.ServiceProvider.GetRequiredService<IServerRepository>();
@@ -757,26 +1009,19 @@ public sealed class WebSocketHandler(
             ? requestedServer
             : await serverRepo.GetFirstForUserAsync(user.Id, ct);
 
-        // Per-server role: the user's role IN the active server (server_members.role_id) if assigned,
-        // else their global role. Permissions are resolved for the active server (a per-server role adds
-        // server-scoped perms; instance-global powers come only from the global role).
-        var effectiveRole = await serverRepo.GetMemberRoleAsync(activeServer, user.Id, ct) ?? user.RoleId;
+        // The role INSIDE the active server, and the permissions there: the space role's claims plus
+        // the fixed set that server role adds (ServerRoles.Grant) — the same computation the HTTP
+        // middleware does: the socket and the REST API answering differently for one person is a bug
+        // that only shows up as "muting works after a reload".
+        var serverRole = await serverRepo.GetServerRoleAsync(activeServer, user.Id, ct);
         var permBits = Permissions.ToBits(await permissions.GetEffectiveForServerAsync(user.Id, activeServer, ct));
-        var role = await roles.GetByIdAsync(effectiveRole, ct);
+        // Administrator only ever comes from the SPACE role (InstanceGlobalPerms keeps it out of any
+        // server grant), so this is "may open /admin".
+        var spaceAdmin = (permBits & Outcome.Domain.Permissions.Permission.Administrator) != 0;
 
-        // The owner of the active server is an admin WITHIN it — Permission.ServerOwnerGrant and
-        // nothing else, so moderation stays inside their tenant. The same set the HTTP middleware
-        // grants: the socket and the REST API answering differently for one person is a bug that
-        // only shows up as "muting works after a reload".
-        if ((permBits & Outcome.Domain.Permissions.Permission.Administrator) == 0)
-        {
-            var info = await serverRepo.GetAsync(activeServer, ct);
-            if (info is not null && info.OwnerId == user.Id)
-                permBits |= Outcome.Domain.Permissions.Permission.ServerOwnerGrant;
-        }
-
-        return new AuthInfo(user.Id, user.Username, user.Avatar, effectiveRole,
-            (role?.Name ?? "member").ToLowerInvariant(), permBits, serverName, motd, lastSeq, activeServer, space, deviceId);
+        return new AuthInfo(user.Id, user.Username, user.Avatar, user.RoleId,
+            Outcome.Domain.Permissions.ServerRoles.Name(serverRole), permBits, serverName, motd, lastSeq, activeServer, space, deviceId,
+            SpaceAdmin: spaceAdmin, SessionHash: sessionHash);
     }
 
     /// <summary>Persist "everything in this channel is read" and fan the marker out: to EVERY
@@ -798,7 +1043,16 @@ public sealed class WebSocketHandler(
                 channelType = channel.Type;
                 channelServerId = channel.ServerId;
                 if (channelType == "dm")
+                {
                     dmParticipants = await scope.ServiceProvider.GetRequiredService<IDmRepository>().GetParticipantIdsAsync(channelId, ct);
+                    // Only one's own conversations: any channel id used to be accepted, which told a
+                    // stranger the newest message id of someone else's DM and sent its two
+                    // participants a read receipt from them.
+                    if (!dmParticipants.Contains(auth.UserId)) return;
+                }
+                else if (channel.ServerId is not { } sid
+                         || !await scope.ServiceProvider.GetRequiredService<IServerRepository>().IsMemberAsync(sid, auth.UserId, ct))
+                    return;
                 lastId = await scope.ServiceProvider.GetRequiredService<IReadStateRepository>()
                     .MarkReadAsync(auth.UserId, channelId, ct);
             }
@@ -879,12 +1133,14 @@ public sealed class WebSocketHandler(
             read_by_others = otherReadByChannel.TryGetValue(ch.Id, out var ro) ? ro : 0L,
         }).ToArray();
 
-        // The client keys members by role NAME (lowercased), matching auth_ok.
-        var roleNameById = roles.ToDictionary(r => r.Id, r => r.Name.ToLowerInvariant());
+        // `role` is the member's role INSIDE this server (owner / admin / moderator / member), as in
+        // auth_ok and member_join. It used to be the SPACE role here and the server role in
+        // member_join, so badges flipped on every switch and a server's creator read "member".
+        var serverRoles = await scope.ServiceProvider.GetRequiredService<IServerRepository>().ServerRolesAsync(auth.ServerId, ct);
         var memberPayloads = members.Select(m => new
         {
             id = m.Id, username = m.Username, avatar = m.Avatar, status = m.Status,
-            role = roleNameById.TryGetValue(m.RoleId, out var roleName) ? roleName : "member",
+            role = Outcome.Domain.Permissions.ServerRoles.Name(serverRoles.TryGetValue(m.Id, out var sr) ? sr : Outcome.Domain.Permissions.ServerRole.Member),
             created_at = m.CreatedAt, // the "member since" line on a profile
         }).ToArray();
 
@@ -922,6 +1178,10 @@ public sealed class WebSocketHandler(
                 muted_channels = mutedChannels,
                 server_name = auth.ServerName,
                 motd = auth.Motd,
+                // The receiver's own standing: their role in this server and whether they administer
+                // the space (opens /admin). Clients gate on these, never on role NAMES.
+                server_role = auth.Role,
+                space_admin = auth.SpaceAdmin,
             },
         });
     }

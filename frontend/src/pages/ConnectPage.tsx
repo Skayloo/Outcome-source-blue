@@ -4,13 +4,20 @@ import { wirePostAuth } from "@lib/session";
 import { PDN_CONSENT_VERSION, PDN_CONSENT_URL, PDN_POLICY_URL, pdnConsentApplies } from "@lib/pdnConsent";
 import { ApiClientError } from "@lib/api";
 import { BrandMark, useSpaceBrand } from "@components/BrandMark";
-import { fetchSsoProviders, startSso, type SsoProvider } from "@lib/sso";
+import { fetchSsoProviders, forgetPendingSso, startSso, type SsoProvider } from "@lib/sso";
 import { GoogleMark, YandexMark } from "@components/SsoMarks";
 import { Icon } from "@lib/icons";
 import { t } from "@lib/i18n";
 import { readLastHost } from "@lib/serverHost";
 
 type Mode = "loading" | "login" | "register" | "setup" | "totp" | "regcode" | "forgot" | "reset";
+
+/** Every sign-in on this page ends here. An SSO attempt started and abandoned before it is over
+ *  too: its marker would otherwise let a token turn up later and replace this session unasked. */
+function signedIn(host: string, token: string, username: string): void {
+  forgetPendingSso();
+  wirePostAuth(host, token, username);
+}
 
 export function ConnectPage() {
   const [mode, setMode] = useState<Mode>("loading");
@@ -88,7 +95,7 @@ export function ConnectPage() {
       }
       if (mode === "setup") {
         const r = await api.setup(email, username, password);
-        wirePostAuth(targetHost, r.token, r.username);
+        signedIn(targetHost, r.token, r.username);
       } else if (mode === "register") {
         // Empty where we are not the operator: claiming a consent nobody gave is worse
         // than recording none. A self-hosted server that requires one refuses this.
@@ -102,10 +109,10 @@ export function ConnectPage() {
           setBusy(false);
           return;
         }
-        if (r.token) wirePostAuth(targetHost, r.token, username);
+        if (r.token) signedIn(targetHost, r.token, username);
       } else if (mode === "regcode") {
         const r = await api.verifyRegistration(code, partialToken);
-        if (r.token) wirePostAuth(targetHost, r.token, username);
+        if (r.token) signedIn(targetHost, r.token, username);
       } else if (mode === "forgot") {
         // Always advances to the code screen — the server answers 204 whether or not the
         // address exists, so the UI must not branch on it (no account-enumeration signal).
@@ -116,12 +123,21 @@ export function ConnectPage() {
         return;
       } else if (mode === "reset") {
         const r = await api.resetPassword(email, code, password);
-        if (r.token) wirePostAuth(targetHost, r.token, email);
+        // An account with TOTP: the password is set, the second factor still has to be shown.
+        if (r.requires_2fa) {
+          setCode("");
+          setPartialToken(r.partial_token ?? "");
+          setTwoFactorMethod(r.two_factor_method ?? "totp");
+          setMode("totp");
+          setBusy(false);
+          return;
+        }
+        if (r.token) signedIn(targetHost, r.token, email);
       } else if (mode === "totp") {
         const r = twoFactorMethod === "email"
           ? await api.verifyEmailOtp(code, partialToken)
           : await api.verifyTotp(code, partialToken);
-        if (r.token) wirePostAuth(targetHost, r.token, username || email);
+        if (r.token) signedIn(targetHost, r.token, username || email);
       } else {
         const r = await api.login(email, password);
         if (r.requires_2fa) {
@@ -131,7 +147,7 @@ export function ConnectPage() {
           setBusy(false);
           return;
         }
-        if (r.token) wirePostAuth(targetHost, r.token, email);
+        if (r.token) signedIn(targetHost, r.token, email);
       }
     } catch (e) {
       fail(e);

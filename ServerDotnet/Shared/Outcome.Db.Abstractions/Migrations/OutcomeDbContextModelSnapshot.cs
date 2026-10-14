@@ -490,6 +490,10 @@ namespace Outcome.Db.Abstractions.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("sandbox");
 
+                    b.Property<string>("SessionHash")
+                        .HasColumnType("text")
+                        .HasColumnName("session_hash");
+
                     b.Property<string>("Token")
                         .IsRequired()
                         .HasColumnType("text")

@@ -423,6 +423,9 @@ body.theme-light .admin-app { color-scheme: light; }
 .adm-form-grid--2 { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .adm-form-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
 @media (max-width: 860px) { .adm-form-grid--3 { grid-template-columns: 1fr; } }
+.adm-form-grid--4 { grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(0, 1fr)) auto; align-items: start; }
+@media (max-width: 1100px) { .adm-form-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) { .adm-form-grid--4 { grid-template-columns: 1fr; } }
 .adm-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-bottom: 14px; }
 .adm-form-grid .adm-field { margin-bottom: 0; }
 .adm-field > span { font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
@@ -527,4 +530,12 @@ body.theme-light .admin-app { color-scheme: light; }
   position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
   background: var(--bg-modifier-selected); color: var(--accent);
+}
+
+/* ── Invites across the space ──────────────────────────────────────────────────── */
+.adm-invite-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.adm-invite-filter { width: auto; min-width: 200px; max-width: 280px; padding-top: 7px; padding-bottom: 7px; }
+@media (max-width: 860px) {
+  .adm-invite-filter { min-width: 0; max-width: 160px; }
+  .adm-invite-row { flex-wrap: wrap; }
 }

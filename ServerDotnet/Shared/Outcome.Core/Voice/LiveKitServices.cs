@@ -53,6 +53,21 @@ public sealed class LiveKitRoomService : ILiveKitRoomService
     public Task RemoveOtherUserSessionsAsync(long channelId, long userId, string keepIdentity, CancellationToken ct = default) =>
         RemoveUserSessionsAsync(channelId, userId, keepIdentity);
 
+    public async Task RemoveIdentityAsync(long channelId, string identity, CancellationToken ct = default)
+    {
+        if (_client is null) return;
+        var room = LiveKitRooms.Name(space.Space.Id, channelId);
+        try
+        {
+            // Only one that is really there: removing a participant who is already on the way out
+            // makes LiveKit wait out an RPC timeout (3-5 s) before it answers.
+            var res = await _client.ListParticipants(new ListParticipantsRequest { Room = room });
+            if (!res.Participants.Any(p => p.Identity == identity)) return;
+            await _client.RemoveParticipant(new RoomParticipantIdentity { Room = room, Identity = identity });
+        }
+        catch { /* room gone, or the session left meanwhile — nothing to remove */ }
+    }
+
     /// <summary>"user-{id}.{device}." for an identity that names its device (user-{id}.{device}.{conn}),
     /// null for the older "user-{id}.{conn}" and "user-{id}" forms.</summary>
     private static string? DevicePrefix(string? identity)
@@ -82,6 +97,27 @@ public sealed class LiveKitRoomService : ILiveKitRoomService
             }
         }
         catch { /* room may not exist (nobody connected) — nothing to remove */ }
+    }
+
+    public async Task<bool> EnsureUserAttributeAsync(long channelId, long userId, string key, string value, CancellationToken ct = default)
+    {
+        if (_client is null) return false;
+        var room = LiveKitRooms.Name(space.Space.Id, channelId);
+        try
+        {
+            var res = await _client.ListParticipants(new ListParticipantsRequest { Room = room });
+            var any = false;
+            foreach (var p in res.Participants.Where(p => IsUserSession(p.Identity, userId)))
+            {
+                any = true;
+                if (p.Attributes.TryGetValue(key, out var have) && have == value) continue;
+                var req = new UpdateParticipantRequest { Room = room, Identity = p.Identity };
+                req.Attributes[key] = value;
+                await _client.UpdateParticipant(req);
+            }
+            return any;
+        }
+        catch { return true; } // LiveKit unreachable: keep watching rather than forget the recording
     }
 
     public async Task<bool> SetUserAttributeAsync(long channelId, long userId, string key, string value, CancellationToken ct = default)
