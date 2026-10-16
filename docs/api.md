@@ -103,6 +103,12 @@ messages already in the mailbox) and `files`; up to 18 MB of files. Attachments 
 | `POST` | `/verify-email-otp` |
 | `POST` | `/verify-totp` |
 
+An account that arrives in no server — `/register` (or `/register/verify`) without an invite on a
+space's shared domain, or a first SSO sign-in — is given a server of its own in the same
+transaction: "`<username>` Server", owned by it, with `#general` and the "General" voice room
+(`DefaultServer`, `RegistrationCompletion`). It counts towards the three servers a user may own.
+An invite, or a space's own domain, puts the newcomer in that server instead and nothing is made.
+
 ### Bug
 
 | `GET` | `/api/v1/admin/bugs` |

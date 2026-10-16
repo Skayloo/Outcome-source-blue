@@ -160,7 +160,12 @@ internal static class RegistrationCompletion
         }
         else
         {
-            await audit.AddAsync(uid, "user_register", "user", uid, "new account created (open registration)", ct);
+            // In no server at all: give them their own (see DefaultServer). Inside the command's
+            // transaction, so the account and its server exist together or not at all.
+            var fresh = await users.GetByIdAsync(uid, ct)
+                        ?? throw DomainException.Server("registration succeeded but user fetch failed");
+            var own = await servers.CreateAsync(DefaultServer.NameFor(fresh.UserName), uid, ct);
+            await audit.AddAsync(uid, "user_register", "user", uid, $"new account created (open registration), own server {own.Id}", ct);
         }
 
         var token = jwt.Issue(uid);

@@ -3,7 +3,7 @@
 // Each server message type maps to one or more store actions.
 
 import type { WsClient } from "./ws";
-import { authStore, setAuth, clearAuth, markSessionInvalid, updateUser } from "@stores/auth.store";
+import { authStore, setAuth, clearAuth, updateUser } from "@stores/auth.store";
 import { setTransientError, showToast, uiStore } from "@stores/ui.store";
 import { t } from "@lib/i18n";
 import {
@@ -70,7 +70,7 @@ import { setMutedChannels, isChannelMuted } from "@stores/mutes.store";
 import { markListened, markListenedByOthers } from "@stores/listened.store";
 import type { DmChannelPayload } from "./types";
 import { handleVoiceToken } from "@lib/livekitSession";
-import { api, wsSend } from "./services";
+import { api, wsSend, sessionLost } from "./services";
 import { enterDmView } from "./dm";
 import { followRoomLink } from "./roomLink";
 import { onRecordAck } from "./recorder";
@@ -145,11 +145,9 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
   unsubs.push(
     ws.on(S.AUTH_ERROR, (payload) => {
       log.error("Auth failed", { message: payload.message });
-      setTransientError(payload.message);
-      clearAuth();
-      // A restored session the server refused (expired/revoked token): stop showing the
-      // boot splash and fall through to the login form.
-      markSessionInvalid();
+      // Expired or revoked: the same teardown as a REST 401 (session.ts) — the stored session
+      // goes too, or the next launch tries the dead token again and sits on the splash.
+      sessionLost();
     }),
   );
 

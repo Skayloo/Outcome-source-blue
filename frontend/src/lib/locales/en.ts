@@ -593,6 +593,7 @@ export const en: Record<string, string> = {
   "auth.ssoGoogle": "Continue with Google",
   "auth.ssoYandex": "Continue with Yandex",
   "auth.ssoFailed": "Could not sign in with the external provider",
+  "auth.sessionLost": "You were signed out: the session ended or was closed on another device. Sign in again.",
   "auth.ssoConfirmTitle": "Sign in to this account?",
   "auth.ssoConfirmBody": "This link signs you in as {name}. You did not start a sign-in here — if you were not expecting this, press Cancel.",
   "auth.ssoConfirmYes": "Sign in",

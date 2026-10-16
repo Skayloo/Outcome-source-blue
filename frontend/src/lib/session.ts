@@ -1,8 +1,8 @@
 import { resetAccountStores } from "@lib/store";
-import { api, ws } from "./services";
+import { api, ws, setSessionLostHandler } from "./services";
 import { wireDispatcher, loadDmChannels } from "./dispatcher";
 import { createLogger } from "./logger";
-import { authStore, clearAuth } from "@stores/auth.store";
+import { authStore, clearAuth, markSessionInvalid } from "@stores/auth.store";
 import {
   serversStore,
   setServers,
@@ -13,7 +13,8 @@ import { channelsStore, setActiveChannel, setPendingChannel } from "@stores/chan
 import { invalidateLoadedChannels } from "@stores/messages.store";
 import { dmStore, clearDmUnread } from "@stores/dm.store";
 import { setFriendsList } from "@stores/friends.store";
-import { uiStore, setSidebarMode } from "@stores/ui.store";
+import { uiStore, setSidebarMode, setTransientError } from "@stores/ui.store";
+import { t } from "@lib/i18n";
 import { armNotificationPermissionPrompt } from "@lib/notifications";
 import { setServerHost, rememberLastHost, originForHost } from "@lib/serverHost";
 
@@ -198,6 +199,33 @@ export function switchServer(id: number): void {
 /** Tear everything down and return to the connect screen. */
 export function logout(): void {
   try { void api.logout(); } catch { /* ignore */ }
+  endSession();
+}
+
+/**
+ * The server refused this session — a password changed or "sign out everywhere" on another
+ * device, an admin, or simply its 30 days ran out. The same teardown as logout, and the login
+ * form says why.
+ *
+ * It used to be only clearAuth(), which also reset `sessionInvalid`, while the stored session was
+ * still there: App then drew the boot splash (a session "to restore") and tore the socket down,
+ * and nothing was left that could ever say otherwise — the desktop app sat on its splash, or with
+ * the error toast over a dead window, until it was restarted. A later 401 from a request that was
+ * already in flight must not undo that either, hence the early return.
+ */
+function sessionLost(): void {
+  if (!hasStoredSession() && !authStore.getState().isAuthenticated) {
+    // Nothing signed in: a 401 from the login screen itself (a wrong two-factor code) is not a
+    // lost session, and the host the user typed in must not be reset under them.
+    return;
+  }
+  endSession();
+  markSessionInvalid();
+  setTransientError(t("auth.sessionLost"));
+}
+setSessionLostHandler(sessionLost);
+
+function endSession(): void {
   ws.disconnect();
   dispatcherCleanup?.();
   dispatcherCleanup = null;

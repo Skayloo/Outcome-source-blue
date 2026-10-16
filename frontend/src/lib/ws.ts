@@ -67,6 +67,9 @@ export interface WsClientConfig {
 const DEFAULT_MAX_RECONNECT_DELAY = 30_000;
 const DEFAULT_MAX_MESSAGE_SIZE = 1_048_576; // 1MB
 const HEARTBEAT_INTERVAL_MS = 30_000;
+/** Silence after which the socket is taken for dead: every ping is answered with a pong, and a
+ *  hidden window's timers may be throttled to one a minute, so this is two such minutes' worth. */
+const SILENT_DEAD_MS = 100_000;
 
 function uuid(): string {
   return randomUUID();
@@ -105,6 +108,8 @@ export function createWsClient() {
   let socketOpen = false;
   let lastSeq = 0;
   let browserWs: WebSocket | null = null;
+  /** When the current socket last said anything (a pong included). */
+  let lastHeardAt = 0;
 
   // Deduplication cache for reconnection replay. Armed at socket-open when reconnecting,
   // active THROUGH the post-auth_ok replay burst, released by the server's replay_done
@@ -143,9 +148,34 @@ export function createWsClient() {
     return Math.min(1000 * Math.pow(2, reconnectAttempt), maxDelay);
   }
 
+  /**
+   * A socket that went silent — typically the computer slept: the TCP connection died with
+   * nobody told, `onclose` may not fire for many minutes, and meanwhile the app looked connected
+   * while nothing reached it (and a revoked session was only discovered by the first REST call).
+   * It is dropped at once rather than closed politely, and a fresh one is opened.
+   */
+  function dropIfSilent(): boolean {
+    const sock = browserWs;
+    if (!sock || !socketOpen || Date.now() - lastHeardAt < SILENT_DEAD_MS) return false;
+    log.warn("WebSocket silent, reconnecting", { silentMs: Date.now() - lastHeardAt });
+    browserWs = null; // its onclose, whenever it comes, is then a stale socket's and ignored
+    socketOpen = false;
+    stopHeartbeat();
+    try { sock.close(); } catch { /* already gone */ }
+    scheduleReconnect();
+    return true;
+  }
+
+  // Back from sleep, the window is usually focused or shown before any timer gets to run.
+  if (typeof window !== "undefined") {
+    window.addEventListener("focus", () => { dropIfSilent(); });
+    window.addEventListener("online", () => { dropIfSilent(); });
+  }
+
   function startHeartbeat(): void {
     stopHeartbeat();
     heartbeatTimer = setInterval(() => {
+      if (dropIfSilent()) return;
       if (socketOpen) {
         try {
           sendRaw(JSON.stringify({ type: "ping", payload: {} }));
@@ -318,6 +348,7 @@ export function createWsClient() {
     sock.onopen = () => {
       if (browserWs !== sock) return;
       socketOpen = true;
+      lastHeardAt = Date.now();
       log.info("WebSocket open, sending auth", {
         host: config?.host ?? "unknown",
         isReconnect: reconnectAttempt > 0,
@@ -354,6 +385,7 @@ export function createWsClient() {
 
     sock.onmessage = (e) => {
       if (browserWs !== sock) return;
+      lastHeardAt = Date.now();
       if (typeof e.data === "string") {
         handleMessage(e.data);
       }

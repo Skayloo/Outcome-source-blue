@@ -16,6 +16,8 @@ import { quotesStore, claimQuoteLookup, releaseQuoteLookup, setQuoteFound, setQu
 import { confirm, prompt } from "@components/ConfirmDialog";
 import { setTransientSuccess, setTransientError } from "@stores/ui.store";
 import { api, wsSend } from "@lib/services";
+import { HeicPhoto } from "@components/HeicPhoto";
+import { looksHeif } from "@lib/heic";
 import { ForwardModal } from "@components/ForwardModal";
 import { UserProfileModal } from "@components/UserProfileModal";
 import { messagePreview } from "@lib/messagePreview";
@@ -29,8 +31,13 @@ import { t } from "@lib/i18n";
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 // HEIC/HEIF (an iPhone's photos) is drawn by Safari alone — anywhere else it was a broken picture
 // with a file name over it. The server turns photos into JPEG since 1.31.67; what is left (older
-// uploads, ones sent "as a file") is shown as a file to download.
+// uploads, ones sent "as a file") is decoded here by HeicPhoto.
 const isImage = (mime: string) => mime.startsWith("image/") && !/^image\/hei[cf]/i.test(mime);
+/** A HEIC the server made JPEG copies of (it measured it, so it could read it): the album draws
+ *  those copies. A blob: url (an opened sealed file) has no server copies. */
+const hasJpegCopies = (a: { mime: string; filename: string; url: string; width?: number | null }) =>
+  looksHeif(a.mime, a.filename) && a.width != null && !a.url.startsWith("blob:");
+const inAlbum = (a: { mime: string; filename: string; url: string; width?: number | null }) => isImage(a.mime) || hasJpegCopies(a);
 /** A voice message: audio attachment carrying the transcoder's duration/waveform. */
 const isVoice = (att: { mime: string; duration_ms?: number }) => att.mime.startsWith("audio/") && att.duration_ms != null;
 
@@ -404,13 +411,14 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
             separate framed thumbnails is not what "sent five photos" looks like anywhere.
             One picture keeps its own proportions and fills the bubble. */}
         {(() => {
-          const imgs = m.attachments.filter((a) => isImage(a.mime));
+          const imgs = m.attachments.filter(inAlbum);
           if (imgs.length === 0) return null;
           // The viewer gets the WHOLE album and opens on the one that was clicked, so several
           // pictures are browsed in place instead of opened and closed one at a time.
           const album = imgs.map((a) => ({
             url: assetUrlMedium(a.url)!, alt: a.filename,
-            thumb: assetUrlSmall(a.url), full: assetUrl(a.url),
+            // A HEIC's original is not drawable here; its largest JPEG copy is.
+            thumb: assetUrlSmall(a.url), full: hasJpegCopies(a) ? assetUrlMedium(a.url)! : assetUrl(a.url),
           }));
           if (imgs.length === 1) {
             const a = imgs[0]!;
@@ -443,7 +451,7 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           );
         })()}
 
-        {m.attachments.filter((a) => !isImage(a.mime)).map((att) => isVoice(att) ? (
+        {m.attachments.filter((a) => !inAlbum(a)).map((att) => isVoice(att) ? (
           <VoiceMessage key={att.id} att={att} channelId={m.channelId} messageId={m.id} sender={m.user.username} own={own} />
         ) : att.mime.startsWith("video/") || att.mime.startsWith("audio/") ? (
           // Watched or listened to right here — a call's recording is meant to be looked at, and
@@ -458,6 +466,8 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
               <a className="msg-file-download" href={assetUrl(att.url)} download={att.filename} title={t("chat.download")}>⤓</a>
             </div>
           </div>
+        ) : looksHeif(att.mime, att.filename) ? (
+          <HeicPhoto key={att.id} att={att} />
         ) : (
           <div className="msg-file" key={att.id}>
             <div className="msg-file-inner">

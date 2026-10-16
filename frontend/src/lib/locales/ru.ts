@@ -593,6 +593,7 @@ export const ru: Record<string, string> = {
   "auth.ssoGoogle": "Войти через Google",
   "auth.ssoYandex": "Войти через Яндекс",
   "auth.ssoFailed": "Не удалось войти через внешний сервис",
+  "auth.sessionLost": "Вы вышли из аккаунта: сеанс истёк или был завершён на другом устройстве. Войдите снова.",
   "auth.ssoConfirmTitle": "Войти в аккаунт?",
   "auth.ssoConfirmBody": "Ссылка входит в аккаунт {name}. Вы не начинали вход здесь — если вы не ждали этого, нажмите «Отмена».",
   "auth.ssoConfirmYes": "Войти",

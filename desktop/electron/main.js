@@ -8,6 +8,12 @@ const { autoUpdater } = require('electron-updater');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
+// The renderer's console is mirrored to stdout (below), and Node prints its own warnings there.
+// When whatever started the app has gone — a closed terminal, a launcher's pipe — that write
+// fails with EPIPE, and an unhandled stream error is an uncaught exception: a modal "JavaScript
+// error in the main process" over a working app. Losing a log line is the right outcome.
+for (const stream of [process.stdout, process.stderr]) stream?.on?.('error', () => {});
+
 const WEB_DIR = path.join(__dirname, '..', 'web');
 // Runtime images live under electron/ because that is what ships. The packager's `files` list
 // carries electron/, web/ and package.json — and NOT build/, which holds build-time resources

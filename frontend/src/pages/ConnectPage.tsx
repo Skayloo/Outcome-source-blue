@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "@lib/services";
 import { wirePostAuth } from "@lib/session";
+import { setSidebarMode } from "@stores/ui.store";
 import { PDN_CONSENT_VERSION, PDN_CONSENT_URL, PDN_POLICY_URL, pdnConsentApplies } from "@lib/pdnConsent";
 import { ApiClientError } from "@lib/api";
 import { BrandMark, useSpaceBrand } from "@components/BrandMark";
@@ -17,6 +18,15 @@ type Mode = "loading" | "login" | "register" | "setup" | "totp" | "regcode" | "f
 function signedIn(host: string, token: string, username: string): void {
   forgetPendingSso();
   wirePostAuth(host, token, username);
+}
+
+/** A brand-new account opens IN the server registration gave it (its own one, or the invite's)
+ *  rather than on the direct messages — which a new account has none of, so that was an empty
+ *  page (the owner, 2026-10-16). The UI store outlives a sign-out in the same tab, so a
+ *  previous session left in the DM view would otherwise carry over. */
+function signedUp(host: string, token: string, username: string): void {
+  setSidebarMode("channels");
+  signedIn(host, token, username);
 }
 
 export function ConnectPage() {
@@ -109,10 +119,10 @@ export function ConnectPage() {
           setBusy(false);
           return;
         }
-        if (r.token) signedIn(targetHost, r.token, username);
+        if (r.token) signedUp(targetHost, r.token, username);
       } else if (mode === "regcode") {
         const r = await api.verifyRegistration(code, partialToken);
-        if (r.token) signedIn(targetHost, r.token, username);
+        if (r.token) signedUp(targetHost, r.token, username);
       } else if (mode === "forgot") {
         // Always advances to the code screen — the server answers 204 whether or not the
         // address exists, so the UI must not branch on it (no account-enumeration signal).

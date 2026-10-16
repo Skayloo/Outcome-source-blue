@@ -17,7 +17,9 @@ public sealed class OAuthLoginCommandHandler(
     IUserRepository users,
     IAuditRepository audit,
     IJwtTokenService jwt,
-    ISessionRepository sessions) : IRequestHandler<OAuthLoginCommand, AuthResult>
+    ISessionRepository sessions,
+    IServerRepository servers,
+    IUnitOfWork unitOfWork) : IRequestHandler<OAuthLoginCommand, AuthResult>
 {
     public async Task<AuthResult> Handle(OAuthLoginCommand cmd, CancellationToken ct)
     {
@@ -58,10 +60,27 @@ public sealed class OAuthLoginCommandHandler(
             };
             // SSO accounts get an unguessable random password: the normal password form
             // can't be used to hijack them, while every password-shaped code path keeps working.
-            var created = await userManager.CreateAsync(user, RandomPassword());
-            if (!created.Succeeded)
-                throw DomainException.Server("could not create the account");
-            await audit.AddAsync(user.Id, "user_register", "user", user.Id, $"new account via {cmd.Provider} sso", ct);
+            //
+            // The account and its own server (see DefaultServer) in ONE transaction of their own.
+            // This command is deliberately not transactional (the refusal audits below must
+            // survive their throw), and a server made in several saves could otherwise be left
+            // half-built — or an account left with none, since a returning user never comes
+            // through this branch again.
+            await unitOfWork.BeginAsync(ct);
+            try
+            {
+                var created = await userManager.CreateAsync(user, RandomPassword());
+                if (!created.Succeeded)
+                    throw DomainException.Server("could not create the account");
+                var own = await servers.CreateAsync(DefaultServer.NameFor(username), user.Id, ct);
+                await audit.AddAsync(user.Id, "user_register", "user", user.Id, $"new account via {cmd.Provider} sso, own server {own.Id}", ct);
+                await unitOfWork.CommitAsync(ct);
+            }
+            catch
+            {
+                await unitOfWork.RollbackAsync(ct);
+                throw;
+            }
         }
         else if (!user.EmailConfirmed)
         {
