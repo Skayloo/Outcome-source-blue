@@ -262,11 +262,16 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   // is now nowhere near it.
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  // Where the view was at the last scroll event, or where toBottom last put it. Only the reader
+  // moves the view UP; the list growing under it never does (the rows opt out of scroll
+  // anchoring), and that is how onScroll tells "they scrolled away" from "a photo opened".
+  const lastTopRef = useRef(0);
 
   const toBottom = (smooth = false) => {
     const el = containerRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+    lastTopRef.current = el.scrollTop;
   };
 
   useEffect(() => {
@@ -561,6 +566,8 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       onScroll={(e) => {
         const el = e.currentTarget;
         const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        const movedUp = el.scrollTop < lastTopRef.current - 1;
+        lastTopRef.current = el.scrollTop;
         setShowJump(fromBottom > 400);
         // A jump to a quote pages in history while the view sits at the bottom, then glides up
         // through it: neither is the reader coming back to the end, and re-pinning there would
@@ -569,9 +576,21 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
         // Near the top → fetch the page above. 300 px of warning, so it arrives before the
         // reader hits the ceiling.
         if (el.scrollTop < 300) loadOlder();
-        nearBottomRef.current = fromBottom < 80;
-        // Scrolling away is the reader taking over; nothing re-pins until they come back.
-        stickRef.current = fromBottom < 80;
+        if (fromBottom < 80) {
+          nearBottomRef.current = true;
+          stickRef.current = true;
+        } else if (movedUp) {
+          // Scrolling away is the reader taking over; nothing re-pins until they come back.
+          nearBottomRef.current = false;
+          stickRef.current = false;
+        } else if (stickRef.current) {
+          // A scroll event arrives a frame after the scroll and measures the list as it is by
+          // then. A picture that loaded in between (a sealed photo opening, a thumbnail
+          // arriving) made toBottom's own scroll read as "the reader went 700 px up": the view
+          // was unpinned for good and every later picture pushed it further, so a DM with
+          // photos opened in the middle. Growth is not the reader leaving — follow it.
+          toBottom();
+        }
       }}
     >
       {loadError !== null ? (

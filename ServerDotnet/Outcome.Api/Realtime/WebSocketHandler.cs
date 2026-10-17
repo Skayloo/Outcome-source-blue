@@ -466,7 +466,8 @@ public sealed class WebSocketHandler(
             var pushImage = created.Attachments
                 .FirstOrDefault(a => a.Mime.StartsWith("image/", StringComparison.Ordinal))?.Url;
             if (pushImage is not null && pushImage.StartsWith('/') && auth.Origin.Length > 0) pushImage = auth.Origin + pushImage;
-            pushNotifier.QueueMessage(auth.Space, channelId, auth.UserId, auth.Username, created.Content,
+            var pushContent = created.Content;
+            pushNotifier.QueueMessage(auth.Space, channelId, auth.UserId, auth.Username, pushContent,
                 pushImage,
                 created.DmParticipantIds, created.DmParticipantIds is null ? created.ServerId ?? auth.ServerId : null,
                 PushNotifier.AttachmentLabel(created.Attachments));
