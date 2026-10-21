@@ -17,7 +17,6 @@ import { ServerSettingsPanel } from "@components/admin/ServerSettingsPanel";
 import { RolesPanel } from "@components/admin/RolesPanel";
 import { AdminInvitesPanel } from "@components/admin/AdminInvitesPanel";
 import { AdminServersPanel } from "@components/admin/AdminServersPanel";
-import { AdminSpacesPanel } from "@components/admin/AdminSpacesPanel";
 import { loadSpace, isRootSpace } from "@lib/space";
 import { AdminBugsPanel } from "@components/admin/AdminBugsPanel";
 import { AdminReportsPanel } from "@components/admin/AdminReportsPanel";
@@ -27,12 +26,12 @@ import { Toast } from "@components/Toast";
 import { api } from "@lib/services";
 
 type Section =
-  | "dashboard" | "logs" | "audit" | "users" | "servers" | "spaces" | "roles" | "invites" | "server" | "bugs" | "reports" | "mail";
+  | "dashboard" | "logs" | "audit" | "users" | "servers" | "roles" | "invites" | "server" | "bugs" | "reports" | "mail";
 
 /** Sections that belong to whoever RUNS the instance: process-wide logs, infrastructure
- *  health, instance settings, the bug queue and the space registry itself. The backend
- *  refuses them from a tenant host too — this only keeps the console honest. */
-const INSTANCE_ONLY: ReadonlySet<Section> = new Set<Section>(["dashboard", "logs", "bugs", "server", "spaces", "mail"]);
+ *  health, instance settings and the bug queue. The backend refuses them to anyone else too —
+ *  this only keeps the console honest. */
+const INSTANCE_ONLY: ReadonlySet<Section> = new Set<Section>(["dashboard", "logs", "bugs", "server", "mail"]);
 
 interface NavItem { id: Section; icon: IconName; label: () => string }
 interface NavGroup { title: () => string; items: NavItem[] }
@@ -48,7 +47,6 @@ const NAV: NavGroup[] = [
   { title: () => t("admin.grpManage"), items: [
     { id: "users", icon: "users", label: () => t("admin.users") },
     { id: "servers", icon: "server", label: () => t("admin.servers") },
-    { id: "spaces", icon: "globe", label: () => t("admin.spaces") },
     { id: "roles", icon: "shield", label: () => t("admin.roles") },
     { id: "invites", icon: "user-plus", label: () => t("admin.invites") },
     { id: "reports", icon: "flag", label: () => t("admin.reports") },
@@ -67,7 +65,6 @@ const TITLES: Record<Section, () => string> = {
   audit: () => t("admin.auditLog"),
   users: () => t("admin.users"),
   servers: () => t("admin.servers"),
-  spaces: () => t("admin.spaces"),
   roles: () => t("admin.roles"),
   invites: () => t("admin.invites"),
   server: () => t("admin.serverSettings"),
@@ -81,7 +78,6 @@ const SUBTITLES: Record<Section, () => string> = {
   audit: () => t("admin.auditLogSub"),
   users: () => t("admin.usersSub"),
   servers: () => t("admin.serversSub"),
-  spaces: () => t("admin.spacesSub"),
   roles: () => t("admin.rolesSub"),
   invites: () => t("admin.invitesSub"),
   reports: () => t("admin.reportsSub"),
@@ -145,7 +141,8 @@ export function AdminPage() {
           </div>
         </div>
         <nav className="admin-nav">
-          {NAV.map((grp) => ({ ...grp, items: grp.items.filter((it) => isRoot || !INSTANCE_ONLY.has(it.id)) }))
+          {NAV.map((grp) => ({ ...grp, items: grp.items.filter((it) =>
+              isRoot || !INSTANCE_ONLY.has(it.id)) }))
             .filter((grp) => grp.items.length > 0)
             .map((grp) => (
             <div className="admin-nav-group" key={grp.title()}>
@@ -190,7 +187,6 @@ export function AdminPage() {
             {section === "audit" && <AdminAuditPanel />}
             {section === "users" && <AdminUsersPanel />}
             {section === "servers" && <AdminServersPanel />}
-            {section === "spaces" && <AdminSpacesPanel />}
             {section === "roles" && <RolesPanel />}
             {section === "invites" && <AdminInvitesPanel />}
             {section === "bugs" && <AdminBugsPanel />}

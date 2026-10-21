@@ -13,7 +13,7 @@ deliberately has no auth middleware. The first frame must be:
 ```
 
 Anything else first is refused. `last_seq` asks for a replay of what was missed; `server_id`
-picks the active **server** for this connection (the space comes from the Host). `device_id`
+picks the active **server** for this connection. `device_id`
 (optional, 8–32 ASCII letters and digits) names the client's device: its LiveKit identities become
 `user-<id>.<device_id>.<conn>`, and a `voice_join` evicts only sessions of the user's OTHER devices
 — so the re-join after a reconnect no longer throws out the session the client is still using.

@@ -1142,11 +1142,14 @@
   content: ""; flex: 1; height: 1px; background: var(--border);
 }
 
-/* Compact one-line header while in the room — the space belongs to the video. */
+/* Compact one-line header while in the room — the space belongs to the video. It said so for a
+   long time without being one: .form-logo is a block, so flex-direction did nothing and the logo,
+   the name and the invitation stacked into ~190px — half of a phone on its side (2026-10-21). */
 .guest-card.wide .form-logo {
-  flex-direction: row; align-items: center; justify-content: center; gap: 10px;
-  padding: 0;
+  display: flex; flex-wrap: wrap; flex-direction: row; align-items: center; justify-content: center;
+  gap: 2px 10px; padding: 0; margin-bottom: 0;
 }
+.guest-card.wide .form-logo .oc-logo { margin: 0; flex: none; }
 .guest-card.wide .form-logo svg, .guest-card.wide .form-logo img { width: 28px; height: auto; }
 .guest-card.wide .form-logo h1 { font-size: 16px; margin: 0; }
 .guest-card.wide .form-logo p { font-size: 13px; margin: 0; color: var(--text-muted); }
@@ -1288,6 +1291,54 @@
   .guest-tiles.strip .guest-tile { flex-basis: 132px; }
   .guest-card.wide { padding: 10px 12px 0; }
   .guest-controls { margin: 0 -12px 0; padding: 10px 12px calc(12px + env(safe-area-inset-bottom)); }
+}
+
+/* An upright phone with a share on: the page scrolls — the share on top at 16:9, everyone under it
+   as tiles of one fixed height in two columns — instead of a tall black box over a strip of
+   stripes (a user on iPhone Safari, 2026-10-21). The app's own stage does the same (app.css). */
+@media (max-width: 760px) and (orientation: portrait) {
+  .guest-page.in-room:has(.guest-tiles.strip) { overflow-y: auto; }
+  .guest-card.wide:has(.guest-tiles.strip) { height: auto; min-height: 100%; }
+  .guest-card.wide:has(.guest-tiles.strip) .guest-stage { flex: 0 0 auto; }
+  .guest-stage-item { flex: 0 0 auto; aspect-ratio: 16 / 9; }
+  .guest-tiles.strip {
+    flex: 0 0 auto; height: auto; overflow: visible;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 140px; gap: 8px;
+  }
+  .guest-tiles.strip .guest-tile { flex: none; }
+}
+
+/* A phone on its side: the same as the app's stage (app.css) — tiles never shorter than a face,
+   scrolling past what fits; with a share the page scrolls, the share filling the screen above the
+   people; one compact row of buttons. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .guest-card.wide { padding: 6px 12px 0; gap: 8px; }
+  .guest-tiles {
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(max(140px, calc((100% - (var(--tile-cols, 1) - 1) * 8px) / var(--tile-cols, 1))), 1fr)
+    );
+    grid-auto-rows: minmax(110px, 1fr);
+    overflow-y: auto; overscroll-behavior-y: contain;
+    gap: 8px;
+  }
+  .guest-page.in-room:has(.guest-tiles.strip) { overflow-y: auto; }
+  .guest-card.wide:has(.guest-tiles.strip) { height: auto; min-height: 100%; }
+  .guest-card.wide:has(.guest-tiles.strip) .guest-stage { flex: 0 0 auto; }
+  .guest-stage-item { flex: 0 0 auto; height: calc(100dvh - 120px); }
+  .guest-tiles.strip {
+    flex: 0 0 auto; height: auto; overflow: visible;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); grid-auto-rows: 100px; gap: 8px;
+  }
+  .guest-tiles.strip .guest-tile { flex: none; }
+  /* Avatar sizes itself inline (80px), more than a 100-110px row leaves above the name. */
+  .guest-tile .guest-tile-avatar,
+  .guest-tile .guest-tile-avatar img { width: 52px !important; height: 52px !important; }
+  .guest-tile .guest-tile-avatar { font-size: 20px !important; }
+  .guest-controls { gap: 6px 8px; margin: 0 -12px 0; padding: 6px 12px calc(6px + env(safe-area-inset-bottom)); }
+  .guest-controls .vsc-ctl-label { display: none; }
+  .guest-controls .vsc-btn { width: 40px; height: 40px; }
+  .guest-controls .vsc-btn.disconnect { width: 40px; height: 40px; padding: 0; gap: 0; font-size: 0; }
 }
 
 /* ── Guest access window (server management) ──────────────────────────────── */

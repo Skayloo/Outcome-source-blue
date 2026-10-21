@@ -18,26 +18,6 @@ public sealed class SpaceProvisioner(ISpaceRegistry registry, ILogger<SpaceProvi
     {
         await CreateDatabaseAsync(space, ct);
         Migrate(space);
-        await NameItselfAsync(space, ct);
-    }
-
-    /// <summary>
-    /// The schema seeds server_name with the product default ("Outcome Server"), which is
-    /// what the tenant's login screen would then show. A space is named after itself until
-    /// someone deliberately renames it.
-    /// </summary>
-    private async Task NameItselfAsync(Space space, CancellationToken ct)
-    {
-        if (space.IsRoot) return;
-        await using var conn = new NpgsqlConnection(registry.DirectConnectionFor(space));
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            UPDATE settings SET value = @name
-             WHERE key = 'server_name' AND (value = '' OR value = 'Outcome Server')
-            """;
-        cmd.Parameters.AddWithValue("name", space.Name);
-        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private async Task CreateDatabaseAsync(Space space, CancellationToken ct)

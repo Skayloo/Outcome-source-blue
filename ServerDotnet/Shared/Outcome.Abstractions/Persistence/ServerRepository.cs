@@ -61,7 +61,7 @@ public interface IServerRepository
     /// resolution + the Caddy on-demand-TLS ask endpoint.</summary>
     Task<ServerInfo?> FindByCustomDomainAsync(string domain, CancellationToken ct = default);
 
-    /// <summary>Member count per space, for the admin listing (seat counts drive billing).</summary>
+    /// <summary>Member count per server, for the admin listing.</summary>
     Task<IReadOnlyDictionary<long, int>> MemberCountsAsync(IReadOnlyCollection<long> serverIds, CancellationToken ct = default);
     /// <summary>Soft-deletes a server (owner only): removes all members, then marks it deleted.
     /// Returns false if the server doesn't exist or the requester isn't the owner.</summary>

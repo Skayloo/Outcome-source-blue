@@ -48,6 +48,8 @@ export interface MessagesState {
   readonly loadedChannels: ReadonlySet<number>;
   /** Whether more messages exist above for a channel */
   readonly hasMore: ReadonlyMap<number, boolean>;
+  /** Loaded, but from before the socket last reconnected: see markLoadedChannelsStale. */
+  readonly staleChannels: ReadonlySet<number>;
 }
 
 // -----------------------------------------------------------------------------
@@ -104,6 +106,7 @@ const INITIAL_STATE: MessagesState = {
   pendingSends: new Map(),
   loadedChannels: new Set(),
   hasMore: new Map(),
+  staleChannels: new Set(),
 };
 
 // -----------------------------------------------------------------------------
@@ -167,6 +170,81 @@ export function setMessages(
       messagesByChannel: updatedMessages,
       loadedChannels: updatedLoaded,
       hasMore: updatedHasMore,
+      staleChannels: withoutStale(prev.staleChannels, channelId),
+    };
+  });
+}
+
+function withoutStale(stale: ReadonlySet<number>, channelId: number): ReadonlySet<number> {
+  if (!stale.has(channelId)) return stale;
+  const next = new Set(stale);
+  next.delete(channelId);
+  return next;
+}
+
+/**
+ * After the socket reconnects, every loaded channel may be missing what happened while it was
+ * down. The server replays new CHANNEL lines (its last 500, kept in Redis) — but not DMs, edits,
+ * deletions or reactions, and a DM open through an outage stayed short of the lines sent in it
+ * until it was reopened (offline-catchup.mjs, 2026-10-21). Loaded channels are marked stale: an
+ * open one re-reads its newest page at once, the others when they are next opened, and the page
+ * is MERGED in (reconcileLatest) — replacing the list would throw a reader who had scrolled back
+ * to the bottom after every phone lock, which on a phone browser is a reconnect.
+ */
+export function markLoadedChannelsStale(): void {
+  messagesStore.setState((prev) =>
+    prev.loadedChannels.size === 0 ? prev : { ...prev, staleChannels: new Set(prev.loadedChannels) },
+  );
+}
+
+/** Whether a loaded channel is waiting for its post-reconnect page. */
+export function isChannelStale(channelId: number): boolean {
+  return messagesStore.select((s) => s.staleChannels.has(channelId));
+}
+
+/**
+ * The newest page of a stale channel, merged into what is loaded: the page's range is taken
+ * from the server as it is now (edits, reactions, deleted lines gone, missed lines in), older
+ * history stays where the reader may be, and anything newer that arrived live stays after it.
+ * When the page does not reach back to what was loaded — more was missed than one page holds —
+ * there is a hole between them, and the list is replaced instead (setMessages).
+ */
+export function reconcileLatest(
+  channelId: number,
+  messages: readonly MessageResponse[],
+  hasMore: boolean,
+): void {
+  const page = messages.map(messageResponseToMessage).reverse();
+  const loaded = messagesStore.select((s) => s.messagesByChannel.get(channelId) ?? []);
+  const loadedNewest = loaded.length > 0 ? loaded[loaded.length - 1]!.id : 0;
+  if (page.length > 0 && page[0]!.id > loadedNewest) {
+    setMessages(channelId, messages, hasMore);
+    return;
+  }
+  messagesStore.setState((prev) => {
+    const current = prev.messagesByChannel.get(channelId) ?? [];
+    const pageOldest = page.length > 0 ? page[0]!.id : Number.POSITIVE_INFINITY;
+    const pageNewest = page.length > 0 ? page[page.length - 1]!.id : 0;
+    const older = current.filter((m) => m.id < pageOldest);
+    const live = current.filter((m) => m.id > pageNewest);
+    let merged = [...older, ...page, ...live];
+    const updatedHasMore = new Map(prev.hasMore);
+    if (merged.length > MAX_MESSAGES_PER_CHANNEL) {
+      merged = merged.slice(merged.length - MAX_MESSAGES_PER_CHANNEL);
+      updatedHasMore.set(channelId, true);
+    } else if (older.length === 0) {
+      updatedHasMore.set(channelId, hasMore);
+    }
+    const updatedMessages = new Map(prev.messagesByChannel);
+    updatedMessages.set(channelId, merged);
+    const updatedLoaded = new Set(prev.loadedChannels);
+    updatedLoaded.add(channelId);
+    return {
+      ...prev,
+      messagesByChannel: updatedMessages,
+      loadedChannels: updatedLoaded,
+      hasMore: updatedHasMore,
+      staleChannels: withoutStale(prev.staleChannels, channelId),
     };
   });
 }

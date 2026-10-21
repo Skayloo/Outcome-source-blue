@@ -1,3 +1,4 @@
+import { ReactionChip } from "@components/ReactionChip";
 import { useEffect, useRef, useState, type ReactNode, useLayoutEffect } from "react";
 import { Icon } from "@lib/icons";
 import { assetUrl, assetUrlSmall, assetUrlMedium } from "@lib/serverHost";
@@ -6,7 +7,7 @@ import { VoiceMessage } from "@components/VoiceMessage";
 import { EmojiPicker } from "@components/EmojiPicker";
 import { useStoreState } from "@lib/useStore";
 import { channelsStore } from "@stores/channels.store";
-import { messagesStore, getChannelMessages, isChannelLoaded, setMessages, prependMessages, hasMoreMessages, setMessagePinned, trimToRecent, type Message } from "@stores/messages.store";
+import { messagesStore, getChannelMessages, isChannelLoaded, isChannelStale, setMessages, reconcileLatest, prependMessages, hasMoreMessages, setMessagePinned, trimToRecent, type Message } from "@stores/messages.store";
 import { MAX_LOADED_PER_CHANNEL, RECENT_PER_CHANNEL } from "@lib/messageWindow";
 import { membersStore } from "@stores/members.store";
 import { authStore } from "@stores/auth.store";
@@ -103,6 +104,23 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       });
     return () => { cancelled = true; };
   }, [channelId, channelLoaded, retry]);
+
+  // The socket reconnected while this channel was loaded (markLoadedChannelsStale): read its
+  // newest page again and merge it in — what was edited, deleted, reacted to or written while
+  // the socket was down. A failure leaves it stale; the next reconnect or opening tries again.
+  const channelStale = channelId != null && isChannelStale(channelId);
+  useEffect(() => {
+    if (channelId == null || !channelLoaded || !channelStale) return;
+    let cancelled = false;
+    api.getMessages(channelId, { limit: 50 })
+      .then((resp) => {
+        if (cancelled) return;
+        const msgs = resp.messages;
+        reconcileLatest(channelId, msgs, resp.has_more);
+      })
+      .catch(() => { /* still stale */ });
+    return () => { cancelled = true; };
+  }, [channelId, channelLoaded, channelStale]);
 
   // A reply whose parent is older than the loaded page: fetch that one message (quotes.store).
   // `before` is exclusive, so a single message before id+1 is exactly the parent — or, if it
@@ -489,9 +507,7 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
         {m.reactions.length > 0 && (
           <div className="msg-reactions">
             {m.reactions.map((r) => (
-              <div className={"reaction-chip" + (r.me ? " me" : "")} key={r.emoji} onClick={() => react(m, r.emoji, r.me)}>
-                <span>{r.emoji}</span><span className="rc-count">{r.count}</span>
-              </div>
+              <ReactionChip key={r.emoji} messageId={m.id} reaction={r} all={m.reactions} onToggle={() => react(m, r.emoji, r.me)} />
             ))}
           </div>
         )}

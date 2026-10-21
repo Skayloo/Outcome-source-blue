@@ -29,6 +29,7 @@ import { nextNormGain } from "@lib/loudnessNorm";
 import { storedSessionHere } from "@lib/session";
 import { rememberRoomLink } from "@lib/roomLink";
 import { copyText } from "@lib/clipboard";
+import { isIosWebKit } from "@lib/platform";
 import { GuestRoomChat } from "@components/GuestRoomChat";
 
 const log = createLogger("guest-voice");
@@ -166,6 +167,8 @@ function installGuestReport(room: Room, pipeline: AudioPipeline): void {
       page: "guest",
       browser: navigator.userAgent,
       room: room.name,
+      // Who this guest is to everyone else — members key their levels by the id derived from it.
+      identity: room.localParticipant.identity,
       state: room.state,
       mic: {
         muted: mic?.isMuted ?? null,
@@ -203,6 +206,11 @@ function guestDropTap(identity: string): void {
 }
 
 let guestUnlockArmed = false;
+/** The room plays through the page's context (webAudioMix). Never on iPhone/iPad: iOS ignores an
+ *  element's volume, and LiveKit's own startAudio() unmutes every element whenever it runs — on the
+ *  microphone's first unmute, on every return to the page — so with the graph on an iPhone guest
+ *  heard every voice twice. Same choice as the signed-in client (livekitSession.ts). */
+let guestGraphPlays = false;
 /** Set once room.startAudio() has RESOLVED. canPlaybackAudio is NOT that: with webAudioMix
  *  LiveKit recomputes it from the AudioContext state, so a play() the browser refused still
  *  reports "allowed" a moment later — and the tab stays mute with nothing armed to ask again.
@@ -212,7 +220,8 @@ let guestAudioStarted = false;
  *  Safari hands the AudioContext over only after a gesture, so the elements attached before
  *  that keep playing alongside the graph and every voice arrives twice. */
 function silenceDoubledGuestAudio(): void {
-  if (guestSharedCtx === null) return;
+  // Without the graph (iPhone/iPad) the elements ARE the sound: muting them is silence.
+  if (guestSharedCtx === null || !guestGraphPlays) return;
   for (const el of document.querySelectorAll("audio")) {
     // LiveKit's iOS workaround plays an empty track on purpose; muting it breaks the very
     // thing it is there for.
@@ -561,6 +570,7 @@ export function GuestVoicePage({ code }: { code: string }) {
       pipelineRef.current.primeContext();
       const sharedAudioContext = pipelineRef.current.context;
       guestSharedCtx = sharedAudioContext;
+      guestGraphPlays = sharedAudioContext !== null && !isIosWebKit();
       guestAudioStarted = false; // fresh room, fresh elements: nothing has played yet
       guestKnownHands = new Set();
       guestHandsSynced = false;
@@ -579,7 +589,8 @@ export function GuestVoicePage({ code }: { code: string }) {
         // this option as being for exactly this — "enables audio mixing via the Web Audio API
         // to bypass autoplay restrictions" — and the signed-in client has had it all along,
         // which is why logged-in users never saw the browser difference guests did.
-        ...(sharedAudioContext ? { webAudioMix: { audioContext: sharedAudioContext } } : {}),
+        // Not on iPhone/iPad — see guestGraphPlays.
+        ...(guestGraphPlays && sharedAudioContext ? { webAudioMix: { audioContext: sharedAudioContext } } : {}),
       });
       roomRef.current = room;
       const rerender = () => refreshTiles(room);

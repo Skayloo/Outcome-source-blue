@@ -454,7 +454,11 @@
   overflow-x: auto; overscroll-behavior-x: contain;
 }
 .vstage-grid.strip .vstage-tile { flex: 0 0 150px; }
-.vstage-grid.strip .vstage-avatar { width: 48px; height: 48px; font-size: 18px; }
+/* Avatar sizes itself inline (size={96}), so only !important reaches it — without it this rule was
+   dead and a 96px face overflowed the 96px strip. */
+.vstage-grid.strip .vstage-avatar,
+.vstage-grid.strip .vstage-avatar img { width: 48px !important; height: 48px !important; }
+.vstage-grid.strip .vstage-avatar { font-size: 18px !important; }
 .vstage-grid.strip .vstage-name { font-size: 11px; padding: 1px 6px; bottom: 4px; left: 4px; }
 /* Sits on the shared screen, out of the way until wanted. Fullscreen is the only way to
    see someone's IDE at a readable size from inside a panel that is 280px narrower than
@@ -4170,29 +4174,6 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
 .vm-bar.played { background: var(--accent); }
 .voice-msg-time { flex-shrink: 0; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-/* Admin → Spaces: the tenant logo next to its name field. */
-.space-logo-preview {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  object-fit: contain;
-  background: var(--bg-tertiary);
-  flex: 0 0 auto;
-}
-.space-logo-preview.empty {
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-/* Admin → the console of one space. */
-.space-console-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.space-console-tabs { gap: 6px; }
 
 /* Voice dock: the sound-unlock button appears only while the browser refuses to play audio. */
 .vd-unblock {
@@ -4396,3 +4377,115 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
 .msg-media-audio { width: 100%; display: block; }
 .msg-media-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; color: var(--text-muted); }
 .msg-media-meta .msg-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* ── Who reacted (ReactionChip) ─────────────────────────────────────────────────
+   The card is portalled to <body>: the message list sits in blurred panes, which would make it
+   the containing block of anything position: fixed (see .navigator & co.). */
+.reaction-card {
+  position: fixed; z-index: 1100; width: 260px; max-height: 320px; overflow: hidden;
+  padding: 8px; border-radius: 12px; cursor: pointer;
+  background: var(--bg-floating); border: 1px solid var(--border-strong); box-shadow: var(--elevation-med);
+  animation: modalSlideIn .18s cubic-bezier(.16,1,.3,1);
+}
+.reaction-card-head { display: flex; align-items: center; gap: 6px; padding: 2px 6px 6px; font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.reaction-card-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; }
+.reaction-card-row:hover { background: var(--bg-modifier-hover); }
+.reaction-card-name { font-size: 13.5px; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reaction-card-more { padding: 4px 6px; font-size: 12.5px; color: var(--text-muted); }
+.reaction-card-hint { margin-top: 4px; padding: 6px 6px 2px; border-top: 1px solid var(--border); font-size: 12px; color: var(--accent); }
+.reaction-card-loading { padding: 8px 6px; color: var(--text-muted); }
+.reaction-modal { width: 380px; }
+.rx-tabs { display: flex; gap: 4px; padding: 12px 20px 0; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.rx-tab {
+  display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border: 0; background: transparent;
+  color: var(--text-muted); font: inherit; font-size: 14px; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap;
+}
+.rx-tab span { font-size: 12.5px; }
+.rx-tab.is-active { color: var(--text-normal); border-bottom-color: var(--accent); }
+.rx-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; overflow-y: auto; padding-top: 10px; }
+.rx-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 8px; }
+.rx-row:hover { background: var(--bg-modifier-hover); }
+.rx-name { flex: 1; min-width: 0; font-size: 14px; color: var(--text-normal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rx-emoji { font-size: 18px; }
+
+
+/* ── The call on an upright phone ──────────────────────────────────────────────
+   A user on iPhone Safari (2026-10-21): the share sat in a tall black box, the people under it
+   shrank into stripes, the call dock covered them and the buttons ran off both edges. Upright and
+   narrow, the stage now scrolls like a page instead of splitting the screen: a share on top at its
+   own 16:9, everyone as tiles that never get shorter than a face (two columns, scrolling past
+   what fits), the buttons pinned at the bottom (the stage's last row) in two centred rows. The
+   guest page does the same (login.css). */
+@media (max-width: 760px) and (orientation: portrait) {
+  .voice-stage-body {
+    overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
+    padding: 12px; gap: 12px;
+  }
+  /* No share: fill the screen while the people fit, then two columns that scroll. */
+  .vstage-grid {
+    flex: 1 0 auto; gap: 10px;
+    grid-template-columns: repeat(auto-fit,
+      minmax(max(150px, calc((100% - (var(--tile-cols, 1) - 1) * 10px) / var(--tile-cols, 1))), 1fr));
+    grid-auto-rows: minmax(140px, 1fr);
+  }
+  /* A share: on top at 16:9, everyone under it at one fixed height. */
+  .vstage-screens { flex: 0 0 auto; }
+  .vstage-screens .vstage-video { flex: 0 0 auto; height: auto; aspect-ratio: 16 / 9; }
+  .vstage-grid.strip {
+    flex: 0 0 auto; height: auto; min-height: 0; overflow: visible;
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 140px;
+  }
+  .vstage-grid.strip .vstage-tile { flex: none; }
+  .vstage-grid .vstage-tile .vstage-avatar,
+  .vstage-grid .vstage-tile .vstage-avatar img { width: 64px !important; height: 64px !important; }
+  .vstage-grid .vstage-tile .vstage-avatar { font-size: 24px !important; }
+  .vstage-grid.strip .vstage-name { font-size: 12px; padding: 2px 8px; bottom: 6px; left: 6px; }
+  /* Two centred rows rather than one that runs off the edge: sliding sideways hid "leave", the
+     one button nobody should have to look for. */
+  .vstage-controls {
+    flex-wrap: wrap; justify-content: center; gap: 8px 10px;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+  .vstage-controls .vsc-btn { width: 44px; height: 44px; }
+  .vstage-controls .vsc-btn.disconnect { width: auto; height: 44px; }
+  .vstage-controls .vsc-ctl-label { font-size: 11px; }
+  /* On its own call's stage the floating dock only repeats the stage's buttons — over the tiles. */
+  .app:has(.voice-stage.is-mine) .voice-dock { display: none; }
+}
+
+/* ── The call on a phone on its side ───────────────────────────────────────────
+   Turned sideways (the owner, 2026-10-21: 22 people in the room) the stage had ~220px of height
+   for everyone: a 1fr row each made 30px stripes, a share sat in a 52px band over a sideways
+   strip, and the buttons ran off the pane. Low and wide, the stage scrolls too: without a share,
+   tiles of at least a face's height; with one, the share fills what is visible (the first row of
+   people peeking under it says there is more), everyone below. One compact row of buttons — the
+   labels go, "leave" becomes a round red button like the rest. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .voice-stage-body {
+    overflow-y: auto; overscroll-behavior-y: contain; -webkit-overflow-scrolling: touch;
+    padding: 8px; gap: 8px;
+  }
+  .vstage-grid {
+    flex: 1 0 auto; gap: 8px;
+    grid-template-columns: repeat(auto-fit,
+      minmax(max(140px, calc((100% - (var(--tile-cols, 1) - 1) * 8px) / var(--tile-cols, 1))), 1fr));
+    grid-auto-rows: minmax(110px, 1fr);
+  }
+  .vstage-screens { flex: 0 0 auto; height: calc(100% - 40px); }
+  .vstage-grid.strip {
+    flex: 0 0 auto; height: auto; min-height: 0; overflow: visible;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); grid-auto-rows: 100px;
+  }
+  .vstage-grid.strip .vstage-tile { flex: none; }
+  .vstage-grid .vstage-tile .vstage-avatar,
+  .vstage-grid .vstage-tile .vstage-avatar img { width: 52px !important; height: 52px !important; }
+  .vstage-grid .vstage-tile .vstage-avatar { font-size: 20px !important; }
+  .vstage-controls {
+    flex-wrap: wrap; justify-content: center; gap: 6px 8px;
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
+  }
+  .vstage-controls .vsc-ctl-label { display: none; }
+  .vstage-controls .vsc-btn { width: 40px; height: 40px; }
+  .vstage-controls .vsc-btn.disconnect { width: 40px; height: 40px; padding: 0; gap: 0; font-size: 0; }
+  .app:has(.voice-stage.is-mine) .voice-dock { display: none; }
+}

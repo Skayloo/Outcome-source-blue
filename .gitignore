@@ -69,10 +69,6 @@ Thumbs.db
 # Mail server state (account hashes + DKIM private keys) lives on the server only
 deploy/compose/mail-config/
 
-# Third-party crypto payment gateway (GPL-3.0), vendored for reference — kept OUT of this
-# proprietary tree on purpose. It runs as a separate service, never linked into our code.
-/tokenpay/
-
 # Apple signing/push keys — secrets, never in the repo (kept in ~/.outcome/)
 *.p8
 *.p12

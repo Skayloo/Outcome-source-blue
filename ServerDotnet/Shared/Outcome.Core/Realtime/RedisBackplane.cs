@@ -91,6 +91,7 @@ public sealed class RedisBackplaneRegistry : IConnectionHub
         return PublishAsync(KindCloseServer, spaceId, serverId, who);
     }
 
+
     private Task PublishAsync(byte kind, long spaceId, long id, byte[] frame)
     {
         var payload = new byte[1 + 8 + 8 + frame.Length];

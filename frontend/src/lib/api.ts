@@ -50,10 +50,6 @@ import type {
   GuestLinkRow,
   GuestAccountResponse,
   GifItem,
-  AdminSpace,
-  AdminSpaceMember,
-  SpaceServer,
-  SpaceSso,
 } from "./types";
 
 /** Configuration for the API client. */
@@ -1017,50 +1013,14 @@ export function createApiClient(
       );
     },
 
+    /** Who reacted to a message, emoji by emoji (people newest first). */
+    getMessageReactions(messageId: number, signal?: AbortSignal): Promise<{ message_id: number; reactions: { emoji: string; count: number; users: { id: number; username: string; avatar: string | null }[] }[] }> {
+      return request("GET", `/messages/${messageId}/reactions`, undefined, signal);
+    },
+
     /** Close a DM (hide from sidebar). */
     closeDm(channelId: number, signal?: AbortSignal): Promise<void> {
       return request<void>("DELETE", `/dms/${channelId}`, undefined, signal);
-    },
-
-    // ── Spaces: the tenants of this instance (root admin only) ──────────────
-    adminListSpaces(signal?: AbortSignal): Promise<readonly AdminSpace[]> {
-      return adminRequest("GET", "/spaces/", undefined, signal);
-    },
-    adminCreateSpace(body: {
-      slug: string; name: string; domain?: string;
-      owner_email?: string; owner_username?: string; owner_password?: string;
-    }, signal?: AbortSignal): Promise<AdminSpace> {
-      return adminRequest("POST", "/spaces/", body, signal);
-    },
-    adminUpdateSpace(id: number, body: { name?: string; domain?: string; active?: boolean }, signal?: AbortSignal): Promise<AdminSpace> {
-      return adminRequest("PUT", `/spaces/${id}`, body, signal);
-    },
-    adminDeleteSpace(id: number, signal?: AbortSignal): Promise<void> {
-      return adminRequest("DELETE", `/spaces/${id}`, undefined, signal);
-    },
-    adminSpaceUsers(id: number, signal?: AbortSignal): Promise<readonly AdminUserResponse[]> {
-      return adminRequest("GET", `/spaces/${id}/users`, undefined, signal);
-    },
-    adminSpaceServers(id: number, signal?: AbortSignal): Promise<readonly SpaceServer[]> {
-      return adminRequest("GET", `/spaces/${id}/servers`, undefined, signal);
-    },
-    adminSpaceBranding(id: number, signal?: AbortSignal): Promise<{ name: string; icon: string }> {
-      return adminRequest("GET", `/spaces/${id}/branding`, undefined, signal);
-    },
-    adminSetSpaceBranding(id: number, body: { name?: string; icon?: string }, signal?: AbortSignal): Promise<void> {
-      return adminRequest("PUT", `/spaces/${id}/branding`, body, signal);
-    },
-    adminSpaceSso(id: number, signal?: AbortSignal): Promise<SpaceSso> {
-      return adminRequest("GET", `/spaces/${id}/sso`, undefined, signal);
-    },
-    adminSetSpaceSso(id: number, body: {
-      google_client_id?: string; google_client_secret?: string;
-      yandex_client_id?: string; yandex_client_secret?: string; email_domains?: string;
-    }, signal?: AbortSignal): Promise<void> {
-      return adminRequest("PUT", `/spaces/${id}/sso`, body, signal);
-    },
-    adminCreateSpaceOwner(id: number, body: { email: string; username: string; password: string }, signal?: AbortSignal): Promise<{ id: number }> {
-      return adminRequest("POST", `/spaces/${id}/owner`, body, signal);
     },
 
     /** Which space serves the host this page was loaded from — the login screen's branding. */

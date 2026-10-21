@@ -5,7 +5,7 @@ import { useStoreState } from "@lib/useStore";
 import { restoreSession, hasStoredSession, clearStoredSession } from "@lib/session";
 import { consumeSsoRedirect, wireDesktopSso } from "@lib/sso";
 import { setTransientError } from "@stores/ui.store";
-import { ws } from "@lib/services";
+import { api, ws } from "@lib/services";
 import { useT, t } from "@lib/i18n";
 import { BootSplash } from "@components/BootSplash";
 import { ConnectPage } from "@pages/ConnectPage";
@@ -13,7 +13,6 @@ import { MainPage } from "@pages/MainPage";
 import { AdminPage, AdminDenied } from "@pages/AdminPage";
 import { GuestVoicePage } from "@pages/GuestVoicePage";
 import { PrivacyPage } from "@pages/PrivacyPage";
-import { loadSpace } from "@lib/space";
 import { isSpaceAdmin } from "@lib/access";
 
 /** Stop waiting on a silent server and let the user sign in by hand. */
@@ -40,9 +39,6 @@ export function App() {
     // read — the shell hands it over instead. No-op in a browser.
     wireDesktopSso(() => setTransientError(t("auth.ssoFailed")));
     if (!authStore.getState().isAuthenticated) restoreSession();
-    // Not for the branding here — for the noindex a tenant's pages need. Asking on mount means
-    // it happens whichever page a crawler landed on, not only the ones that show a logo.
-    void loadSpace();
   }, []);
 
   useEffect(() => {

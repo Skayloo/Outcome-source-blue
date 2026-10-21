@@ -19,8 +19,10 @@ import {
   type VideoCaptureOptions,
   type ScreenShareCaptureOptions,
   DisconnectReason,
+  ParticipantEvent,
 } from "livekit-client";
 import { runtimeLivekitUrl } from "@lib/runtimeConfig";
+import { isIosWebKit } from "@lib/platform";
 import { onReaction, playHandCue, raisedHands, recordersIn, sendReaction, sendGif, setHandRaised, type Reaction, type Fx } from "@lib/voiceReactions";
 import { describeMediaError } from "@lib/mediaErrors";
 import { serverOrigin } from "@lib/serverHost";
@@ -192,9 +194,17 @@ export class LiveKitSession {
       // "200%" identical to "100%"). With webAudioMix, setVolume() drives a GainNode → real boost.
       // The page's context, created from the click that joined — see AudioPipeline.primeContext.
       // `true` would have LiveKit make its own, which is one more context to wake.
-      webAudioMix: this._audioPipeline.context !== null
-        ? { audioContext: this._audioPipeline.context }
-        : true,
+      //
+      // NOT on iPhone/iPad. iOS ignores an <audio> element's volume, so the one thing the graph
+      // buys (gain past 100%, levelling) cannot be had there anyway, while two paths for one voice
+      // are a standing risk: LiveKit's own startAudio() unmutes the elements whenever it runs —
+      // on mic acquisition, on every return to the page — and an iPhone Safari user heard every
+      // voice twice from the moment their mic was on (2026-10-21). Jitsi plays remote audio
+      // through elements only, and on iOS uses `muted` where it would use volume; so do we.
+      webAudioMix: isIosWebKit() ? false
+        : this._audioPipeline.context !== null
+          ? { audioContext: this._audioPipeline.context }
+          : true,
       // Adaptive features reduce quality based on subscriber viewport —
       // disable for "source" quality to maintain full resolution.
       adaptiveStream: !isSource,
@@ -238,6 +248,15 @@ export class LiveKitSession {
     newRoom.on(RoomEvent.ParticipantConnected, this.syncHands);
     newRoom.on(RoomEvent.ParticipantDisconnected, this.syncHands);
     newRoom.on(RoomEvent.AudioPlaybackStatusChanged, this.handleAudioPlaybackChanged);
+    // LiveKit starts playback by itself when the microphone's stream is acquired — and its
+    // startAudio() unmutes every remote element. Registered after LiveKit's own listener, so
+    // this runs once the elements are already unmuted. See silenceDoubledElements.
+    newRoom.localParticipant.on(ParticipantEvent.AudioStreamAcquired, this.silenceAfterLiveKitStart);
+    if (!this.visibilityHooked) {
+      this.visibilityHooked = true;
+      // The same on iOS when the page is visible again (LiveKit's dummy-element handler).
+      document.addEventListener("visibilitychange", () => { if (!document.hidden && this.room) this.silenceAfterLiveKitStart(); });
+    }
     newRoom.on(RoomEvent.LocalTrackPublished, this.handleLocalTrackPublished);
 
     // Room lifecycle event logging for diagnostics
@@ -630,6 +649,18 @@ export class LiveKitSession {
    */
   private audioStarted = false;
 
+  private visibilityHooked = false;
+
+  /** After a startAudio() LiveKit ran by itself: re-mute the elements it unmuted, now and again
+   *  as its context finishes resuming (the later passes are what catch a context that was still
+   *  "suspended" at the first). */
+  private silenceAfterLiveKitStart = (): void => {
+    const run = (): void => this._audioElements.silenceDoubledElements();
+    run();
+    queueMicrotask(run);
+    for (const ms of [250, 1000, 2500]) window.setTimeout(run, ms);
+  };
+
   /** The one place playback is started. Re-arms on refusal instead of giving up. */
   private async startAudioNow(): Promise<void> {
     if (this.room === null) return;
@@ -638,9 +669,9 @@ export class LiveKitSession {
       this.audioStarted = true;
       setAudioBlocked(false);
       // The graph is carrying the room now, so anything still coming out of an <audio> element
-      // is the same voice a second time — see AudioElements.silenceDoubledElements. Guarded on
-      // the context being OURS: without one the elements are the only audible path.
-      if (this._audioPipeline.context !== null) this._audioElements.silenceDoubledElements();
+      // is the same voice a second time — see AudioElements.silenceDoubledElements (which only
+      // touches tracks whose context is running: otherwise the element is the only audible path).
+      this._audioElements.silenceDoubledElements();
       log.info("Audio playback started");
     } catch (err) {
       // Either no gesture was in hand, or an element still refuses. Wait for the next one.
@@ -665,6 +696,7 @@ export class LiveKitSession {
     if (this.room === null) return;
     if (this.room.canPlaybackAudio) {
       setAudioBlocked(false);
+      this.silenceAfterLiveKitStart();
       // Stand down ONLY when playback really started. "Allowed" on its own is the context
       // reporting itself running — see audioStarted.
       if (this.audioStarted) {

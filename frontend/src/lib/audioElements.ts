@@ -48,7 +48,7 @@ export class AudioElements {
   // everyone else. See loudnessNorm.ts for the arithmetic and its check.
   private ctx: AudioContext | null = null;
   /** Passive taps: a source and an analyser per speaker, connected to NOTHING downstream. */
-  private levelTaps = new Map<number, { src: MediaStreamAudioSourceNode; an: AnalyserNode; buf: Float32Array<ArrayBuffer> }>();
+  private levelTaps = new Map<number, { src: MediaStreamAudioSourceNode; an: AnalyserNode; buf: Float32Array<ArrayBuffer>; track: MediaStreamTrack }>();
   private normGain = new Map<number, number>();
   private normTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -62,22 +62,30 @@ export class AudioElements {
 
   private addLevelTap(userId: number, track: MediaStreamTrack): void {
     const ctx = this.ctx;
-    if (ctx === null || userId <= 0 || this.levelTaps.has(userId)) return;
+    if (ctx === null || userId <= 0 || this.levelTaps.get(userId)?.track === track) return;
+    // A tap on an OLDER track of this person is replaced, not kept: a resubscription (undeafen, a
+    // fast reconnect) can deliver the new track before the old one is unsubscribed, and keeping
+    // the old tap read silence from an ended track — then the old track's unsubscribe removed the
+    // tap altogether, and the person was never measured or levelled again (Firefox, 2026-10-21).
+    const old = this.levelTaps.get(userId);
+    if (old !== undefined) { old.src.disconnect(); old.an.disconnect(); }
     try {
       const src = ctx.createMediaStreamSource(new MediaStream([track]));
       const an = ctx.createAnalyser();
       an.fftSize = 1024;
       src.connect(an); // and no further: a reading, not a stage
-      this.levelTaps.set(userId, { src, an, buf: new Float32Array(new ArrayBuffer(an.fftSize * 4)) });
+      this.levelTaps.set(userId, { src, an, buf: new Float32Array(new ArrayBuffer(an.fftSize * 4)), track });
       this.startNormalising();
     } catch (err) {
       log.debug("could not tap remote level", err);
     }
   }
 
-  private removeLevelTap(userId: number): void {
+  /** `track`: only if the tap is still on that track — an unsubscribe arriving after its
+   *  replacement was subscribed must not take the new tap away. */
+  private removeLevelTap(userId: number, track?: MediaStreamTrack): void {
     const tap = this.levelTaps.get(userId);
-    if (tap === undefined) return;
+    if (tap === undefined || (track !== undefined && tap.track !== track)) return;
     tap.src.disconnect();
     tap.an.disconnect();
     this.levelTaps.delete(userId);
@@ -131,17 +139,28 @@ export class AudioElements {
    * LiveKit mutes an element itself — but only when the AudioContext is on the track at the
    * moment of attach (RemoteAudioTrack.attach). Safari hands the context over LATER, because
    * it waits for a gesture, and setAudioContext() then wires up the graph without touching the
-   * element that is already playing. Both paths run, a few milliseconds apart, and every voice
-   * in the room is heard twice.
+   * element that is already playing. And LiveKit's own room.startAudio() — which it also runs by
+   * itself when the microphone's stream is acquired and, on iOS, when the page is visible again —
+   * sets `muted = false` on EVERY remote element. On a desktop the element's volume of 0 still
+   * hides that; iOS Safari ignores volume, so from the moment a Safari user turned the mic on,
+   * every voice in the room came out twice (a user's report, 2026-10-21).
    *
-   * Only ever called once playback has actually started through a context we own; if the graph
-   * were not carrying the audio, these elements would be the only thing anyone could hear.
+   * Per track, and only where the track's context is RUNNING: if the graph were not carrying the
+   * audio, the element would be the only thing anyone could hear.
    */
   silenceDoubledElements(): void {
-    for (const el of this.remoteMicAudioElements.values()) {
-      if (el.muted) continue;
-      el.muted = true;
-      el.volume = 0;
+    for (const p of this.room?.remoteParticipants.values() ?? []) {
+      for (const pub of p.audioTrackPublications.values()) {
+        const track = pub.track;
+        // `audioContext` is LiveKit's own field on RemoteAudioTrack — private in its types.
+        const ctx = (track as unknown as { audioContext?: AudioContext } | undefined)?.audioContext;
+        if (track === undefined || ctx === undefined || ctx.state !== "running") continue;
+        for (const el of track.attachedElements) {
+          if (el.muted) continue;
+          el.muted = true;
+          el.volume = 0;
+        }
+      }
     }
   }
 
@@ -266,7 +285,7 @@ export class AudioElements {
     } else {
       for (const el of track.detach()) el.remove();
       if (track.sid !== undefined) this.remoteMicAudioElements.delete(track.sid);
-      this.removeLevelTap(userId);
+      this.removeLevelTap(userId, track.mediaStreamTrack);
       log.debug("Remote audio track unsubscribed and detached", { userId, trackSid: track.sid });
     }
   }

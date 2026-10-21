@@ -17,8 +17,6 @@ exists so you can read it without a running server.
   `INVALID_INPUT` is 400, `RATE_LIMITED` is 429, and a failed outbound dependency (mail, for
   instance) is **503** rather than 500 — the request was valid and something downstream was
   not, and the two mean different things to whoever reads the response.
-- **Tenancy** is resolved per request from the host and the token; the same path serves
-  different spaces and you do not pass a space id.
 - **Rate limits** are per client IP and global, per endpoint. The client address comes from the
   socket unless the peer is a configured trusted proxy — see [security.md](security.md).
 - Ids are 64-bit integers. Timestamps are ISO-8601 UTC.
@@ -103,11 +101,11 @@ messages already in the mailbox) and `files`; up to 18 MB of files. Attachments 
 | `POST` | `/verify-email-otp` |
 | `POST` | `/verify-totp` |
 
-An account that arrives in no server — `/register` (or `/register/verify`) without an invite on a
-space's shared domain, or a first SSO sign-in — is given a server of its own in the same
+An account that arrives in no server — `/register` (or `/register/verify`) without an invite on
+the instance's address, or a first SSO sign-in — is given a server of its own in the same
 transaction: "`<username>` Server", owned by it, with `#general` and the "General" voice room
 (`DefaultServer`, `RegistrationCompletion`). It counts towards the three servers a user may own.
-An invite, or a space's own domain, puts the newcomer in that server instead and nothing is made.
+An invite, or a server's own domain, puts the newcomer in that server instead and nothing is made.
 
 ### Bug
 
@@ -117,6 +115,12 @@ An invite, or a space's own domain, puts the newcomer in that server instead and
 | `GET` | `/api/v1/bugs/mine` |
 
 ### Channel
+
+`GET /api/v1/messages/{id}/reactions` — who reacted: `{message_id, reactions: [{emoji, count, users:
+[{id, username, avatar}]}]}`, emojis in the order they first came, people newest first. Only for
+someone who may read the message (a DM's participants; READ_MESSAGES in the active server) —
+anyone else gets 404, as for a message that does not exist.
+
 
 | `GET` | `/api/v1/channels` |
 | `GET` | `/api/v1/channels/{id}/messages` |
@@ -252,26 +256,11 @@ none. Throttled together with reports, and never fails the block.
 | `DELETE` | `/api/v1/servers/{serverId}/members/{userId}` |
 | `POST` | `/api/v1/servers/{serverId}/members/{userId}/role` |
 | `GET` | `/api/v1/space-by-host` |
-| `GET` | `/api/v1/tls-check` |
 
 ### Setup
 
 | `POST` | `/api/v1/setup` |
 | `GET` | `/api/v1/setup/status` |
-
-### SpaceAdmin
-
-| `GET` | `/` |
-| `POST` | `/` |
-| `DELETE` | `/{id}` |
-| `PUT` | `/{id}` |
-| `GET` | `/{id}/branding` |
-| `PUT` | `/{id}/branding` |
-| `POST` | `/{id}/owner` |
-| `GET` | `/{id}/servers` |
-| `GET` | `/{id}/sso` |
-| `PUT` | `/{id}/sso` |
-| `GET` | `/{id}/users` |
 
 ### Upload
 

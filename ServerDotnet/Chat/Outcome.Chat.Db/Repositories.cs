@@ -128,10 +128,15 @@ public interface IAttachmentRepository
     Task<int> ReplaceStoredFileAsync(string oldStoredAs, string newStoredAs, long newSize, CancellationToken ct = default);
 }
 
+/// <summary>One person's reaction on a message, with what is needed to show who it is.</summary>
+public sealed record ReactorDto(string Emoji, long UserId, string Username, string? Avatar, long ReactionId);
+
 public interface IReactionRepository
 {
     Task AddAsync(long messageId, long userId, string emoji, CancellationToken ct = default);
     Task RemoveAsync(long messageId, long userId, string emoji, CancellationToken ct = default);
+    /// <summary>Everyone who reacted to the message, oldest reaction first.</summary>
+    Task<IReadOnlyList<ReactorDto>> ListForMessageAsync(long messageId, CancellationToken ct = default);
 }
 
 public interface IVoiceStateRepository

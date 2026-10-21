@@ -43,7 +43,10 @@ services:
       # The legacy domain 301s to the canonical one, path and query preserved — old links
       # land on the same page. (Its DNS record must stay alive for the cert + redirect to
       # keep working; delete the record only when traffic on it dies out.)
-      caddy_1: ${OUTCOME_LEGACY_DOMAIN}
+      # With no legacy domain (the VPS today) the address must not be empty: a site-less label is
+      # read as a GLOBAL option, and Caddy logged "unrecognized global option: redir" every few
+      # seconds. A plain-http name nobody resolves keeps the block a site, with no certificate to get.
+      caddy_1: ${OUTCOME_LEGACY_DOMAIN:-http://legacy-domain.invalid}
       caddy_1.redir: https://${OUTCOME_DOMAIN}{uri} permanent
       # The mail host is an HTTP no-op, but naming it here makes Caddy obtain and RENEW its
       # TLS certificate — which the mailserver container reads for SMTP/IMAP (see its mounts).

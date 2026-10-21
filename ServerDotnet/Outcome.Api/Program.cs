@@ -265,7 +265,6 @@ api.MapGet("/api/v1/health", (IConnectionRegistry reg) => new HealthResponse("ok
 api.MapGet("/api/v1/info", (IOptions<ServerOptions> server) => new InfoResponse(server.Value.Name, version));
 
 api.MapAuthEndpoints();
-app.MapSpaceAdminEndpoints();
 api.MapOAuthEndpoints();
 api.MapUserEndpoints();
 api.MapServerEndpoints();

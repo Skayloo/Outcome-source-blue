@@ -70,6 +70,9 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 /** Silence after which the socket is taken for dead: every ping is answered with a pong, and a
  *  hidden window's timers may be throttled to one a minute, so this is two such minutes' worth. */
 const SILENT_DEAD_MS = 100_000;
+/** How long a socket has to answer a ping after the network came back or the page came to the
+ *  front, before it is taken for dead (see wake). A slow phone network answers in well under it. */
+const WAKE_PROBE_MS = 5_000;
 
 function uuid(): string {
   return randomUUID();
@@ -166,10 +169,46 @@ export function createWsClient() {
     return true;
   }
 
+  /**
+   * The network is back, or the page is in front again: catch up NOW, not after the backoff.
+   * After a 25 s outage the next attempt was still ~10 s away (up to 30 s after a long one), and
+   * the missed messages arrived that much later (offline-catchup.mjs, 2026-10-21). And a socket
+   * that died while the phone was locked or the network changed says nothing by itself —
+   * dropIfSilent gives up on it only after SILENT_DEAD_MS. So: a reconnect that is waiting goes
+   * now; an open socket is asked for a sign of life and replaced if none comes in WAKE_PROBE_MS.
+   */
+  let wakeProbe: ReturnType<typeof setTimeout> | null = null;
+  function wake(): void {
+    if (intentionalClose || config === null) return;
+    if (dropIfSilent()) return;
+    if (reconnectTimer !== null) {
+      cancelReconnect();
+      reconnectAttempt++; // as the timer would: a reconnect, so auth carries last_seq
+      connect(config);
+      return;
+    }
+    const sock = browserWs;
+    if (!socketOpen || sock === null || wakeProbe !== null) return;
+    const asked = Date.now();
+    try { sendRaw(JSON.stringify({ type: "ping", payload: {} })); } catch { /* the probe decides */ }
+    wakeProbe = setTimeout(() => {
+      wakeProbe = null;
+      if (browserWs !== sock || !socketOpen || lastHeardAt >= asked || config === null) return;
+      log.warn("WebSocket did not answer after the network came back, reconnecting");
+      browserWs = null; // its onclose, whenever it comes, is then a stale socket's and ignored
+      socketOpen = false;
+      stopHeartbeat();
+      try { sock.close(); } catch { /* already gone */ }
+      reconnectAttempt++;
+      connect(config);
+    }, WAKE_PROBE_MS);
+  }
+
   // Back from sleep, the window is usually focused or shown before any timer gets to run.
   if (typeof window !== "undefined") {
-    window.addEventListener("focus", () => { dropIfSilent(); });
-    window.addEventListener("online", () => { dropIfSilent(); });
+    window.addEventListener("focus", wake);
+    window.addEventListener("online", wake);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) wake(); });
   }
 
   function startHeartbeat(): void {

@@ -15,6 +15,10 @@ public static class ChannelEndpoints
         app.MapGet("/api/v1/channels/{id:long}/messages", async (long id, long? before, int? limit, ISender mediator) =>
             await mediator.Send(new GetChannelMessagesQuery(id, before ?? 0, limit ?? 50)));
 
+        // Who reacted to a message — the hover card over a reaction and its full list.
+        app.MapGet("/api/v1/messages/{id:long}/reactions", async (long id, ISender mediator) =>
+            await mediator.Send(new GetMessageReactionsQuery(id)));
+
         // ── per-user notification mute (chat context menu) ───────────────────
         app.MapPut("/api/v1/channels/{id:long}/mute", async (long id, ICurrentUser current, ISender mediator) =>
         {

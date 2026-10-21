@@ -9,8 +9,7 @@ namespace Outcome.Infrastructure.Tenancy;
 /// "can a CoreOTC user DM someone on outcome.ru" is not a question of query hygiene: there
 /// is no row to find.
 /// </summary>
-/// <param name="Domain">The host this space answers on. Null on the root space, which takes
-/// everything no other space claims.</param>
+/// <param name="Domain">Always null in this edition: it serves one space, the root one.</param>
 public sealed record Space(long Id, string Slug, string Name, string? Domain, string DbName, bool Active)
 {
     public bool IsRoot => Id == RootId;

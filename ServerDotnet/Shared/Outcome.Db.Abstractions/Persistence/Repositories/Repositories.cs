@@ -143,9 +143,6 @@ public sealed class UserRepository(OutcomeDbContext db) : IUserRepository
             .SetProperty(u => u.BanReason, (string?)null)
             .SetProperty(u => u.BanExpires, (DateTime?)null), ct);
 
-    public Task<bool> HasOwnerAsync(CancellationToken ct = default) =>
-        db.Users.AnyAsync(u => u.RoleId == DefaultRole.Owner && !u.Deleted, ct);
-
     public Task<int> CountAdminsExceptAsync(long exceptUserId, CancellationToken ct = default) =>
         db.Users.CountAsync(u =>
             (u.RoleId == DefaultRole.Owner || u.RoleId == DefaultRole.Admin) && u.Id != exceptUserId && !u.Banned && !u.Deleted, ct);

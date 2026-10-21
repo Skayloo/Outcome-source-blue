@@ -42,8 +42,6 @@ public interface IUserRepository
     Task BanAsync(long id, string reason, CancellationToken ct = default);
     Task UnbanAsync(long id, CancellationToken ct = default);
     Task<int> CountAdminsExceptAsync(long exceptUserId, CancellationToken ct = default);
-    /// <summary>Does this space already have its owner (a live account with the Owner role)?</summary>
-    Task<bool> HasOwnerAsync(CancellationToken ct = default);
     Task DeleteAsync(long id, CancellationToken ct = default);
     /// <summary>Soft-deletes the account: soft-deletes the user's messages (kept for "Deleted message"
     /// reply placeholders), removes memberships/sessions, and marks the user deleted.</summary>

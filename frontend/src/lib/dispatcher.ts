@@ -26,6 +26,7 @@ import {
   markUserMessagesDeleted,
   updateReaction,
   confirmSend,
+  markLoadedChannelsStale,
 } from "@stores/messages.store";
 import {
   setMembers,
@@ -208,6 +209,10 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
       }
 
       setMutedChannels(payload.muted_channels ?? []);
+      // A READY after a reconnect: whatever is loaded may have missed what happened while the
+      // socket was down (the replay carries new channel lines only). See markLoadedChannelsStale.
+      // The first READY has nothing loaded; a server switch has already dropped its channels.
+      markLoadedChannelsStale();
 
       log.info("Ready payload applied", {
         channels: payload.channels.length,

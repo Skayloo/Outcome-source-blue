@@ -116,7 +116,7 @@ export function VoiceStage({ channelId }: { channelId: number }) {
     users.find((u) => u.userId === uid)?.username ?? (uid === me ? authUser?.username ?? "" : t("rec.someone")));
 
   return (
-    <div className="voice-stage">
+    <div className={"voice-stage" + (connectedHere ? " is-mine" : "")}>
       {connectedHere && v.recorders.size > 0 && (
         <div className="vstage-rec-banner" role="status">
           <span className="vstage-rec-dot" /> {t("rec.banner", { names: recNames.join(", ") })}
@@ -352,7 +352,11 @@ function VideoBox(
     if (el === null) return;
     if (document.fullscreenElement === el) void document.exitFullscreen();
     // The label rides along because the wrapper goes fullscreen, not the bare <video>.
-    else void el.requestFullscreen().catch(() => { /* denied or unsupported — stay inline */ });
+    else if (typeof el.requestFullscreen === "function") void el.requestFullscreen().catch(() => { /* denied or unsupported — stay inline */ });
+    // An iPhone has no element fullscreen at all (requestFullscreen is undefined there, so the
+    // button threw and did nothing); its own video player is the only way to the whole screen,
+    // and it turns with the phone. Without our bar over it — Done brings the stage back.
+    else (ref.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null)?.webkitEnterFullscreen?.();
   };
 
   return (

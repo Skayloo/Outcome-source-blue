@@ -7,12 +7,7 @@ public interface ISpaceRegistry
 {
     Task<IReadOnlyList<Space>> ListAsync(CancellationToken ct = default);
     Task<Space> RootAsync(CancellationToken ct = default);
-    /// <summary>The space serving this host, or the root space when none claims it.</summary>
-    Task<Space> ForHostAsync(string? host, CancellationToken ct = default);
     Task<Space?> ByIdAsync(long id, CancellationToken ct = default);
-    Task<Space> CreateAsync(string slug, string name, string? domain, CancellationToken ct = default);
-    Task<bool> UpdateAsync(long id, string? name, string? domain, bool? active, CancellationToken ct = default);
-    Task<bool> DeleteAsync(long id, CancellationToken ct = default);
     /// <summary>Connection string aimed at that space's database.</summary>
     string ConnectionFor(Space space);
     /// <summary>Same, but bypassing pgbouncer — for CREATE DATABASE and migrations.</summary>
@@ -89,11 +84,11 @@ public sealed class SpaceRegistry : ISpaceRegistry
         await using var conn = new NpgsqlConnection(_pooled);
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT id, slug, name, domain, db_name, active FROM spaces ORDER BY id";
+        // One space in this edition. A database brought over from an instance that had others
+        // keeps their rows; they are simply never served or migrated here.
+        cmd.CommandText = $"SELECT {Columns} FROM spaces WHERE id = 1";
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        while (await r.ReadAsync(ct))
-            list.Add(new Space(r.GetInt64(0), r.GetString(1), r.GetString(2),
-                r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4), r.GetBoolean(5)));
+        while (await r.ReadAsync(ct)) list.Add(Read(r));
 
         _cache[0] = (DateTime.UtcNow, list);
         return list;
@@ -103,92 +98,16 @@ public sealed class SpaceRegistry : ISpaceRegistry
         (await ListAsync(ct)).FirstOrDefault(s => s.IsRoot)
         ?? new Space(Space.RootId, "root", "Outcome", null, _rootDb, true);
 
-    public async Task<Space> ForHostAsync(string? host, CancellationToken ct = default)
-    {
-        var h = host?.Split(':')[0].Trim().TrimEnd('.').ToLowerInvariant();
-        if (string.IsNullOrEmpty(h)) return await RootAsync(ct);
-        var match = (await ListAsync(ct)).FirstOrDefault(s => s.Active && s.Domain == h);
-        return match ?? await RootAsync(ct);
-    }
-
     public async Task<Space?> ByIdAsync(long id, CancellationToken ct = default) =>
         (await ListAsync(ct)).FirstOrDefault(s => s.Id == id);
-
-    public async Task<Space> CreateAsync(string slug, string name, string? domain, CancellationToken ct = default)
-    {
-        var dbName = DbNameFor(slug);
-        await using var conn = new NpgsqlConnection(_pooled);
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            INSERT INTO spaces (slug, name, domain, db_name)
-            VALUES (@slug, @name, @domain, @db)
-            RETURNING id, slug, name, domain, db_name, active
-            """;
-        cmd.Parameters.AddWithValue("slug", slug);
-        cmd.Parameters.AddWithValue("name", name);
-        cmd.Parameters.AddWithValue("domain", (object?)domain ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("db", dbName);
-        await using var r = await cmd.ExecuteReaderAsync(ct);
-        await r.ReadAsync(ct);
-        var space = new Space(r.GetInt64(0), r.GetString(1), r.GetString(2),
-            r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4), r.GetBoolean(5));
-        _cache.Clear();
-        return space;
-    }
-
-    public async Task<bool> UpdateAsync(long id, string? name, string? domain, bool? active, CancellationToken ct = default)
-    {
-        await using var conn = new NpgsqlConnection(_pooled);
-        await conn.OpenAsync(ct);
-        await using var cmd = conn.CreateCommand();
-        // COALESCE keeps unspecified fields; domain is cleared with an empty string, since
-        // NULL there means "leave it".
-        // Explicit casts: a NULL parameter that only ever appears inside COALESCE/CASE gives
-        // Postgres nothing to infer a type from ("42P08: could not determine data type").
-        cmd.CommandText = """
-            UPDATE spaces SET
-                name   = COALESCE(@name::text, name),
-                domain = CASE WHEN @domain::text IS NULL THEN domain
-                              WHEN @domain::text = '' THEN NULL ELSE @domain::text END,
-                active = COALESCE(@active::boolean, active)
-            WHERE id = @id
-            """;
-        cmd.Parameters.AddWithValue("id", id);
-        cmd.Parameters.AddWithValue("name", (object?)name ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("domain", (object?)domain ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("active", (object?)active ?? DBNull.Value);
-        var n = await cmd.ExecuteNonQueryAsync(ct);
-        _cache.Clear();
-        return n > 0;
-    }
-
-    public async Task<bool> DeleteAsync(long id, CancellationToken ct = default)
-    {
-        if (id == Space.RootId) throw new InvalidOperationException("the root space cannot be deleted");
-        var space = await ByIdAsync(id, ct);
-        if (space is null) return false;
-
-        await using (var conn = new NpgsqlConnection(_pooled))
-        {
-            await conn.OpenAsync(ct);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM spaces WHERE id = @id";
-            cmd.Parameters.AddWithValue("id", id);
-            await cmd.ExecuteNonQueryAsync(ct);
-        }
-        _cache.Clear();
-
-        // The database itself is left in place on purpose: dropping a customer's data must be
-        // a deliberate act with a backup in hand, not a side effect of removing a row.
-        return true;
-    }
 
     public string ConnectionFor(Space space) => WithDatabase(_pooled, space.DbName);
     public string DirectConnectionFor(Space space) => WithDatabase(_direct, space.DbName);
 
-    /// <summary>Postgres identifier for a space's database: <c>outcome_&lt;slug&gt;</c>.</summary>
-    public static string DbNameFor(string slug) => "outcome_" + slug;
+    private const string Columns = "id, slug, name, domain, db_name, active";
+
+    private static Space Read(NpgsqlDataReader r) => new(r.GetInt64(0), r.GetString(1), r.GetString(2),
+        r.IsDBNull(3) ? null : r.GetString(3), r.GetString(4), r.GetBoolean(5));
 
     private static string WithDatabase(string cs, string db) =>
         new NpgsqlConnectionStringBuilder(cs) { Database = db }.ConnectionString;

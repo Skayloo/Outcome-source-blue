@@ -269,14 +269,13 @@ public static class ServerEndpoints
             return Results.NoContent();
         });
 
-        // ── Custom domain (per-space landing via Caddy on-demand TLS) ────────────
+        // ── Custom domain (a server's own address) ────────────────────────────────
         // Owner CNAMEs chat.theircommunity.com → us and sets it here.
-        // TODO: gate behind a paid plan once billing lands.
         // The space's Administrator only (and the server's owner): registration on a host puts
         // every invite-less newcomer into the server that claims that host, and anyone may own a
         // server — one that claimed the instance's own address collected every new account.
         app.MapPut("/api/v1/servers/{id:long}/domain", async (long id, SetDomainBody body, HttpContext ctx, ICurrentUser current,
-            IServerRepository servers, ISpaceRegistry spaces, CancellationToken ct) =>
+            IServerRepository servers) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
             if ((current.Permissions & Perm.Administrator) == 0)
@@ -285,9 +284,8 @@ public static class ServerEndpoints
             if (info.OwnerId != current.UserId) throw DomainException.Forbidden("only the owner can set the domain");
             var domain = NormalizeDomain(body.Domain);
             if (string.IsNullOrEmpty(domain)) throw DomainException.BadRequest("enter a valid domain like chat.example.com");
-            // Never an address that already means something here: this instance's own, or a space's.
-            if (string.Equals(domain, ctx.Request.Host.Host, StringComparison.OrdinalIgnoreCase)
-                || (await spaces.ListAsync(ct)).Any(s => string.Equals(s.Domain, domain, StringComparison.OrdinalIgnoreCase)))
+            // Never the address this instance already answers on.
+            if (string.Equals(domain, ctx.Request.Host.Host, StringComparison.OrdinalIgnoreCase))
                 throw DomainException.Conflict("this domain is already in use");
             var taken = await servers.FindByCustomDomainAsync(domain);
             if (taken is not null && taken.Id != id) throw DomainException.Conflict("this domain is already in use");
@@ -320,15 +318,6 @@ public static class ServerEndpoints
                 icon = string.IsNullOrWhiteSpace(icon) ? null : icon,
                 is_root = here.Space.IsRoot,
             });
-        });
-
-        // Caddy on-demand-TLS "ask": mint a cert only for domains we actually serve. 200 = allow.
-        app.MapGet("/api/v1/tls-check", async (string? domain, ISpaceRegistry spaces, CancellationToken ct) =>
-        {
-            var d = NormalizeDomain(domain);
-            if (string.IsNullOrEmpty(d)) return Results.StatusCode(400);
-            var claimed = (await spaces.ListAsync(ct)).Any(x => x.Active && x.Domain == d);
-            return claimed ? Results.Ok() : Results.StatusCode(403);
         });
     }
 }

@@ -281,4 +281,12 @@ public sealed class ReactionRepository(OutcomeDbContext db) : IReactionRepositor
 
     public Task RemoveAsync(long messageId, long userId, string emoji, CancellationToken ct = default) =>
         db.Reactions.Where(r => r.MessageId == messageId && r.UserId == userId && r.Emoji == emoji).ExecuteDeleteAsync(ct);
+
+    public async Task<IReadOnlyList<ReactorDto>> ListForMessageAsync(long messageId, CancellationToken ct = default) =>
+        await (from r in db.Reactions.AsNoTracking()
+               join u in db.Users.AsNoTracking() on r.UserId equals u.Id
+               where r.MessageId == messageId
+               orderby r.Id
+               select new ReactorDto(r.Emoji, u.Id, u.UserName ?? "", u.Avatar, r.Id))
+            .ToListAsync(ct);
 }

@@ -40,8 +40,8 @@ public static class DependencyInjection
         var connectionString = ResolveConnectionString(config);
         var directConnectionString = config.GetConnectionString("PostgresDirect") ?? connectionString;
 
-        // Tenancy. A space owns a database; the registry lives in the ROOT one and maps
-        // host -> space. Everything below that reads data goes through ICurrentSpace, so a
+        // Tenancy. A space owns a database; the registry lives in the ROOT one, and in this
+        // edition the root space is the only one. Everything below that reads data goes through ICurrentSpace, so a
         // request can only ever see the tenant it arrived at.
         var registry = new SpaceRegistry(connectionString, directConnectionString);
         services.AddSingleton<ISpaceRegistry>(registry);
