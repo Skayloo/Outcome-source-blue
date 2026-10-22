@@ -238,7 +238,7 @@ public sealed class MessageRepository(OutcomeDbContext db, IFileUrlSigner fileUr
         var q = db.Messages.Where(m => m.Id == id && !m.Deleted);
         if (!isMod) q = q.Where(m => m.UserId == userId);
         // Tombstone AND blank the body: a "deleted" message is never shown again, so keeping
-        // its text (or its E2EE ciphertext) on disk buys nothing and leaks everything.
+        // its text on disk buys nothing and leaks everything.
         var rows = await q.ExecuteUpdateAsync(
             s => s.SetProperty(m => m.Deleted, true).SetProperty(m => m.Content, string.Empty), ct);
         return rows > 0;

@@ -57,8 +57,8 @@ public sealed class SlidingWindowRateLimiter : IRateLimiter
     /// A key that is still in use is refilled by the very next call, so losing it costs
     /// nothing; the window it would have remembered is empty by definition.
     /// Each key by ITS OWN window: the sweep used the window of whichever call happened to trigger
-    /// it, so a one-minute call wiped every 15-minute budget (reset mails per address, deletion
-    /// password failures, the contact form) every 4096 requests.</summary>
+    /// it, so a one-minute call wiped every 15-minute budget (deletion password failures, for one)
+    /// every 4096 requests.</summary>
     private void Sweep(long now)
     {
         foreach (var (k, b) in _hits)

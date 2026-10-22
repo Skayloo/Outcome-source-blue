@@ -56,16 +56,8 @@ services:
       OUTCOME_Server__TrustedProxies__2: "172.16.0.0/12"
       # JWT signing key. It used to sit here as a literal, in a file the README tells everyone
       # to run — so every install that followed the quick start shared one signing key, and it
-      # also signs the file URLs and the OAuth state. From .env, generated per install.
+      # also signs the file URLs. From .env, generated per install.
       OUTCOME_JwtAuth__JwtKey: ${JWT_KEY:?see .env.example}
-      # Email/SMTP for 2FA codes. Leave Host blank to LOG the code instead of sending it.
-      # Fill these to actually deliver email, then enable the "email_2fa" server setting.
-      OUTCOME_Email__Host: ""
-      OUTCOME_Email__Port: "587"
-      OUTCOME_Email__Username: ""
-      OUTCOME_Email__Password: ""
-      OUTCOME_Email__From: "no-reply@outcome.local"
-      OUTCOME_Email__UseSsl: "true"
       # MinIO/S3 object storage for uploaded files (regenerate credentials per deployment).
       OUTCOME_Minio__Endpoint: "minio:9000"
       OUTCOME_Minio__AccessKey: ${MINIO_ACCESS_KEY:?see .env.example}

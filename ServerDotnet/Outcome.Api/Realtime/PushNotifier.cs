@@ -28,12 +28,8 @@ public sealed partial class PushNotifier(
     private static partial Regex MentionRegex { get; }
 
     private const int MaxBodyChars = 180;
-    /// <summary>What an end-to-end encrypted direct message looks like from the server: an
-    /// envelope it cannot open. Mirrors MARKER in the clients' e2ee modules.</summary>
+    /// <summary>What a push says when its text is not to be shown.</summary>
     private const string NoPreview = "Новое сообщение";
-    /// <summary>Apple caps an alert push at 4 KB, and the envelope is by far the largest thing
-    /// in ours. Past this the push is sent without it and the phone shows the fallback — a long
-    /// message loses its preview rather than the notification failing to arrive.</summary>
 
     /// <summary>What a message's files are, as a lock screen says it — the way Telegram does:
     /// "🎤 Голосовое сообщение (0:09)", "📷 Фото", "📷 3 фото", "🎬 Видео", "📎 report.pdf".
@@ -195,11 +191,6 @@ public sealed partial class PushNotifier(
 
     /// <summary>
     /// The message as it may appear on a lock screen.
-    ///
-    /// An end-to-end encrypted direct message cannot appear at all: what reached this server is
-    /// an envelope only the recipient's device can open. Showing the base64 would be worse than
-    /// showing nothing, so it reads the same as a preview the user switched off. Putting real
-    /// text there needs a notification service extension that decrypts on the phone.
     /// </summary>
     /// A file without words says what it is ("🎤 Голосовое сообщение (0:09)") — every one of them
     /// used to read "Вложение", a voice note and a photo alike. A caption keeps the file's icon.

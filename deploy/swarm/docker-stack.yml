@@ -82,10 +82,7 @@ services:
       OUTCOME_Minio__UseSsl: "false"
       OUTCOME_Voice__LiveKitUrl: "wss://${OUTCOME_DOMAIN}/livekit"
       OUTCOME_Voice__LiveKitInternalUrl: "ws://livekit:7880"
-      OUTCOME_Email__Host: "${EMAIL_HOST:-}"
-      OUTCOME_Email__Port: "${EMAIL_PORT:-587}"
-      OUTCOME_Email__From: "${EMAIL_FROM:-no-reply@example.com}"
-      OUTCOME_Email__UseSsl: "${EMAIL_USE_SSL:-true}"
+      OUTCOME_Server__PublicOrigin: "https://${OUTCOME_DOMAIN}"
     secrets:
       - jwt_key
       - minio_access_key

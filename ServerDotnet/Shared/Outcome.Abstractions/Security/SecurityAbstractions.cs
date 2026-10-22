@@ -68,34 +68,16 @@ public interface IPendingTotpStore
     void Delete(long userId);
 }
 
-/// <summary>A pending 2FA challenge issued at login. <see cref="Code"/> is the expected
-/// email-OTP code, or null for an authenticator (TOTP) challenge.</summary>
-/// <param name="PendingPasswordHash">A password reset waiting for its second factor: the new hash is
-/// applied only once the TOTP code checks out (VerifyTotpHandler), never before.</param>
-public sealed record PartialChallenge(long UserId, string? Device, string Ip, string? Code = null, string? PendingPasswordHash = null);
+/// <summary>A pending authenticator (TOTP) challenge issued at login.</summary>
+public sealed record PartialChallenge(long UserId, string? Device, string Ip);
 
 /// <summary>Short-lived store of partial 2FA challenges (TTL 10 min, 5-attempt budget).</summary>
 public interface IPartialAuthStore
 {
     string Issue(long userId, string? device, string ip);
-    /// <summary>Issues a challenge carrying an expected email-OTP <paramref name="code"/>.</summary>
-    string IssueWithCode(long userId, string? device, string ip, string code);
-    /// <summary>Issues a challenge that carries a password reset's new hash, applied after the TOTP step.</summary>
-    string IssueForReset(long userId, string? device, string ip, string passwordHash);
     PartialChallenge? Lookup(string partialToken);
     PartialChallenge? Consume(string partialToken);
     void RegisterFailure(string partialToken, int maxFailures);
-}
-
-/// <summary>Short-lived store of password-reset codes, keyed by email (TTL 10 min, 5-attempt
-/// budget). Keying by email — not a token — lets the reset step take (email, code) directly, so
-/// the "forgot" step can answer 200 unconditionally and never leak whether an address exists.</summary>
-public interface IPasswordResetStore
-{
-    void Issue(string email, string code);
-    /// <summary>True iff a live code for <paramref name="email"/> matches; consumes it on success,
-    /// counts the miss and evicts after 5 failures otherwise.</summary>
-    bool Verify(string email, string code);
 }
 
 /// <summary>

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 using Outcome.Api.Realtime;
@@ -72,8 +73,6 @@ if (!string.IsNullOrWhiteSpace(redisUrl))
     builder.Services.AddSingleton<IPendingCallStore, RedisPendingCallStore>();
     builder.Services.AddScoped<Outcome.Shared.Abstractions.Security.IPartialAuthStore,
         Outcome.Infrastructure.Security.RedisPartialAuthStore>();
-    builder.Services.AddScoped<Outcome.Shared.Abstractions.Security.IPendingRegistrationStore,
-        Outcome.Infrastructure.Security.RedisPendingRegistrationStore>();
 }
 else
 {
@@ -89,6 +88,18 @@ builder.Services.AddScoped<IConnectionRegistry>(sp => new SpaceScopedConnectionR
 
 builder.Services.AddSingleton<PushNotifier>();
 builder.Services.AddSingleton<WebSocketHandler>();
+// ASP.NET's Data Protection keys protect nothing here — sign-in is our own JWT, Identity's token
+// providers are not registered, form endpoints opt out of antiforgery — yet at every start the
+// framework made a key, wrote it into the container unprotected and warned twice about both.
+// UseEphemeralDataProtectionProvider did not stop that: the hosted service that loads the key ring
+// at startup still went to disk. The ring lives in memory instead — nothing written, nothing to
+// warn about, and a fresh one per process is all a ring nobody reads needs.
+builder.Services.AddDataProtection();
+builder.Services.Configure<Microsoft.AspNetCore.DataProtection.KeyManagement.KeyManagementOptions>(o =>
+{
+    o.XmlRepository = new Outcome.Api.Security.InMemoryXmlRepository();
+    o.XmlEncryptor = new Microsoft.AspNetCore.DataProtection.XmlEncryption.NullXmlEncryptor();
+});
 builder.Services.AddSingleton<SessionRevocations>();
 builder.Services.AddScoped<VoiceEviction>();
 builder.Services.AddSingleton<WsConnectionLimiter>();
@@ -202,10 +213,9 @@ app.UseStaticFiles();
 
 var startedAtUtc = DateTimeOffset.UtcNow;
 const string version = "0.1.0-dotnet";
-// Which build this is: "red" = private (E2EE clients, SaaS features), "blue" = public
-// self-hosted. Set by the Dockerfile's OUTCOME_EDITION build arg; defaults to blue so an
-// unlabelled build can never claim to be the private one.
-var edition = Environment.GetEnvironmentVariable("OUTCOME_EDITION") is "red" ? "red" : "blue";
+// Reported by /health; the official apps read it to know which of their features this server
+// has. A constant on purpose.
+const string edition = "blue";
 
 // All JSON endpoints are grouped under a filter that serializes responses with Newtonsoft.Json.
 // OpenAPI spec + Scalar API reference UI — DEV ONLY. Never exposed in production builds
@@ -265,7 +275,6 @@ api.MapGet("/api/v1/health", (IConnectionRegistry reg) => new HealthResponse("ok
 api.MapGet("/api/v1/info", (IOptions<ServerOptions> server) => new InfoResponse(server.Value.Name, version));
 
 api.MapAuthEndpoints();
-api.MapOAuthEndpoints();
 api.MapUserEndpoints();
 api.MapServerEndpoints();
 api.MapChannelEndpoints();
@@ -279,7 +288,6 @@ api.MapFriendEndpoints();
 api.MapBugEndpoints();
 api.MapModerationEndpoints();
 api.MapGuestEndpoints();
-api.MapContactEndpoints();
 api.MapGifEndpoints();
 api.MapRecordingEndpoints();
 api.MapVoiceEndpoints();
@@ -364,8 +372,8 @@ app.MapGet("/api/v1/admin/logs/stream", async (HttpContext ctx, Outcome.Api.Logg
 // this fallback then served on every extensionless unmatched path — in production too, because
 // the fallback does not care that MapScalarApiReference above is Development-only. That page
 // pulled its script from a public CDN, unpinned and without SRI, onto the app's own origin,
-// where localStorage holds the session token and the long-term E2EE private key. Anything
-// dropped in here is served to the internet on the origin that owns those secrets.
+// where localStorage holds the session token. Anything dropped in here is served to the
+// internet on the origin that owns that secret.
 app.MapFallbackToFile("index.html");
 
 app.Run();
@@ -477,7 +485,7 @@ static async Task BackfillImageDimensionsAsync(WebApplication app, ILogger logge
                 await src.CopyToAsync(ms);
                 var bytes = ms.ToArray();
 
-                // While the bytes are decrypted and in hand, make the downscaled copy too —
+                // While the bytes are in hand, make the downscaled copy too —
                 // otherwise every picture already in a conversation goes on costing its full
                 // size to draw a thumbnail.
                 if (needsPreview &&
@@ -515,8 +523,8 @@ static async Task BackfillImageDimensionsAsync(WebApplication app, ILogger logge
 /// Remuxes call recordings stored before uploads were remuxed (1.31.48): MediaRecorder's
 /// fragmented MP4 says "duration 0" in its header, and Firefox and the iPhone ran the slider out
 /// before the video ended — the owner's recording of 2026-10-02 kept doing it after the fix,
-/// because the fix only met new uploads. Like the image backfill it must run in the server (the
-/// bytes are encrypted at rest), and it is idempotent: a file whose header is already followed by
+/// because the fix only met new uploads. Like the image backfill it runs in the server, and it
+/// is idempotent: a file whose header is already followed by
 /// its data is left alone, so after one pass every boot just reads a few header bytes per file.
 /// </summary>
 static async Task RemuxOldRecordingsAsync(WebApplication app, ILogger logger)

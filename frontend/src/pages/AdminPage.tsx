@@ -20,18 +20,15 @@ import { AdminServersPanel } from "@components/admin/AdminServersPanel";
 import { loadSpace, isRootSpace } from "@lib/space";
 import { AdminBugsPanel } from "@components/admin/AdminBugsPanel";
 import { AdminReportsPanel } from "@components/admin/AdminReportsPanel";
-import { AdminMailPanel } from "@components/admin/AdminMailPanel";
-import { MAIL_UNREAD_EVENT } from "@components/admin/mail/MailClient";
 import { Toast } from "@components/Toast";
-import { api } from "@lib/services";
 
 type Section =
-  | "dashboard" | "logs" | "audit" | "users" | "servers" | "roles" | "invites" | "server" | "bugs" | "reports" | "mail";
+  | "dashboard" | "logs" | "audit" | "users" | "servers" | "roles" | "invites" | "server" | "bugs" | "reports";
 
 /** Sections that belong to whoever RUNS the instance: process-wide logs, infrastructure
  *  health, instance settings and the bug queue. The backend refuses them to anyone else too —
  *  this only keeps the console honest. */
-const INSTANCE_ONLY: ReadonlySet<Section> = new Set<Section>(["dashboard", "logs", "bugs", "server", "mail"]);
+const INSTANCE_ONLY: ReadonlySet<Section> = new Set<Section>(["dashboard", "logs", "bugs", "server"]);
 
 interface NavItem { id: Section; icon: IconName; label: () => string }
 interface NavGroup { title: () => string; items: NavItem[] }
@@ -51,7 +48,6 @@ const NAV: NavGroup[] = [
     { id: "invites", icon: "user-plus", label: () => t("admin.invites") },
     { id: "reports", icon: "flag", label: () => t("admin.reports") },
     { id: "bugs", icon: "bug", label: () => t("admin.bugs") },
-    { id: "mail", icon: "mail", label: () => t("admin.mail") },
   ] },
   { title: () => t("admin.grpSettings"), items: [
     { id: "server", icon: "settings", label: () => t("admin.serverSettings") },
@@ -61,7 +57,6 @@ const NAV: NavGroup[] = [
 const TITLES: Record<Section, () => string> = {
   dashboard: () => t("admin.dashboard"),
   logs: () => t("admin.serverLogs"),
-  mail: () => t("admin.mail"),
   audit: () => t("admin.auditLog"),
   users: () => t("admin.users"),
   servers: () => t("admin.servers"),
@@ -82,7 +77,6 @@ const SUBTITLES: Record<Section, () => string> = {
   invites: () => t("admin.invitesSub"),
   reports: () => t("admin.reportsSub"),
   bugs: () => t("admin.bugsSub"),
-  mail: () => t("admin.mailSub"),
   server: () => t("admin.serverSettingsSub"),
 };
 
@@ -106,24 +100,6 @@ export function AdminPage() {
 
   const auth = useStoreState(authStore);
   const [section, setSection] = useState<Section>(sectionFromPath);
-
-  // Unread support mail on the sidebar, like a mail app's badge: asked once a minute, and told
-  // at once by the mail client whenever it changes the count itself.
-  const [mailUnread, setMailUnread] = useState(0);
-  useEffect(() => {
-    if (!isRoot) return;
-    const ask = (): void => {
-      if (document.hidden) return;
-      void api.adminMailFolders()
-        .then((r) => setMailUnread(r.folders.find((f) => f.id === "inbox")?.unread ?? 0))
-        .catch(() => { /* a badge is not worth an error */ });
-    };
-    ask();
-    const timer = window.setInterval(ask, 60_000);
-    const told = (e: Event): void => setMailUnread(Number((e as CustomEvent<number>).detail) || 0);
-    window.addEventListener(MAIL_UNREAD_EVENT, told);
-    return () => { window.clearInterval(timer); window.removeEventListener(MAIL_UNREAD_EVENT, told); };
-  }, [isRoot]);
 
   const go = (s: Section): void => {
     setSection(s);
@@ -155,7 +131,6 @@ export function AdminPage() {
                 >
                   <Icon name={it.icon} size={17} />
                   <span>{it.label()}</span>
-                  {it.id === "mail" && mailUnread > 0 && <span className="admin-nav-count">{mailUnread}</span>}
                 </button>
               ))}
             </div>
@@ -181,7 +156,7 @@ export function AdminPage() {
         </header>
 
         <main className="admin-body">
-          <div className={"admin-section" + (section === "mail" ? " admin-section--full" : "")}>
+          <div className="admin-section">
             {section === "dashboard" && <AdminDashboard />}
             {section === "logs" && <AdminLogsPanel />}
             {section === "audit" && <AdminAuditPanel />}
@@ -191,7 +166,6 @@ export function AdminPage() {
             {section === "invites" && <AdminInvitesPanel />}
             {section === "bugs" && <AdminBugsPanel />}
             {section === "reports" && <AdminReportsPanel />}
-            {section === "mail" && <AdminMailPanel />}
             {section === "server" && <ServerSettingsPanel />}
           </div>
         </main>

@@ -5,7 +5,6 @@ using Outcome.Api.Realtime;
 using Outcome.Shared.Abstractions.Persistence;
 using Outcome.Shared.Abstractions.Realtime;
 using Outcome.Shared.Abstractions.Security;
-using Outcome.Infrastructure.Mail;
 using Outcome.Application.Admin;
 using Outcome.Application.Channels;
 using Outcome.Application.Invites;
@@ -22,6 +21,7 @@ public static class AdminEndpoints
     public sealed record CreateChannelBody(string Name, string Type, string? Category, string? Topic, int? Position);
     public sealed record UpdateChannelBody(string? Name, string? Topic, int? SlowMode, int? Position, bool? Archived);
     public sealed record AdminUserPatchBody(long? RoleId, bool? Banned, string? BanReason);
+    public sealed record AdminSetPasswordBody(string? Password);
     public sealed record GrantPermBody(string Permission);
 
     /// <summary>Instance-admin gate: only the global Administrator bit passes (used for the
@@ -34,61 +34,8 @@ public static class AdminEndpoints
             throw DomainException.Forbidden("administrator only");
     }
 
-    /// <summary>Messages of one folder and what to do with them (flags / move / delete / empty).</summary>
-    public sealed record MailUidsBody(string? Folder, uint[]? Uids, bool? Seen, bool? Flagged, string? To);
-
     /// <summary>An invite the space's administrator makes for a server of their choosing.</summary>
     public sealed record AdminInviteBody(long ServerId, int MaxUses, int ExpiresInHours);
-
-    private static readonly System.Text.Json.JsonSerializerOptions MailJson = new(System.Text.Json.JsonSerializerDefaults.Web)
-    {
-        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.SnakeCaseLower,
-    };
-
-    /// <summary>A message written in the panel, from its multipart form: <c>to</c>, <c>cc</c>
-    /// (comma-separated), <c>subject</c>, <c>text</c>, <c>reply_folder</c> + <c>reply_uid</c>,
-    /// <c>draft_uid</c>, <c>keep</c> (JSON: files of messages already in the mailbox) and the
-    /// new <c>files</c>.</summary>
-    private static async Task<SupportMailOutgoing> ReadOutgoingAsync(HttpContext ctx, CancellationToken ct)
-    {
-        var size = ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
-        if (size is { IsReadOnly: false }) size.MaxRequestBodySize = SupportMailbox.MaxOutgoingFileBytes + 2 * 1024 * 1024;
-        if (!ctx.Request.HasFormContentType) throw DomainException.InvalidInput("expected a form");
-        var form = await ctx.Request.ReadFormAsync(ct);
-
-        static uint? Uid(string? v) => uint.TryParse(v, out var u) ? u : null;
-        static string[] List(string? v) => string.IsNullOrWhiteSpace(v) ? [] : [v];
-
-        var keep = new List<SupportMailAttachmentRef>();
-        if (form["keep"].ToString() is { Length: > 0 } keepJson)
-        {
-            try
-            {
-                keep = System.Text.Json.JsonSerializer.Deserialize<List<SupportMailAttachmentRef>>(keepJson, MailJson) ?? [];
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                throw DomainException.InvalidInput("unreadable list of kept attachments");
-            }
-        }
-
-        var files = new List<SupportMailFile>();
-        long total = 0;
-        foreach (var f in form.Files)
-        {
-            total += f.Length;
-            if (total > SupportMailbox.MaxOutgoingFileBytes)
-                throw DomainException.TooLarge($"attachments may add up to {SupportMailbox.MaxOutgoingFileBytes / 1024 / 1024} MB");
-            using var buffer = new MemoryStream();
-            await f.CopyToAsync(buffer, ct);
-            files.Add(new SupportMailFile(Path.GetFileName(f.FileName), f.ContentType, buffer.ToArray()));
-        }
-
-        return new SupportMailOutgoing(
-            List(form["to"]), List(form["cc"]), form["subject"].ToString(), form["text"].ToString(),
-            form["reply_folder"].ToString() is { Length: > 0 } rf ? rf : null, Uid(form["reply_uid"]),
-            Uid(form["draft_uid"]), keep, files);
-    }
 
     /// <summary>
     /// Gate for operations that belong to whoever RUNS the instance rather than to a customer:
@@ -210,6 +157,39 @@ public static class AdminEndpoints
                 await mediator.Send(new UnbanUserCommand(id, current.UserId, current.Permissions));
             }
 
+            return Results.NoContent();
+        });
+
+        // The administrator sets someone's password — how a forgotten one is recovered without
+        // mail. Every session of theirs ends (whoever was signed in as them is out), a lockout
+        // from wrong guesses is lifted, and it is in the audit log. Not the Owner's (nobody but
+        // the Owner changes it), not one's own (that is the profile, with the current password).
+        group.MapPut("/users/{id:long}/password", async (long id, AdminSetPasswordBody body, ICurrentUser current,
+            Microsoft.AspNetCore.Identity.UserManager<Outcome.Domain.Entities.User> userManager, ISessionRepository sessions,
+            IAuditRepository audit, IConnectionRegistry registry, Outcome.Infrastructure.Tenancy.ICurrentSpace space,
+            Outcome.Api.Realtime.SessionRevocations revocations) =>
+        {
+            RequireAdmin(current);
+            if (id == current.UserId) throw DomainException.BadRequest("change your own password in your profile");
+            var user = await userManager.FindByIdAsync(id.ToString());
+            if (user is null || user.Deleted) throw DomainException.NotFound("user not found");
+            if (user.RoleId == Outcome.Domain.Permissions.DefaultRole.Owner)
+                throw DomainException.Forbidden("only the space owner changes the owner's password");
+            var password = body.Password ?? "";
+            if (Outcome.Application.Common.AuthRules.ValidatePassword(password) is { } err) throw DomainException.BadRequest(err);
+
+            await userManager.RemovePasswordAsync(user);
+            var set = await userManager.AddPasswordAsync(user, password);
+            if (!set.Succeeded) throw DomainException.BadRequest("could not set the password");
+            user.PasswordSet = true;
+            user.AccessFailedCount = 0;
+            user.LockoutEnd = null;
+            await userManager.UpdateAsync(user);
+
+            await sessions.DeleteAllForUserAsync(id);
+            revocations.Revoked(space.Space.Id, id);
+            await registry.CloseUserAsync(id);
+            await audit.AddAsync(current.UserId, "password_set_by_admin", "user", id, "all sessions ended");
             return Results.NoContent();
         });
 
@@ -375,97 +355,6 @@ public static class AdminEndpoints
             await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelDelete(id));
             if (chat is { } c) await registry.BroadcastToServerAsync(srv.ServerId, WsFrames.ChannelDelete(c));
             return Results.NoContent();
-        });
-
-        // ── Support mailbox ──────────────────────────────────────────────────────
-        // The shared inbox — a small mail client: folders, search, flags, moving, deleting,
-        // writing. Instance-only: it is one mailbox belonging to whoever runs the instance, not
-        // a per-tenant feature — a space owner reaching it would be reading somebody else's
-        // support queue. Answers go through System.Text.Json (snake_case) on purpose.
-        group.MapGet("/mail/folders", async (ICurrentUser current, ICurrentSpace space,
-            SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            if (!mail.Configured) return Results.Ok(new { configured = false, address = "", folders = Array.Empty<object>() });
-            return Results.Ok(new { configured = true, address = mail.Address, folders = await mail.FoldersAsync(ct) });
-        });
-
-        group.MapGet("/mail", async (string? folder, int? limit, int? offset, string? q, ICurrentUser current,
-            ICurrentSpace space, SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            if (!mail.Configured) return Results.Ok(new { configured = false, total = 0, messages = Array.Empty<object>() });
-            var page = await mail.ListAsync(folder ?? "inbox", limit ?? 50, offset ?? 0, q, ct);
-            return Results.Ok(new { configured = true, total = page.Total, messages = page.Messages });
-        });
-
-        group.MapGet("/mail/{uid:int}", async (uint uid, string? folder, ICurrentUser current, ICurrentSpace space,
-            SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            return Results.Ok(await mail.GetAsync(folder ?? "inbox", uid, ct));
-        });
-
-        // Always a download, never shown: an attachment is a stranger's file, and an HTML one
-        // rendered on our origin would be a stranger's page with the admin's session.
-        group.MapGet("/mail/{uid:int}/attachments/{index:int}", async (uint uid, int index, string? folder,
-            ICurrentUser current, ICurrentSpace space, SupportMailbox mail, HttpContext ctx, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            var f = await mail.GetAttachmentAsync(folder ?? "inbox", uid, index, ct);
-            ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
-            return Results.File(f.Data, "application/octet-stream", f.FileName);
-        });
-
-        group.MapPost("/mail/flags", async (MailUidsBody body, ICurrentUser current, ICurrentSpace space,
-            SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            await mail.SetFlagsAsync(body.Folder ?? "inbox", body.Uids ?? [], body.Seen, body.Flagged, ct);
-            return Results.NoContent();
-        });
-
-        group.MapPost("/mail/move", async (MailUidsBody body, ICurrentUser current, ICurrentSpace space,
-            SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            if (string.IsNullOrWhiteSpace(body.To)) throw DomainException.InvalidInput("where to?");
-            await mail.MoveAsync(body.Folder ?? "inbox", body.Uids ?? [], body.To, ct);
-            return Results.NoContent();
-        });
-
-        group.MapPost("/mail/delete", async (MailUidsBody body, ICurrentUser current, ICurrentSpace space,
-            SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            await mail.DeleteAsync(body.Folder ?? "inbox", body.Uids ?? [], ct);
-            return Results.NoContent();
-        });
-
-        group.MapPost("/mail/empty", async (MailUidsBody body, ICurrentUser current, ICurrentSpace space,
-            SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            await mail.EmptyAsync(body.Folder ?? "", ct);
-            return Results.NoContent();
-        });
-
-        // Multipart: the files ride with the text. Read by hand rather than bound, so the size
-        // cap is ours and is checked before anything is buffered past it.
-        group.MapPost("/mail/send", async (HttpContext ctx, ICurrentUser current, ICurrentSpace space,
-            SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            await mail.SendAsync(await ReadOutgoingAsync(ctx, ct), ct);
-            return Results.NoContent();
-        });
-
-        group.MapPost("/mail/draft", async (HttpContext ctx, ICurrentUser current, ICurrentSpace space,
-            SupportMailbox mail, CancellationToken ct) =>
-        {
-            RequireInstanceAdmin(current, space);
-            var uid = await mail.SaveDraftAsync(await ReadOutgoingAsync(ctx, ct), ct);
-            return Results.Ok(new { uid });
         });
 
         // ── Diagnostics / Audit / Logs ───────────────────────────────────────────

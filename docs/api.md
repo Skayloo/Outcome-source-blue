@@ -14,8 +14,8 @@ exists so you can read it without a running server.
   `SnakeCaseLower`, so a C# `DisplayName` is `display_name` on the wire — including in request
   bodies, which is the usual reason a field silently arrives null.
 - **Errors** are `{"error": "CODE", "message": "..."}` with a matching HTTP status.
-  `INVALID_INPUT` is 400, `RATE_LIMITED` is 429, and a failed outbound dependency (mail, for
-  instance) is **503** rather than 500 — the request was valid and something downstream was
+  `INVALID_INPUT` is 400, `RATE_LIMITED` is 429, and a failed outbound dependency is **503**
+  rather than 500 — the request was valid and something downstream was
   not, and the two mean different things to whoever reads the response.
 - **Rate limits** are per client IP and global, per endpoint. The client address comes from the
   socket unless the peer is a configured trusted proxy — see [security.md](security.md).
@@ -46,16 +46,6 @@ everything else is absolute.
 | `DELETE` | `/channels/{id}/force` |
 | `GET` | `/health/services` |
 | `POST` | `/logs/ticket` |
-| `GET` | `/mail/folders` |
-| `GET` | `/mail?folder=&limit=&offset=&q=` |
-| `GET` | `/mail/{uid}?folder=` |
-| `GET` | `/mail/{uid}/attachments/{index}?folder=` |
-| `POST` | `/mail/flags` |
-| `POST` | `/mail/move` |
-| `POST` | `/mail/delete` |
-| `POST` | `/mail/empty` |
-| `POST` | `/mail/send` |
-| `POST` | `/mail/draft` |
 | `GET` | `/permissions` |
 | `GET` | `/servers` |
 | `DELETE` | `/servers/{id}` |
@@ -66,6 +56,7 @@ everything else is absolute.
 | `GET` | `/users` |
 | `DELETE` | `/users/{id}` |
 | `PATCH` | `/users/{id}` |
+| `PUT` | `/users/{id}/password` |
 | `POST` | `/users/{id}/ban` |
 | `GET` | `/users/{id}/permissions` |
 | `POST` | `/users/{id}/permissions` |
@@ -73,17 +64,9 @@ everything else is absolute.
 | `DELETE` | `/users/{id}/sessions` |
 | `POST` | `/users/{id}/unban` |
 
-The `/mail*` routes are the support mailbox's client (instance admin, root space only; System.Text.Json,
-snake_case). Folders are `inbox`, `sent`, `drafts`, `junk`, `trash` — the mail server's SPECIAL-USE
-folders. A message's `html` is already sanitised (no scripts, handlers, forms; cid: pictures
-inlined) and still meant for a sandboxed frame; `remote_images` says whether it points at
-anything outside. `flags` takes `{folder, uids, seen?, flagged?}`, `move` `{folder, uids, to}`
-(into/out of `junk` is what teaches the spam filter), `delete` moves to Trash and deletes for
-good from Trash, `empty` takes `trash` or `junk`. `send` and `draft` are multipart: `to`, `cc`,
-`subject`, `text`, `reply_folder` + `reply_uid` (threading, original marked answered),
-`draft_uid` (replaced / removed once sent), `keep` (JSON `[{folder, uid, index}]` — files of
-messages already in the mailbox) and `files`; up to 18 MB of files. Attachments always download
-(`application/octet-stream`, `nosniff`).
+`PUT /users/{id}/password` `{password}` is how a forgotten password is recovered: the
+administrator sets a new one, every session of that user ends, a lockout from wrong guesses is
+lifted, and the audit log records it. Not the Owner's, and not one's own (that is the profile).
 
 ### Auth
 
@@ -94,15 +77,11 @@ messages already in the mailbox) and `files`; up to 18 MB of files. Attachments 
 | `POST` | `/login` |
 | `POST` | `/logout` |
 | `GET` | `/me` |
-| `POST` | `/password/forgot` |
-| `POST` | `/password/reset` |
 | `POST` | `/register` |
-| `POST` | `/register/verify` |
-| `POST` | `/verify-email-otp` |
 | `POST` | `/verify-totp` |
 
-An account that arrives in no server — `/register` (or `/register/verify`) without an invite on
-the instance's address, or a first SSO sign-in — is given a server of its own in the same
+An account that arrives in no server — `/register` without an invite on the instance's
+address — is given a server of its own in the same
 transaction: "`<username>` Server", owned by it, with `#general` and the "General" voice room
 (`DefaultServer`, `RegistrationCompletion`). It counts towards the three servers a user may own.
 An invite, or a server's own domain, puts the newcomer in that server instead and nothing is made.
@@ -129,15 +108,6 @@ anyone else gets 404, as for a message that does not exist.
 | `GET` | `/api/v1/channels/{id}/pins` |
 | `DELETE` | `/api/v1/channels/{id}/pins/{messageId}` |
 | `POST` | `/api/v1/channels/{id}/pins/{messageId}` |
-
-### Contact
-
-| `POST` | `/api/v1/contact` |
-
-Anonymous, root space only: the landing's "Написать нам" form. JSON (`name`, `contact`,
-`company`, `message`, `consent`, `website` — the honeypot) → 204; a plain HTML form post →
-redirect to `/#contact-sent` (or `#contact-failed`, `#contact-later` on 429). Mailed to
-`Contact:To`, nothing stored — see `server-configuration.md`.
 
 ### Device
 
@@ -221,12 +191,6 @@ from. A block also lands in the moderators' report inbox (App Review guideline 1
 notify the developer of the content), with reason "Blocked the author", on that message or, with
 no body, on the newest message of theirs the blocker could see; nothing is filed when there is
 none. Throttled together with reports, and never fails the block.
-
-### OAuth
-
-| `GET` | `/providers` |
-| `GET` | `/{provider}/callback` |
-| `GET` | `/{provider}/start` |
 
 ### Role
 

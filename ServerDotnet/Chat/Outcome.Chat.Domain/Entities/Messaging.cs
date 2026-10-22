@@ -13,7 +13,7 @@ public sealed class Message
     public bool Pinned { get; set; }
     public DateTime Timestamp { get; set; }
     /// <summary>Display name of the ORIGINAL author when this message was forwarded. A label,
-    /// not a reference: the source may be an E2EE DM the server can't see into.</summary>
+    /// not a reference.</summary>
     public string? ForwardedFrom { get; set; }
     /// <summary>A message written by a GUEST in a voice room's chat: the name they typed. The row's
     /// <see cref="UserId"/> is then the space's guest author (IUserRepository.GuestAuthorIdAsync),

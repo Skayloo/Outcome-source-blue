@@ -16,17 +16,11 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(10);
     private readonly IDatabase _db = redis.GetDatabase();
 
-    private sealed record Entry(long UserId, string? Device, string Ip, string? Code, int Failures, string? PendingPasswordHash = null);
+    private sealed record Entry(long UserId, string? Device, string Ip, int Failures);
 
     private string Key(string token) => $"outcome:s{space.Space.Id}:partial:" + token;
 
-    public string Issue(long userId, string? device, string ip) => Store(new Entry(userId, device, ip, null, 0));
-
-    public string IssueWithCode(long userId, string? device, string ip, string code) =>
-        Store(new Entry(userId, device, ip, code, 0));
-
-    public string IssueForReset(long userId, string? device, string ip, string passwordHash) =>
-        Store(new Entry(userId, device, ip, null, 0, passwordHash));
+    public string Issue(long userId, string? device, string ip) => Store(new Entry(userId, device, ip, 0));
 
     private string Store(Entry entry)
     {
@@ -36,7 +30,7 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
     }
 
     public PartialChallenge? Lookup(string partialToken) => Load(partialToken) is { } e
-        ? new PartialChallenge(e.UserId, e.Device, e.Ip, e.Code, e.PendingPasswordHash)
+        ? new PartialChallenge(e.UserId, e.Device, e.Ip)
         : null;
 
     public PartialChallenge? Consume(string partialToken)
@@ -45,7 +39,7 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
         _db.KeyDelete(FailKey(partialToken));
         if (raw.IsNullOrEmpty) return null;
         var e = JsonSerializer.Deserialize<Entry>((string)raw!);
-        return e is null ? null : new PartialChallenge(e.UserId, e.Device, e.Ip, e.Code, e.PendingPasswordHash);
+        return e is null ? null : new PartialChallenge(e.UserId, e.Device, e.Ip);
     }
 
     private string FailKey(string token) => Key(token) + ":f";

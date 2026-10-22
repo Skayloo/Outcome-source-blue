@@ -85,8 +85,8 @@ public interface IMessageRepository
     Task<DateTime?> EditAsync(long id, long userId, string content, CancellationToken ct = default);
     Task<bool> DeleteAsync(long id, long userId, bool isMod, CancellationToken ct = default);
 
-    /// <summary>Physically REMOVE a message (DMs). A tombstone would leave the content —
-    /// including E2EE ciphertext — sitting in the database after both parties erased it.</summary>
+    /// <summary>Physically REMOVE a message (DMs). A tombstone would leave the content sitting
+    /// in the database after both parties erased it.</summary>
     Task<bool> PurgeAsync(long id, CancellationToken ct = default);
 }
 

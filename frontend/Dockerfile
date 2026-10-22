@@ -6,10 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm install --no-audit --no-fund
 COPY . .
-# RED (private, E2EE) or BLUE (public self-hosted, no encryption). vite.config.ts aliases
-# the E2EE modules to plaintext stand-ins for blue, so the crypto never enters the bundle.
-ARG OUTCOME_EDITION=blue
-RUN OUTCOME_EDITION=${OUTCOME_EDITION} npm run build
+RUN npm run build
 
 # ── Serve via nginx (also reverse-proxies the API/WS to the backend) ─────────
 FROM nginx:alpine

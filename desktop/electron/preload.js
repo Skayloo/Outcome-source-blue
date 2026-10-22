@@ -55,29 +55,6 @@ contextBridge.exposeInMainWorld('outcomeDesktop', {
   setBadge: (count) => ipcRenderer.invoke('outcome:set-badge', count),
 
   /**
-   * Hand a URL to the user's browser.
-   *
-   * Used by the SSO flow, which cannot run inside this window: /start sets an anti-CSRF nonce
-   * cookie that the callback insists on seeing again, and the provider's consent page is a
-   * third party we have no business hosting in a shell that carries a preload bridge.
-   */
-  openExternal: (url) => ipcRenderer.invoke('outcome:open-external', url),
-
-  /**
-   * The SSO callback coming home as `outcome://sso?token=…`.
-   *
-   * The browser finishes the round-trip and hands the token back to the app through the URL
-   * scheme — the same path the phone apps use, and the reason /start is asked for `target=app`
-   * here rather than `target=web`. Without this the token lands in the browser's copy of the
-   * web client and the desktop window sits there still logged out.
-   */
-  onSso: (handler) => {
-    const listener = (_e, payload) => handler(payload);
-    ipcRenderer.on('outcome:sso', listener);
-    return () => ipcRenderer.removeListener('outcome:sso', listener);
-  },
-
-  /**
    * Fires when the global PTT key is pressed. A TOGGLE, not a hold — see the note in
    * main.js: globalShortcut has no key-up event, so the shell cannot express hold-to-talk
    * without a native keyboard hook.

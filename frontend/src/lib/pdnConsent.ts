@@ -1,8 +1,7 @@
 /**
  * The personal-data consent text this build displays, by its issue date.
  *
- * DEFINED TWICE, ON PURPOSE, AND CHECKED NOWHERE — like the protocol frames and the backup
- * format. The other half is ServerDotnet/Shared/Outcome.Abstractions/Legal/PdnConsent.cs, and
+ * DEFINED TWICE, ON PURPOSE, AND CHECKED NOWHERE — like the protocol frames. The other half is ServerDotnet/Shared/Outcome.Abstractions/Legal/PdnConsent.cs, and
  * the text itself is frontend/public/pdn.html. All three move in one commit or none.
  *
  * The client sends this with the registration, and the server records what it was sent rather

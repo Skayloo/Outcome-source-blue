@@ -7,8 +7,7 @@ shape of the stack, the decisions that bite, and how we run it ourselves.
 
 The source those images are built from is published too, at
 [Outcome-source-blue](https://github.com/Skayloo/Outcome-source-blue) — so the claims on this
-page can be checked rather than taken on trust: no telemetry, and no encryption anywhere in
-this edition. It is readable, not open source: the licence there grants no right to use,
+page can be checked rather than taken on trust: no telemetry. It is readable, not open source: the licence there grants no right to use,
 modify or redistribute the code, and running Outcome still means pulling the images.
 
 ## The stack
@@ -22,9 +21,8 @@ modify or redistribute the code, and running Outcome still means pulling the ima
 | `redis` | Real-time fan-out between API replicas |
 | `minio` | Uploaded files |
 | `livekit` | The voice/video SFU |
-| `mailserver` | Optional — your own mailboxes plus the app's outbound mail |
 
-Only Caddy publishes ports. Postgres, Redis, MinIO and the API are reachable on the compose
+Only Caddy and LiveKit publish ports. Postgres, Redis, MinIO and the API are reachable on the compose
 network and nowhere else.
 
 ## Before the first start
@@ -48,6 +46,7 @@ call that connects and carries no audio.
 | 80, 443 | Caddy. 80 is also the ACME challenge, so it cannot be closed if you want certificates |
 | 7882/udp | LiveKit media. Open this |
 | 7881/tcp | LiveKit media fallback when UDP is blocked. It works, and it is worse |
+| 5349/tcp | TURN over TLS (`TURN_TLS_PORT`), for networks that block both of the above. Needs DNS for `turn.<domain>` |
 
 Everything else stays inside.
 
@@ -84,24 +83,22 @@ docker compose exec postgres pg_dump -U outcome -Fc outcome > outcome-$(date +%F
 ```
 
 That plus the MinIO volume is the whole state. Back up `.env` as well — losing `JWT_KEY` signs
-everyone out, and an older install's `MINIO_ENC_KEY` is the only thing that can read the files
-written while it was set.
+everyone out.
 
 ## Upgrading
 
 Bump `OUTCOME_TAG` in `.env`, then `docker compose pull && docker compose up -d`. Migrations
 run at startup, against Postgres directly.
 
-**From 1.29 or earlier with `MINIO_ENC_KEY` set:** those versions encrypted uploads at rest and
-1.30.0 contains no decryption at all. Convert the bucket *first* with
-`skayloo/outcome-decrypt-bucket` — see the deployment kit's README, or
-[encryption.md](encryption.md) for why the tool is a separate image.
 
-## How we run it
+## Already running a web server on 80/443?
 
-Production is a single machine at home; the VPS builds images and carries mail. Images move
-between them with `docker save | ssh | docker load` rather than through a registry, because the
-private edition must not exist in one — `deploy/ship-red.sh`.
+Switch the kit's Caddy off and point your own proxy at the web app — the deployment kit's README
+shows the override file for both cases (a proxy on the host, a proxy in Docker) and the
+settings the proxy needs: WebSocket upgrades, 110 MB bodies, `X-Forwarded-For`.
 
-The home ISP filters outbound ACME, hence the tinyproxy arrangement above. It is load-bearing:
-if it stops, certificates stop renewing about two months later.
+## Forgotten passwords
+
+The server sends no e-mail. An administrator sets a new password in the admin console → Users →
+the person's menu → Set password; every session of that person ends, and the password is theirs
+to change afterwards in their profile.

@@ -15,12 +15,12 @@ cp .env.example .env      # then edit it — the file says which values must cha
 docker compose up -d
 ```
 
-The first account you create becomes the **owner**. After that, registration is by invite:
-admin console → Invites.
+The first account you create becomes the **owner**. Registration is open after that; make it
+invite-only, or close it, in the admin console → Server settings, and hand out codes from
+Invites.
 
-Mail is optional. With `EMAIL_HOST` unset the server prints confirmation codes to its own log
-(`docker compose logs server`), which is enough to get going and not enough to hand to real
-users.
+There is no mail. An account is made without a confirmation code, and a forgotten password is
+set by an administrator: admin console → Users → the person's menu → Set password.
 
 > Microphone, camera and screen share need a **secure context** — `http://localhost` or real
 > HTTPS. Over `http://<lan-ip>` the browser refuses `getUserMedia`, and the call connects to
@@ -57,7 +57,6 @@ characters; the SDK rejects shorter ones outright.
 | --- | --- |
 | `ServerDotnet/` | The API: REST, the WebSocket, voice signalling. One process, horizontally scalable |
 | `frontend/` | The web client — React + Vite, served by nginx in production |
-| `mobile/` | The iOS app — Flutter |
 | PostgreSQL | Everything durable. PgBouncer in front of it in production |
 | Redis | Real-time fan-out between API replicas |
 | MinIO | Uploaded files |
@@ -67,5 +66,4 @@ characters; the SDK rejects shorter ones outright.
 
 - [deployment.md](deployment.md) — running it for real, behind TLS
 - [server-configuration.md](server-configuration.md) — every setting the server reads
-- [encryption.md](encryption.md) — what each edition does and does not protect
 - [api.md](api.md) / [protocol.md](protocol.md) — the REST surface and the WebSocket messages

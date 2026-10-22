@@ -8,22 +8,7 @@ using Outcome.Infrastructure.Configuration;
 namespace Outcome.Infrastructure.Storage;
 
 /// <summary>
-/// BLUE edition object storage. Bytes in, the same bytes out.
-///
-/// This file is the whole of it: no AES, no key, no framing, no version byte, and nothing to
-/// configure. That is the point — an edition that "has encryption switched off" is one flag
-/// away from having it on, and a stub that mirrors the encrypting API is a slot somebody else
-/// can drop their own cipher into. There is no slot here. `System.Security.Cryptography` is
-/// not even imported.
-///
-/// Excluded from the RED build by Outcome.Core.csproj; deploy/export-blue.sh deletes the
-/// encrypting MinioFileStorage.cs and renames this file over it, so the exported tree has
-/// exactly one implementation and it is this one.
-///
-/// UPGRADING FROM AN INSTALL THAT STORED FILES ENCRYPTED: decrypt the bucket BEFORE
-/// moving to this build — ServerDotnet/tools/DecryptBucket does it in place. Nothing here can
-/// read an encrypted object, and it will not pretend to: those files would download as the
-/// ciphertext they are.
+/// Object storage for uploads, on MinIO (or any S3). Bytes in, the same bytes out.
 /// </summary>
 public sealed class MinioFileStorage : IFileStorage
 {

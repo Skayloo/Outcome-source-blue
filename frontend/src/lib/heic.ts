@@ -1,9 +1,8 @@
 // HEIC/HEIF — an iPhone's photos — outside Safari.
 //
 // Chromium, and with it the desktop app, cannot decode HEIC at all. The server turns an uploaded
-// photo into JPEG (1.31.67), but three kinds of HEIC never pass through that: a DM's sealed files
-// (the server holds only ciphertext), photos stored before 1.31.67, and a desktop user picking a
-// .heic to send into a sealed DM. Those are decoded here, with libheif compiled to wasm.
+// photo into JPEG (1.31.67), but photos stored before that, and ones sent "as a file", never
+// passed through it. Those are decoded here, with libheif compiled to wasm.
 //
 // The decoder is ~3 MB, so it is a separate chunk fetched the first time a HEIC actually has to
 // be drawn — nobody who never sees one downloads it. `heic-to/csp` rather than the default build:

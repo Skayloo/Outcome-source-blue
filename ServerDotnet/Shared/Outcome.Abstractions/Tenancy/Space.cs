@@ -3,13 +3,13 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Outcome.Infrastructure.Tenancy;
 
 /// <summary>
-/// A SPACE is a tenant: its own database, its own users, its own servers, its own SSO. It is
+/// A SPACE is a tenant: its own database, its own users, its own servers. It is
 /// NOT the same thing as a <c>server</c> — a server is what a user creates INSIDE a space
 /// (channels, members, roles). Two spaces share the Postgres instance and nothing else, so
 /// "can a CoreOTC user DM someone on outcome.ru" is not a question of query hygiene: there
 /// is no row to find.
 /// </summary>
-/// <param name="Domain">Always null in this edition: it serves one space, the root one.</param>
+/// <param name="Domain">Always null: this server has one space, the root one.</param>
 public sealed record Space(long Id, string Slug, string Name, string? Domain, string DbName, bool Active)
 {
     public bool IsRoot => Id == RootId;

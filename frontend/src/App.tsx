@@ -1,18 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { authStore } from "@stores/auth.store";
-import { SetPasswordGate } from "@components/SetPasswordGate";
 import { useStoreState } from "@lib/useStore";
 import { restoreSession, hasStoredSession, clearStoredSession } from "@lib/session";
-import { consumeSsoRedirect, wireDesktopSso } from "@lib/sso";
-import { setTransientError } from "@stores/ui.store";
 import { api, ws } from "@lib/services";
-import { useT, t } from "@lib/i18n";
+import { useT } from "@lib/i18n";
 import { BootSplash } from "@components/BootSplash";
 import { ConnectPage } from "@pages/ConnectPage";
 import { MainPage } from "@pages/MainPage";
 import { AdminPage, AdminDenied } from "@pages/AdminPage";
 import { GuestVoicePage } from "@pages/GuestVoicePage";
-import { PrivacyPage } from "@pages/PrivacyPage";
 import { isSpaceAdmin } from "@lib/access";
 
 /** Stop waiting on a silent server and let the user sign in by hand. */
@@ -30,14 +26,6 @@ export function App() {
   useEffect(() => {
     if (booted.current) return;
     booted.current = true;
-    // A token handed back by the SSO callback (#sso=…) outranks any stored session:
-    // the user just deliberately signed in as somebody.
-    const ssoError = consumeSsoRedirect();
-    if (ssoError !== null) setTransientError(t("auth.ssoFailed"));
-    // The same token, arriving the other way. In the desktop shell the round-trip happens in
-    // the user's browser and comes back over the outcome:// scheme, so there is no fragment to
-    // read — the shell hands it over instead. No-op in a browser.
-    wireDesktopSso(() => setTransientError(t("auth.ssoFailed")));
     if (!authStore.getState().isAuthenticated) restoreSession();
   }, []);
 
@@ -61,10 +49,6 @@ export function App() {
   const guestMatch = window.location.pathname.match(/^\/guest\/([A-Za-z0-9]+)/);
   if (guestMatch) return <GuestVoicePage code={guestMatch[1]!} />;
 
-  // Public and above the auth gate on purpose: the people who most need to read this are the
-  // ones deciding whether to sign up, plus an App Review reviewer with no account at all.
-  if (window.location.pathname.replace(/\/$/, "") === "/privacy") return <PrivacyPage />;
-
   if (!auth.isAuthenticated) {
     // Re-authenticating a stored session — show the brand, not a sign-in form the user never
     // asked for. Give way the moment the server rejects the token, or if it stays silent long
@@ -85,8 +69,5 @@ export function App() {
     return isSpaceAdmin(auth.user) ? <AdminPage /> : <AdminDenied />;
   }
 
-  // Every authenticated route goes through here: an account created by a provider sign-in
-  // has no password, and a password is what the iOS app needs to let them in and what the
-  // key backup is wrapped with. No password, no app.
-  return <SetPasswordGate><MainPage /></SetPasswordGate>;
+  return <MainPage />;
 }

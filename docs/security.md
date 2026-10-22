@@ -2,26 +2,24 @@
 
 ## Reporting a vulnerability
 
-Mail **admin@outcome.ru**. Please do not open a public issue for a security bug — the
-repository that carries the server source is private, but the deployment kit and the blue
-source are not, and an issue there is a disclosure.
+Mail **admin@outcome.ru**. Please do not open a public issue for a security bug — an issue
+in a public repository is a disclosure.
 
-What helps: what you did, what happened, and which edition and version (`/health` reports
-both). A proof of concept is welcome and not required.
+What helps: what you did, what happened, and which version (`/health` reports it). A proof of concept is welcome and not required.
 
 Rough commitments: acknowledged within 48 hours, a fix for anything critical inside a week,
 everything else in the next release.
 
 ## What the product actually protects
 
-This build encrypts nothing end to end and nothing at rest. Messages, calls and uploads are
-readable by the server, which is yours — that is the whole trade a self-hosted install makes,
-and it is worth being plain about rather than implying otherwise. Everything below is about
-the protections that DO apply: transport, authentication, authorisation and rate limiting.
+Messages, calls and uploads are readable by the server, which is yours — that is the whole
+trade a self-hosted install makes. What protects them is transport security (TLS to the
+browser, DTLS-SRTP for media), authentication, authorisation and rate limiting.
 
 ## Authentication
 
-- Passwords are stored as Argon2 hashes. There is no path that recovers one.
+- Passwords are stored as Argon2 hashes. There is no path that recovers one: an administrator
+  sets a new one instead, which ends every session of that account.
 - Sessions are JWTs signed with `JwtAuth:JwtKey`. Rotating that key signs everyone out, which
   is the intended way to end a compromise.
 - TOTP two-factor is available per account and can be required server-wide. Login answers
@@ -39,17 +37,17 @@ proxy's CIDR explicitly. Listing `0.0.0.0/0` is the same as having no rate limit
 
 ## Admin surface
 
-The admin console is restricted to `Server:AdminAllowedCidrs`, which defaults to loopback and
-the RFC1918 ranges. Reaching it from the internet requires deliberately widening that.
+The admin console is reachable wherever the site is; what guards it is the account, not the
+network — only the instance's administrators get past the server's checks. To keep `/admin`
+off the internet as well, restrict it at your reverse proxy.
 
 ## Uploads
 
-Size is capped server-side (`Upload:MaxSizeMb`, default 100 MB) and again at the edge, so an
+Size is capped server-side (100 MB) and again at the edge, so an
 oversized body is rejected before it reaches the API. Files are served only to people with
 access to the conversation they were posted in.
 
 ## Known limitations
 
 - Binaries and images are not signed. Verify Docker image digests if that matters to you.
-- The blue edition stores message text and uploads in readable form. That is not a bug; it is
-  what that edition is, and it is stated wherever it could be misread.
+- Message text and uploads are stored in readable form, on your disks.

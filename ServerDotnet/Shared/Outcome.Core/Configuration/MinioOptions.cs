@@ -9,8 +9,4 @@ public sealed class MinioOptions
     public string SecretKey { get; set; } = "minioadmin";
     public string Bucket { get; set; } = "outcome-uploads";
     public bool UseSsl { get; set; } = false;
-
-    /// <summary>Base64 of a 32-byte key that encrypts uploaded objects at rest (AES-256-GCM,
-    /// application-side, so it works without a MinIO KMS/KES). Empty ⇒ objects stored in the
-    /// clear (legacy). REGENERATE PER DEPLOYMENT: <c>openssl rand -base64 32</c>.</summary>
 }

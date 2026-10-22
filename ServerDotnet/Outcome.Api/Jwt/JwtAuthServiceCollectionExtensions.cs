@@ -57,7 +57,7 @@ public static class JwtAuthServiceCollectionExtensions
     /// <summary>
     /// Refuse to start on a signing key that is not this deployment's own.
     ///
-    /// This key signs session tokens, the expiring file URLs and the OAuth state. It sat as a
+    /// This key signs session tokens, and the expiring file URLs. It sat as a
     /// literal in the repository's docker-compose.yml — the file the README's quick start tells
     /// people to run — so every install that followed the documented path shared one published
     /// key. Shipping a placeholder that silently works is how that happens; refusing to boot is

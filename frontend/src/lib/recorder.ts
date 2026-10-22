@@ -1,9 +1,8 @@
 /**
  * Recording a call on THIS computer (W3GWG-25 stage 4).
  *
- * Red is end-to-end encrypted, so the server never holds the media and cannot record anything;
- * the recording is made here, from what this client already decrypts and plays. What the server
- * does govern is the announcement: a recording starts only after it has checked RecordCalls and
+ * The server never holds the media (it passes through the media server), so the recording is
+ * made here, from what this client plays. What the server does govern is the announcement: a recording starts only after it has checked RecordCalls and
  * put "rec" on our LiveKit sessions (voice_record → voice_record_ok), which every participant —
  * guests included — sees as "● recording — <name>" until we stop or leave.
  *
@@ -152,7 +151,7 @@ async function openSinks(mode: RecordMode, audio: { mime: string; ext: string },
 // ── what is recorded ─────────────────────────────────────────────────────────────────────
 
 /** Every voice in the room into one stream: our microphone plus each remote audio track, joined
- *  as people arrive. Decrypted already — this is what the speakers play. */
+ *  as people arrive — what the speakers play. */
 function mixAudio(room: Room): { stream: MediaStream; stop: () => void } {
   const ctx = new AudioContext();
   void ctx.resume();
@@ -415,8 +414,7 @@ export async function stopRecording(): Promise<void> {
 
 /**
  * The recording into the voice room's chat — the owner's rule: after the call it is there for
- * everyone to watch or download. A DM call has no attached chat (and its own is end-to-end
- * encrypted, which a server-readable recording has no place in), so it stays on this computer.
+ * everyone to watch or download. A DM call has no attached chat, so it stays on this computer.
  */
 async function postToChat(voiceChannelId: number, files: { blob: Blob; name: string; mime: string }[], ms: number): Promise<void> {
   const room = channelsStore.getState().channels.get(voiceChannelId);

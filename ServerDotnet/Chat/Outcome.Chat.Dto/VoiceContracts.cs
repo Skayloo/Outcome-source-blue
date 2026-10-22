@@ -3,8 +3,7 @@ namespace Outcome.Application.Voice;
 public enum VoiceFlag { Muted, Deafened, Speaking, Camera, Screenshare }
 
 /// <summary>Live voice state for a user, with username for the wire payload.
-/// <see cref="JoinedAt"/> never goes on the wire; the voice key exchange reads it to tell a
-/// newcomer from someone who has sat in the call long enough to hold its key.</summary>
+/// <see cref="JoinedAt"/> never goes on the wire.</summary>
 public sealed record VoiceStateDto(
     long ChannelId, long UserId, string Username,
     bool Muted, bool Deafened, bool Speaking, bool Camera, bool Screenshare,

@@ -9,7 +9,7 @@
 
 It runs entirely in the **browser** — nothing to install for your users. One `docker compose up` and you have your own chat network.
 
-> This repository is **private**: the source is proprietary (see [LICENSE](LICENSE)). Outcome ships to the world as prebuilt Docker images (`skayloo/outcome-server`, `skayloo/outcome-frontend`) — free to self-host via the public deployment kit at [github.com/Skayloo/Outcome](https://github.com/Skayloo/Outcome). Release flow: `./deploy/release.sh <version>` on an amd64 host after `docker login`.
+> This is the source the self-hosted images are built from. It is readable, not open source (see [LICENSE](LICENSE)). Outcome ships as prebuilt Docker images (`skayloo/outcome-server`, `skayloo/outcome-frontend`) — free to self-host with the deployment kit at [github.com/Skayloo/Outcome](https://github.com/Skayloo/Outcome).
 
 <p align="center">
   <img src="docs/images/app.png" alt="Outcome — main chat" width="900">
@@ -45,7 +45,6 @@ It runs entirely in the **browser** — nothing to install for your users. One `
 - **User search** by username or email
 - **Friends** — send / accept / decline requests, with live notifications
 - One-on-one **direct messages** with any user
-- **End-to-end encrypted DMs** (NaCl box, Curve25519) — the server stores only ciphertext; an encrypted key backup (unlocked by your password or a backup passphrase) restores history on a new device
 - **Phone-style 1-on-1 calls** — ring the other person, they get an incoming-call screen with a ringtone (accept / decline), then both drop into a private LiveKit voice room; calls to someone offline are parked and delivered the moment they open the app
 - Either DM participant can delete any message in the conversation — deletion physically erases the content (Telegram-style)
 
@@ -72,19 +71,18 @@ It runs entirely in the **browser** — nothing to install for your users. One `
 
 ### Users & Permissions
 - Open **or invite-only** registration — a runtime admin switch; invite codes optionally drop the new account straight into a server
-- **SSO sign-in with Google and Yandex** — optional per provider: supply OAuth keys and the button appears, leave them empty and it doesn't
 - **Avatars** — upload and change your profile picture
 - Claim-based **role permissions** with custom roles and per-channel overrides
 - User status (online / idle / dnd / offline)
 - Self-service **account deletion** (soft-delete: your messages are kept as *"Deleted message"* placeholders so replies still make sense)
-- Two-factor authentication — TOTP authenticator apps **and** email one-time codes
+- Two-factor authentication with TOTP authenticator apps
+- No e-mail anywhere: an account is made without a confirmation code, and a forgotten password is set by an administrator (admin console → Users)
 
 ### Security & Abuse Protection
 - Argon2id password hashing (OWASP parameters, transparent rehash on login)
 - Per-IP **and** instance-wide rate limits on register/login — a lone abuser hits the first, a botnet hits the second
 - Concurrent WebSocket connections capped per IP
-- Real client IPs behind reverse proxies via a **trusted-proxy allowlist** (`OUTCOME_TrustedProxies`) — rate limits, bans, and the audit log see the actual visitor, and the header can't be forged from outside
-- OAuth flows carry HMAC-signed anti-CSRF state, so callbacks survive load-balancing across replicas
+- Real client IPs behind reverse proxies via a **trusted-proxy allowlist** (`OUTCOME_Server__TrustedProxies__0`, `__1`, …) — rate limits, bans, and the audit log see the actual visitor, and the header can't be forged from outside
 
 ### Administration
 - Web admin console with:
@@ -194,7 +192,6 @@ Run backend commands from `ServerDotnet/`, frontend commands from `frontend/`.
 # Backend (.NET 10)
 cd ServerDotnet
 dotnet build
-dotnet test
 
 # Frontend (Node 20)
 cd frontend
@@ -202,7 +199,6 @@ npm install
 npm run dev          # Vite dev server
 npm run build        # production build (tsc + vite)
 npm run typecheck
-npm run lint
 ```
 
 Or just rebuild a single service in Docker while iterating:

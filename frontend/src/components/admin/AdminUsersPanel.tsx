@@ -26,6 +26,9 @@ export function AdminUsersPanel() {
   const [roles, setRoles] = useState<RoleResponse[]>([]);
   const [allPerms, setAllPerms] = useState<string[]>([]);
   const [permsFor, setPermsFor] = useState<number | null>(null);   // user id whose perms are expanded
+  const [pwFor, setPwFor] = useState<number | null>(null);         // user id whose new password is being typed
+  const [newPw, setNewPw] = useState("");
+  const [pwDone, setPwDone] = useState<string | null>(null);
   const [userPerms, setUserPerms] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +94,31 @@ export function AdminUsersPanel() {
     runAction(() => api.adminHardDeleteUser(u.id));
   };
 
+  const openPassword = (id: number): void => {
+    setPermsFor(null);
+    setPwDone(null);
+    setNewPw("");
+    setPwFor((cur) => (cur === id ? null : id));
+  };
+
+  // Twelve characters from an alphabet without look-alikes (0/O, 1/l/I): read out over a phone.
+  const generatePassword = (): void => {
+    const abc = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    setNewPw(Array.from(bytes, (b) => abc[b % abc.length]).join(""));
+  };
+
+  const savePassword = (u: AdminUserResponse): void => {
+    setBusy(true);
+    setError(null);
+    void api.adminSetUserPassword(u.id, newPw)
+      .then(() => { setPwDone(t("admin.setPasswordDone", { name: u.username })); setPwFor(null); setNewPw(""); })
+      .catch((e: unknown) => setError(errMsg(e, t("admin.actionFailed"))))
+      .finally(() => setBusy(false));
+  };
+
   const togglePerms = (id: number): void => {
+    setPwFor(null);
     if (permsFor === id) { setPermsFor(null); return; }
     setPermsFor(id);
     setUserPerms([]);
@@ -128,6 +155,7 @@ export function AdminUsersPanel() {
       {/* Two role systems exist and this console edits only one of them; saying so costs a
           line and saves the hour spent wondering why an "admin" cannot moderate a server. */}
       <p className="admin-note">{t("admin.roleSpaceHint")}</p>
+      {pwDone && <p className="admin-note admin-note--ok">{pwDone}</p>}
 
       {error && <Banner kind="error">{error}</Banner>}
 
@@ -194,12 +222,30 @@ export function AdminUsersPanel() {
                         u.banned
                           ? { label: t("admin.unban"), icon: "undo-2", disabled: busy, onClick: () => runAction(() => api.adminUnbanMember(u.id)) }
                           : { label: t("admin.ban"), icon: "ban", disabled: busy, onClick: () => runAction(() => api.adminBanMember(u.id, "")) },
+                        { label: t("admin.setPassword"), icon: "key", disabled: busy, onClick: () => openPassword(u.id) },
                         { label: t("admin.kick"), icon: "log-out", disabled: busy, onClick: () => runAction(() => api.adminKickMember(u.id), false) },
                         { label: t("admin.deleteUser"), icon: "user-x", danger: true, disabled: busy, onClick: () => void deleteUser(u) },
                       ]} />}
                     </div>
                   </td>
                 </tr>
+                {pwFor === u.id && (
+                  <tr className="adm-subrow">
+                    <td colSpan={4}>
+                      <form className="adm-subpanel adm-setpw" onSubmit={(e) => { e.preventDefault(); savePassword(u); }}>
+                        <div className="adm-subpanel-title">{t("admin.setPasswordTitle", { name: u.username })}</div>
+                        <p className="adm-cell-sub">{t("admin.setPasswordHint")}</p>
+                        <div className="adm-inline-form">
+                          <input className="form-input mono" type="text" value={newPw} disabled={busy} autoFocus autoComplete="new-password"
+                                 spellCheck={false} aria-label={t("admin.setPasswordTitle", { name: u.username })} onChange={(e) => setNewPw(e.target.value)} />
+                          <Btn kind="ghost" disabled={busy} onClick={generatePassword}>{t("admin.setPasswordGenerate")}</Btn>
+                          <Btn type="submit" kind="primary" disabled={busy || newPw.length < 8}>{t("admin.setPasswordSave")}</Btn>
+                          <Btn kind="ghost" disabled={busy} onClick={() => setPwFor(null)}>{t("admin.cancel")}</Btn>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
+                )}
                 {expanded && (
                   <tr className="adm-subrow">
                     <td colSpan={4}>

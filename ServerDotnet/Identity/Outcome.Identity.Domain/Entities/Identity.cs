@@ -14,11 +14,8 @@ public sealed class User : IdentityUser<long>
     public long RoleId { get; set; } = 4;
     public string? TotpSecret { get; set; }
 
-    /// <summary>Did the USER choose their password? False for accounts created via SSO, which
-    /// get an unguessable random one they never learn. It decides whether the E2EE key backup
-    /// can be wrapped with the password (it can, for everyone who knows theirs) or needs a
-    /// separate backup passphrase (SSO-only accounts — otherwise there is no secret to wrap it
-    /// with). Setting a password later flips it to true.</summary>
+    /// <summary>Did the USER choose their password? False for an account whose password is an
+    /// unguessable random one nobody knows. Setting a password flips it to true.</summary>
     public bool PasswordSet { get; set; } = true;
     /// <summary>Show the message itself on the lock screen, or just who sent it. On by default,
     /// because a notification you cannot read is barely a notification. Lives on the account

@@ -20,11 +20,7 @@ public static class AuthEndpoints
     public sealed record RegisterBody(string Email, string Username, string Password, string InviteCode, string? ConsentVersion = null);
     public sealed record LoginBody(string Email, string Password);
     public sealed record VerifyTotpBody(string Code);
-    public sealed record VerifyRegistrationBody(string Code);
-    public sealed record VerifyEmailOtpBody(string Code);
     public sealed record PasswordBody(string Password);
-    public sealed record ForgotPasswordBody(string Email);
-    public sealed record ResetPasswordBody(string Email, string Code, string NewPassword);
     public sealed record ConfirmTotpBody(string Password, string Code);
 
     /// <summary>The space that owns the domain this request came in on, if any.</summary>
@@ -49,17 +45,6 @@ public static class AuthEndpoints
         }).AddEndpointFilter(RateLimit("register", 3, TimeSpan.FromMinutes(1)))
           .AddEndpointFilter(GlobalRateLimit("register", 600, TimeSpan.FromMinutes(1)));
 
-        // POST /api/v1/auth/register/verify — completes an email-verified registration:
-        // pending-registration token in Authorization, { code } in body (mirrors verify-email-otp).
-        group.MapPost("/register/verify", async (VerifyRegistrationBody body, HttpContext ctx, ISender mediator, IServerRepository servers) =>
-        {
-            var partial = ExtractBearer(ctx.Request.Headers.Authorization.ToString())
-                          ?? throw DomainException.Unauthorized("missing or invalid authorization header");
-            return await mediator.Send(new VerifyRegistrationCommand(
-                partial, body.Code, ctx.Request.Headers.UserAgent.ToString(), ClientIp(ctx),
-                await HostSpaceIdAsync(ctx, servers)));
-        }).AddEndpointFilter(RateLimit("register_verify", 10, TimeSpan.FromMinutes(1)));
-
         group.MapPost("/login", async (LoginBody body, HttpContext ctx, ISender mediator) =>
             await mediator.Send(new LoginCommand(
                 body.Email, body.Password,
@@ -79,46 +64,13 @@ public static class AuthEndpoints
         group.MapGet("/me", async (ISender mediator) => await mediator.Send(new GetMeQuery()));
 
         // POST /api/v1/auth/verify-totp — partial token in Authorization header, { code } in body.
-        group.MapPost("/verify-totp", async (VerifyTotpBody body, HttpContext ctx, ISender mediator,
-            Outcome.Infrastructure.Tenancy.ICurrentSpace space, SessionRevocations revocations) =>
+        group.MapPost("/verify-totp", async (VerifyTotpBody body, HttpContext ctx, ISender mediator) =>
         {
             var partial = ExtractBearer(ctx.Request.Headers.Authorization.ToString())
                           ?? throw DomainException.Unauthorized("missing or invalid authorization header");
             var result = await mediator.Send(new VerifyTotpCommand(partial, body.Code));
-            // The second step of a reset ends the other sessions (VerifyTotpHandler): their sockets
-            // re-check now rather than at the next minute's sweep. For a plain sign-in nothing is gone.
-            if (result.User is { } u) revocations.Revoked(space.Space.Id, u.Id);
             return result;
         }).AddEndpointFilter(RateLimit("verify_totp", 10, TimeSpan.FromMinutes(1)));
-
-        // POST /api/v1/auth/verify-email-otp — partial token in Authorization header, { code } in body.
-        // POST /api/v1/auth/password/forgot — always 200, never reveals whether the email exists.
-        // The handler enforces its own per-address send budget; the filters below cap abuse volume.
-        group.MapPost("/password/forgot", async (ForgotPasswordBody body, ISender mediator) =>
-        {
-            await mediator.Send(new ForgotPasswordCommand(body.Email));
-            return Results.NoContent();
-        }).AddEndpointFilter(RateLimit("password_forgot", 5, TimeSpan.FromMinutes(1)))
-          .AddEndpointFilter(GlobalRateLimit("password_forgot", 300, TimeSpan.FromMinutes(1)));
-
-        // POST /api/v1/auth/password/reset — code + new password → sets it and logs the user in.
-        group.MapPost("/password/reset", async (ResetPasswordBody body, HttpContext ctx, ISender mediator, IUserRepository users,
-            Outcome.Infrastructure.Tenancy.ICurrentSpace space, SessionRevocations revocations) =>
-        {
-            var result = await mediator.Send(new ResetPasswordCommand(
-                body.Email, body.Code, body.NewPassword,
-                ctx.Request.Headers.UserAgent.ToString(), ClientIp(ctx)));
-            // A reset ends every session — including whoever's live sockets made the owner reset.
-            if (await users.GetByEmailAsync(body.Email.Trim()) is { } user) revocations.Revoked(space.Space.Id, user.Id);
-            return result;
-        }).AddEndpointFilter(RateLimit("password_reset", 10, TimeSpan.FromMinutes(1)));
-
-        group.MapPost("/verify-email-otp", async (VerifyEmailOtpBody body, HttpContext ctx, ISender mediator) =>
-        {
-            var partial = ExtractBearer(ctx.Request.Headers.Authorization.ToString())
-                          ?? throw DomainException.Unauthorized("missing or invalid authorization header");
-            return await mediator.Send(new VerifyEmailOtpCommand(partial, body.Code));
-        }).AddEndpointFilter(RateLimit("verify_email_otp", 10, TimeSpan.FromMinutes(1)));
 
         // DELETE /api/v1/auth/account — password-confirmed self-deletion (soft delete).
         group.MapDelete("/account", async ([Microsoft.AspNetCore.Mvc.FromBody] PasswordBody body, ICurrentUser current, IConnectionRegistry registry, VoiceEviction voice, ISender mediator) =>

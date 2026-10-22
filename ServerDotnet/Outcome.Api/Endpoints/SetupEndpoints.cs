@@ -25,7 +25,7 @@ public static class SetupEndpoints
         app.MapPost("/api/v1/setup", async (SetupBody body, HttpContext ctx, ISender mediator, IRateLimiter limiter,
             Outcome.Infrastructure.Tenancy.ICurrentSpace here) =>
         {
-            // The ROOT space only — the one this edition serves.
+            // The ROOT space only — the one this server has.
             if (!here.Space.IsRoot)
                 throw Outcome.Domain.Errors.DomainException.Forbidden("this space is set up by the instance administrator");
             if (!limiter.Allow("setup", 5, TimeSpan.FromMinutes(1)))

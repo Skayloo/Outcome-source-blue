@@ -12,8 +12,6 @@ export interface DesktopBridge {
   setPushToTalk(accelerator: string): Promise<boolean>;
   setBadge(count: number): Promise<boolean>;
   onPushToTalk(handler: () => void): () => void;
-  openExternal(url: string): Promise<boolean>;
-  onSso(handler: (payload: { token: string; error: string }) => void): () => void;
 }
 
 declare global {

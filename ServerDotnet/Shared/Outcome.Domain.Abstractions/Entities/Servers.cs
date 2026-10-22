@@ -14,7 +14,7 @@ public sealed class Server
     /// <summary>Short blurb shown in the Explore directory.</summary>
     public string Description { get; set; } = "";
     /// <summary>Optional custom domain (e.g. <c>chat.community.com</c>) that lands on this space.
-    /// Unique, lowercase, host-only. Null ⇒ no custom domain (paid feature). Auto-maps to
+    /// Unique, lowercase, host-only. Null ⇒ no custom domain. Auto-maps to
     /// column <c>custom_domain</c>.</summary>
     public string? CustomDomain { get; set; }
 }

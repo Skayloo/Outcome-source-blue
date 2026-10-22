@@ -105,8 +105,7 @@ public sealed class ApnsPushSender : IPushSender, IDisposable
 
         if (message.ImageUrl is { Length: > 0 } image)
         {
-            // Same flag as the encrypted case, for a different reason: only the extension can
-            // fetch the picture and hang it on the banner. Without it iOS shows the text alone.
+            // Only the notification extension can fetch the picture and hang it on the banner. Without it iOS shows the text alone.
             aps["mutable-content"] = 1;
             payload["image_url"] = image;
         }

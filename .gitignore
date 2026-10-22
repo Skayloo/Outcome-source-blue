@@ -66,9 +66,6 @@ Thumbs.db
 # Claude Code personal settings
 .claude/settings.local.json
 
-# Mail server state (account hashes + DKIM private keys) lives on the server only
-deploy/compose/mail-config/
-
 # Apple signing/push keys — secrets, never in the repo (kept in ~/.outcome/)
 *.p8
 *.p12

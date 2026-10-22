@@ -43,7 +43,7 @@ export function releaseQuoteLookup(messageId: number): void {
   });
 }
 
-/** Takes the REST shape, already decrypted by the caller if it is a DM. */
+/** Takes the REST shape. */
 export function setQuoteFound(r: MessageResponse): void {
   const m = messageResponseToMessage(r);
   quotesStore.setState((s) => ({ ...s, found: new Map(s.found).set(m.id, m) }));

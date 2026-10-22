@@ -9,7 +9,7 @@ namespace Outcome.Infrastructure.Storage;
 /// are deleted when the upload completes — and an upload that never completes left its parts in
 /// the bucket for good: gigabytes per account, in the one bucket every space shares, with nothing
 /// to find them by. MinIO deletes them two days after they were written; a real upload completes
-/// within minutes. Used by both storage editions, so it holds no cipher.
+/// within minutes.
 /// </summary>
 public static class StorageLifecycle
 {

@@ -1,6 +1,6 @@
 /* ── Admin console ───────────────────────────────────────────────────────────────
    One look for /admin (2026-10-11): the shell, the kit in components/admin/kit.tsx (adm-*),
-   the mail client (mc-*), and the older section classes re-dressed — only under .admin-app,
+   and the older section classes re-dressed — only under .admin-app,
    so the app's own settings screens keep theirs. Loaded LAST (main.tsx): glass/motion/
    responsive restyle app.css by cascade, and nothing here should lose to them.
    Colours come from the theme tokens only, so every theme (light included) works as is. */
@@ -35,9 +35,6 @@
 .admin-whoami { border-radius: 8px; }
 .admin-body { padding: 24px 28px 40px; }
 .admin-section { max-width: 1180px; }
-/* The mail client wants the whole height and width, like any mail client. */
-.admin-body:has(> .admin-section--full) { padding: 0; overflow: hidden; display: flex; }
-.admin-section--full { max-width: none; flex: 1; min-height: 0; display: flex; }
 
 /* ── Buttons ───────────────────────────────────────────────────────────────────── */
 .adm-btn {
@@ -183,6 +180,10 @@
 .admin-app .form-input { border-radius: 8px; }
 .admin-app input[type="checkbox"], .admin-app input[type="radio"] { accent-color: var(--accent); }
 .admin-app .admin-note { font-size: 13px; color: var(--text-muted); margin: 0 0 14px; line-height: 1.5; }
+.admin-app .admin-note--ok { color: var(--text-positive, var(--green)); }
+/* Admin → Users: the row that sets someone's password (AdminUsersPanel). */
+.admin-app .adm-setpw .adm-inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.admin-app .adm-setpw .form-input { max-width: 260px; }
 .admin-app .settings-pane { max-width: none; }
 
 /* Dashboard */
@@ -212,190 +213,6 @@ body.theme-light .admin-app { color-scheme: light; }
   .admin-body { padding: 16px; }
   .admin-topbar { padding: 12px 16px; min-height: 0; }
   .admin-whoami span { display: none; }
-}
-
-/* ── Mail client (components/admin/mail) ──────────────────────────────────────────
-   Three panes like every mail client: folders, the list, the letter. On a narrow window the
-   folders shrink to icons, then the list and the letter take turns with a Back button. */
-.mc {
-  flex: 1; min-height: 0; display: grid; background: var(--bg-primary);
-  grid-template-columns: 224px minmax(320px, 400px) minmax(0, 1fr);
-}
-.mc--empty { display: flex; align-items: center; justify-content: center; }
-
-.mc-folders {
-  display: flex; flex-direction: column; gap: 14px; min-height: 0; padding: 16px 12px;
-  background: var(--bg-secondary); border-right: 1px solid var(--border);
-}
-.mc-compose-btn { width: 100%; height: 40px; }
-.mc-folder-list { display: flex; flex-direction: column; gap: 2px; }
-.mc-folder {
-  display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px;
-  border: none; border-radius: 8px; background: transparent; color: var(--text-muted);
-  font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer;
-}
-.mc-folder svg { color: var(--text-faint); flex: 0 0 auto; }
-.mc-folder:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
-.mc-folder.is-active { background: var(--bg-modifier-selected); color: var(--header-primary); font-weight: 600; }
-.mc-folder.is-active svg { color: var(--accent); }
-.mc-folder-name { flex: 1; }
-.mc-folder-count { font-size: 12px; font-weight: 700; color: var(--accent-hover); font-variant-numeric: tabular-nums; }
-.mc-folder-count.is-muted { color: var(--text-faint); font-weight: 500; }
-.mc-account {
-  margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 0 6px;
-  font-size: 12px; color: var(--text-faint); min-width: 0;
-}
-.mc-account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.mc-list { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--border); }
-.mc-list-head {
-  display: flex; align-items: center; gap: 8px; min-height: 58px; padding: 12px;
-  border-bottom: 1px solid var(--border);
-}
-.mc-list-head .adm-search { flex: 1; width: auto; }
-.mc-bulk { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; }
-.mc-bulk-count { font-size: 13px; font-weight: 600; color: var(--header-primary); margin-right: 6px; white-space: nowrap; }
-.mc-check { width: 16px; height: 16px; flex: 0 0 auto; accent-color: var(--accent); cursor: pointer; }
-.mc-list-banner {
-  display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 14px;
-  font-size: 12.5px; color: var(--text-muted); background: var(--bg-secondary); border-bottom: 1px solid var(--border);
-}
-.mc-list-banner span { flex: 1; }
-.mc-items { flex: 1; min-height: 0; overflow-y: auto; }
-.mc-loading { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px; }
-.mc-list-foot {
-  display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 6px 10px;
-  border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-muted);
-}
-.mc-list-foot span { margin-right: 6px; }
-
-.mc-row {
-  position: relative; display: flex; gap: 8px; padding: 10px 12px 10px 10px;
-  border-bottom: 1px solid var(--border); cursor: pointer;
-}
-.mc-row:hover { background: var(--bg-modifier-hover); }
-.mc-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.mc-row.is-selected { background: color-mix(in oklab, var(--accent) 8%, transparent); }
-.mc-row.is-current { background: var(--bg-modifier-selected); }
-.mc-row.is-current::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); }
-.mc-row-side { display: flex; flex-direction: column; align-items: center; gap: 7px; padding-top: 2px; }
-.mc-star { display: inline-flex; padding: 0; border: none; background: none; color: var(--text-micro); cursor: pointer; }
-.mc-star:hover { color: var(--text-muted); }
-.mc-star.is-on { color: var(--yellow); }
-.mc-star.is-on svg { fill: currentColor; }
-.mc-row-main { flex: 1; min-width: 0; }
-.mc-row-top { display: flex; align-items: center; gap: 6px; }
-.mc-unread-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); }
-.mc-row-from {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 13.5px; color: var(--text-muted);
-}
-.mc-row.is-unread .mc-row-from { color: var(--header-primary); font-weight: 700; }
-.mc-row-mark { flex: 0 0 auto; color: var(--text-faint); }
-.mc-row-date { flex: 0 0 auto; font-size: 12px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
-.mc-row.is-unread .mc-row-date { color: var(--accent-hover); font-weight: 600; }
-.mc-row-subject {
-  margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 13.5px; color: var(--text-normal);
-}
-.mc-row.is-unread .mc-row-subject { color: var(--header-primary); font-weight: 600; }
-.mc-row-preview {
-  margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 12.5px; color: var(--text-faint);
-}
-
-.mc-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg-primary); }
-.mc-pane > .adm-empty { margin: auto; }
-.mc-reader, .mc-compose { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.mc-bar { display: flex; align-items: center; gap: 6px; min-height: 58px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
-.mc-back { display: none; }
-.mc-reader-head { padding: 18px 24px 6px; }
-.mc-subject { margin: 0 0 14px; font-size: 20px; font-weight: 700; line-height: 1.3; color: var(--header-primary); overflow-wrap: anywhere; }
-.mc-meta { display: flex; align-items: flex-start; gap: 12px; }
-.mc-meta-main { flex: 1; min-width: 0; }
-.mc-meta-from { font-size: 14px; color: var(--header-primary); overflow-wrap: anywhere; }
-.mc-addr { margin-left: 6px; font-size: 13px; color: var(--text-muted); }
-.mc-meta-to { margin-top: 2px; font-size: 12.5px; color: var(--text-faint); overflow-wrap: anywhere; }
-.mc-meta-date { font-size: 12.5px; color: var(--text-faint); white-space: nowrap; }
-.mc-note {
-  display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 8px 12px;
-  border-radius: 8px; background: var(--bg-secondary); border: 1px solid var(--border);
-  font-size: 12.5px; color: var(--text-muted);
-}
-.mc-note span { flex: 1; }
-.mc-note--warn {
-  color: var(--text-warning); background: color-mix(in oklab, var(--yellow) 8%, transparent);
-  border-color: color-mix(in oklab, var(--yellow) 25%, transparent);
-}
-.mc-files { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.mc-file {
-  display: inline-flex; align-items: center; gap: 10px; max-width: 280px; padding: 8px 10px;
-  border-radius: 10px; border: 1px solid var(--border-strong); background: var(--bg-secondary);
-  color: var(--text-muted); font: inherit; text-align: left; cursor: pointer;
-}
-.mc-file:hover:not(.is-static):not(:disabled) { border-color: var(--accent); color: var(--text-normal); }
-.mc-file.is-static { cursor: default; }
-.mc-file-icon {
-  width: 32px; height: 32px; flex: 0 0 auto; border-radius: 8px; display: inline-flex;
-  align-items: center; justify-content: center; background: var(--bg-modifier-selected); color: var(--accent);
-}
-.mc-file-text { display: flex; flex-direction: column; min-width: 0; }
-.mc-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text-normal); }
-.mc-file-size { font-size: 11.5px; color: var(--text-faint); }
-.mc-file-remove { display: inline-flex; padding: 2px; border: none; background: none; color: var(--text-faint); cursor: pointer; }
-.mc-file-remove:hover { color: var(--text-danger); }
-.mc-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 24px 24px; }
-.mc-body--html { display: flex; overflow: hidden; padding: 10px 16px 16px; }
-.mc-frame { flex: 1; width: 100%; min-height: 320px; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
-.mc-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; color: var(--text-normal); }
-
-.mc-compose-title { font-size: 15px; font-weight: 700; color: var(--header-primary); }
-.mc-fields { padding: 4px 20px; border-bottom: 1px solid var(--border); }
-.mc-field { display: flex; align-items: center; gap: 12px; min-height: 42px; border-bottom: 1px solid var(--border); }
-.mc-field:last-child { border-bottom: none; }
-.mc-field-label { width: 64px; flex: 0 0 auto; font-size: 13px; color: var(--text-faint); }
-.mc-field input {
-  flex: 1; min-width: 0; height: 40px; border: none; outline: none; background: transparent;
-  color: var(--text-normal); font: inherit; font-size: 14px;
-}
-.mc-field-static { font-size: 14px; color: var(--text-muted); }
-.mc-field-link {
-  padding: 4px 6px; border: none; border-radius: 6px; background: none; color: var(--text-muted);
-  font: inherit; font-size: 13px; cursor: pointer;
-}
-.mc-field-link:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
-.mc-compose-text {
-  flex: 1; min-height: 200px; padding: 16px 20px; border: none; outline: none; resize: none;
-  background: transparent; color: var(--text-normal); font: inherit; font-size: 14px; line-height: 1.6;
-}
-.mc-files--compose { margin: 0; padding: 0 20px 12px; }
-.mc-compose-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); }
-.mc-size, .mc-hint { font-size: 12px; color: var(--text-faint); white-space: nowrap; }
-
-/* In the in-app console (a modal) the mail sits in a pane, not a whole window. */
-.settings-content .mc {
-  height: min(72vh, 760px); margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
-  grid-template-columns: 64px minmax(260px, 320px) minmax(0, 1fr);
-}
-.settings-content .mc .mc-compose-btn span, .settings-content .mc .mc-folder-name,
-.settings-content .mc .mc-account span { display: none; }
-
-@media (max-width: 1280px) {
-  .mc { grid-template-columns: 64px minmax(300px, 360px) minmax(0, 1fr); }
-  .mc-folders { padding: 12px 8px; }
-  .mc-compose-btn span, .mc-folder-name, .mc-account span { display: none; }
-  .mc-compose-btn { padding: 0; }
-  .mc-folder { position: relative; justify-content: center; padding: 0; }
-  .mc-folder-count { position: absolute; top: 1px; right: 3px; font-size: 10px; }
-  .mc-account { justify-content: center; padding: 0; }
-  .mc-hint { display: none; }
-}
-@media (max-width: 900px) {
-  .mc { grid-template-columns: 56px minmax(0, 1fr); }
-  .mc .mc-pane { display: none; }
-  .mc.is-reading .mc-list { display: none; }
-  .mc.is-reading .mc-pane { display: flex; }
-  .mc-back { display: inline-flex; }
 }
 
 /* ── Section pieces (users, servers, spaces, roles, invites, reports, bugs, settings) ── */

@@ -175,8 +175,7 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
       // Re-announce voice presence after a WS reconnect — always, as the app does. Without it the
       // server may have dropped our voice_states row (we would be a ghost: audible, absent from
       // every roster), and even when the row survived — a server restart keeps it — the server
-      // no longer knows which connection holds our call, which is what it checks before passing
-      // on a room key we send. `rejoin` keeps our mute/camera flags as they are, and the media
+      // no longer knows which connection holds our call. `rejoin` keeps our mute/camera flags as they are, and the media
       // session is untouched (the session-already-live guard).
       const inVoice = voiceStore.select((s) => s.currentChannelId);
       if (inVoice !== null) wsSend("voice_join", { channel_id: inVoice, rejoin: true });

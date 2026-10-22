@@ -48,10 +48,6 @@ services:
       # seconds. A plain-http name nobody resolves keeps the block a site, with no certificate to get.
       caddy_1: ${OUTCOME_LEGACY_DOMAIN:-http://legacy-domain.invalid}
       caddy_1.redir: https://${OUTCOME_DOMAIN}{uri} permanent
-      # The mail host is an HTTP no-op, but naming it here makes Caddy obtain and RENEW its
-      # TLS certificate — which the mailserver container reads for SMTP/IMAP (see its mounts).
-      caddy_2: mail.${OUTCOME_DOMAIN}
-      caddy_2.respond: '"Outcome mail" 200'
     depends_on: [frontend]
 
 
@@ -94,6 +90,8 @@ services:
       ConnectionStrings__PostgresDirect: "Host=postgres;Port=5432;Database=outcome;Username=outcome;Password=${POSTGRES_PASSWORD}"
       OUTCOME_Redis__Url: "redis:6379"
       OUTCOME_Server__Name: "${SERVER_NAME}"
+      # The browser-facing https origin: behind Caddy the request's own host is internal.
+      OUTCOME_Server__PublicOrigin: "https://${OUTCOME_DOMAIN}"
       # The API only ever sees the reverse proxy, so it must be told whose X-Forwarded-For to
       # believe. Docker bridge ranges — NOT the whole RFC1918 space, and nothing outside the
       # compose network: whoever this trusts can claim any client IP and skip every rate limit.
@@ -111,28 +109,6 @@ services:
       # Browser-facing signaling URL (rides the same-origin /livekit proxy through Caddy).
       OUTCOME_Voice__LiveKitUrl: "wss://${OUTCOME_DOMAIN}/livekit"
       OUTCOME_Voice__LiveKitInternalUrl: "ws://livekit:7880"
-      OUTCOME_Email__Host: "${EMAIL_HOST}"
-      OUTCOME_Email__Port: "${EMAIL_PORT}"
-      OUTCOME_Email__Username: "${EMAIL_USERNAME}"
-      OUTCOME_Email__Password: "${EMAIL_PASSWORD}"
-      OUTCOME_Email__From: "${EMAIL_FROM}"
-      OUTCOME_Email__UseSsl: "${EMAIL_USE_SSL}"
-      # Общий ящик поддержки, который читает и отвечает админ-панель. Отдельный от Email
-      # выше: тот односторонний отправитель кодов от no-reply, этот — почтовый ящик живого
-      # человека. Пусто = функция просто выключена, панель скажет «не настроено».
-      OUTCOME_SupportMail__Host: "${SUPPORT_MAIL_HOST:-}"
-      OUTCOME_SupportMail__Username: "${SUPPORT_MAIL_USERNAME:-}"
-      OUTCOME_SupportMail__Password: "${SUPPORT_MAIL_PASSWORD:-}"
-      OUTCOME_SupportMail__From: "${SUPPORT_MAIL_FROM:-}"
-      # SSO. A provider turns ON simply by having both a client id and a secret — the
-      # clients ask /auth/oauth/providers and render only the buttons that will work.
-      # PublicOrigin must be the browser-facing https origin: it builds the redirect_uri
-      # registered with the provider, and behind Caddy the request's own host is internal.
-      OUTCOME_OAuth__PublicOrigin: "https://${OUTCOME_DOMAIN}"
-      OUTCOME_OAuth__Google__ClientId: "${GOOGLE_CLIENT_ID}"
-      OUTCOME_OAuth__Google__ClientSecret: "${GOOGLE_CLIENT_SECRET}"
-      OUTCOME_OAuth__Yandex__ClientId: "${YANDEX_CLIENT_ID}"
-      OUTCOME_OAuth__Yandex__ClientSecret: "${YANDEX_CLIENT_SECRET}"
       # Apple push. APNS_KEY is the .p8 on ONE line with literal \n between the PEM lines —
       # the server puts the newlines back. Leave it empty and push is simply off.
       OUTCOME_Apns__Key: "${APNS_KEY:-}"
@@ -293,70 +269,8 @@ services:
     depends_on:
       redis: { condition: service_healthy }
 
-  mailserver:
-    # docker-mailserver: Postfix + Dovecot + rspamd (spam filter AND DKIM signing) in one
-    # container. Handles the domain's mailboxes (IMAP) and the app's transactional mail
-    # (SMTP submission). ClamAV stays off — it alone eats ~1.3 GB RAM; rspamd suffices.
-    # Manage accounts/aliases with:  docker exec outcome-mailserver-1 setup email add ...
-    # 16.0 = Debian 13 + Dovecot 2.4: a custom dovecot.cf in 2.3 syntax would not load (there is
-    # none here). Moved from 15.0.2 on 2026-10-11 after a rehearsal on a copy of the volumes:
-    # same mailboxes and paths, IMAP/SMTP logins, spoof protection, LMTP delivery, DKIM keys.
-    image: ghcr.io/docker-mailserver/docker-mailserver:16.0
-    hostname: mail.${OUTCOME_DOMAIN}
-    restart: unless-stopped
-    <<: *logging
-    ports:
-      - "25:25"      # SMTP — inbound mail from other servers + our outbound
-      - "465:465"    # SMTPS submission (implicit TLS)
-      - "587:587"    # submission (STARTTLS) — the app sends through this
-      - "993:993"    # IMAPS — mail apps read mailboxes here
-    environment:
-      ENABLE_RSPAMD: 1
-      # rspamd is the ONE filter: amavis (the legacy default) must be off or it sits in the
-      # outbound path too — it BOUNCED every submission while rspamd was also enabled.
-      ENABLE_AMAVIS: 0
-      # OpenDKIM SIGNS outbound with the keys in mail-config/opendkim (zero extra config);
-      # rspamd handles filtering and the DMARC/SPF checks, so those daemons stay off.
-      ENABLE_OPENDKIM: 1
-      ENABLE_OPENDMARC: 0
-      ENABLE_POLICYD_SPF: 0
-      ENABLE_CLAMAV: 0
-      ENABLE_FAIL2BAN: 0     # needs NET_ADMIN; edge exposure is small enough without it
-      SPOOF_PROTECTION: 1    # authenticated users may only send as themselves
-      # Moving a message into Junk over IMAP teaches Rspamd "spam", out of Junk "not spam" —
-      # the admin panel's "Spam" / "Not spam" buttons are exactly such moves (2026-10-11).
-      RSPAMD_LEARN: 1
-      # 25 MB, what the big providers take; the stock 10 MB refused a contract with a scan.
-      POSTFIX_MESSAGE_SIZE_LIMIT: 26214400
-      POSTMASTER_ADDRESS: admin@${OUTCOME_DOMAIN}
-      # TLS: reuse the certificate Caddy obtains for mail.outcome.ru (caddy_2 label above);
-      # DMS watches these files, so Caddy's renewals are picked up automatically.
-      SSL_TYPE: manual
-      SSL_CERT_PATH: /certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.${OUTCOME_DOMAIN}/mail.${OUTCOME_DOMAIN}.crt
-      SSL_KEY_PATH: /certs/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.${OUTCOME_DOMAIN}/mail.${OUTCOME_DOMAIN}.key
-    volumes:
-      - maildata:/var/mail
-      - mailstate:/var/mail-state
-      - maillogs:/var/log/mail
-      - ./mail-config/:/tmp/docker-mailserver/
-      - caddy_data:/certs:ro
-    networks:
-      default:
-        # The app submits mail to this NAME so the cert (mail.outcome.ru) validates —
-        # docker DNS resolves it to the container without leaving the compose network.
-        aliases: ["mail.${OUTCOME_DOMAIN}"]
-    stop_grace_period: 1m
-    healthcheck:
-      test: ["CMD", "ss", "-ltn", "src", ":25"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-
 volumes:
   pgdata:
   minio_data:
   caddy_data:
   caddy_config:
-  maildata:
-  mailstate:
-  maillogs:

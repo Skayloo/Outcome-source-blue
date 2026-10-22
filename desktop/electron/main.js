@@ -42,50 +42,7 @@ let updateReady = false;
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  // The deep link arrives as an argument to a SECOND launch on Windows and Linux: the browser
-  // asks the OS to open outcome://…, the OS starts the app again, and the single-instance lock
-  // bounces it here. Losing this handler means the SSO token silently never arrives.
-  app.on('second-instance', (_e, argv) => {
-    showWindow();
-    handleDeepLink(argv.find((a) => a.startsWith('outcome://')));
-  });
-}
-
-// ── outcome:// ───────────────────────────────────────────────────────────────
-// Registering the scheme is what lets the OAuth callback come back to the app at all.
-// In development the executable is electron.exe, so the OS has to be told which script it is
-// launching or it registers Electron itself as the handler for every Outcome link on the
-// machine.
-if (process.defaultApp && process.argv.length >= 2) {
-  app.setAsDefaultProtocolClient('outcome', process.execPath, [path.resolve(process.argv[1])]);
-} else {
-  app.setAsDefaultProtocolClient('outcome');
-}
-
-// macOS delivers it as an event rather than an argument.
-app.on('open-url', (e, url) => {
-  e.preventDefault();
-  showWindow();
-  handleDeepLink(url);
-});
-
-/** `outcome://sso?token=…` (or `?error=…`) → the renderer. Anything else is ignored. */
-function handleDeepLink(url) {
-  if (!url) return;
-  let parsed;
-  try { parsed = new URL(url); } catch { return; }
-  if (parsed.protocol !== 'outcome:') return;
-  if (parsed.hostname !== 'sso') return;
-
-  const payload = {
-    token: parsed.searchParams.get('token') || '',
-    error: parsed.searchParams.get('error') || '',
-  };
-  // The window may still be loading on a cold start — wait for it rather than firing into
-  // nothing, which is how a token gets lost exactly once and is impossible to reproduce.
-  const send = () => win?.webContents.send('outcome:sso', payload);
-  if (win && !win.webContents.isLoading()) send();
-  else win?.webContents.once('did-finish-load', send);
+  app.on('second-instance', () => showWindow());
 }
 
 // ── The app:// protocol ──────────────────────────────────────────────────────
@@ -531,19 +488,6 @@ app.whenReady().then(() => {
   wireAutoUpdate();
 
   ipcMain.handle('outcome:set-ptt', (_e, accelerator) => setPushToTalk(accelerator));
-  ipcMain.handle('outcome:open-external', (_e, url) => {
-    // Only ever hand the OS an http(s) URL. The renderer is full of text other people wrote,
-    // and shell.openExternal on an arbitrary scheme is a way to launch things.
-    if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
-      void shell.openExternal(url);
-      return true;
-    }
-    return false;
-  });
-
-  // A cold start where the app itself was launched BY the deep link: the URL is in argv of
-  // this first process, not of a second one.
-  handleDeepLink(process.argv.find((a) => a.startsWith('outcome://')));
   ipcMain.handle('outcome:set-badge', (_e, count) => {
     // Linux and macOS show a dock/launcher count; Windows has no equivalent for a number,
     // so there the tray tooltip carries it.

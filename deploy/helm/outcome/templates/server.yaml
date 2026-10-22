@@ -60,10 +60,7 @@ spec:
               valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: livekit-api-secret } }
             - { name: OUTCOME_Voice__LiveKitUrl, value: "wss://{{ .Values.ingress.host }}/livekit" }
             - { name: OUTCOME_Voice__LiveKitInternalUrl, value: {{ include "outcome.livekitInternalUrl" . | quote }} }
-            - { name: OUTCOME_Email__Host, value: {{ .Values.config.email.host | quote }} }
-            - { name: OUTCOME_Email__Port, value: {{ .Values.config.email.port | quote }} }
-            - { name: OUTCOME_Email__From, value: {{ .Values.config.email.from | quote }} }
-            - { name: OUTCOME_Email__UseSsl, value: {{ .Values.config.email.useSsl | quote }} }
+            - { name: OUTCOME_Server__PublicOrigin, value: "https://{{ .Values.ingress.host }}" }
           readinessProbe:
             httpGet: { path: /health, port: 5000 }
             initialDelaySeconds: 5

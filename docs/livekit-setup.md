@@ -85,10 +85,6 @@ A guest link mints a token for an anonymous visitor. The display name is suffixe
 so a visitor cannot impersonate a member, and the endpoint is rate limited hard, per IP and
 globally: minting media tokens for anonymous callers is the whole attack surface.
 
-In the RED edition members and guests share a room key derived from the link code, so a keyless
-guest is still audible. BLUE has no frame encryption at all — see
-[encryption.md](encryption.md) — and a guest joins the same way a member does.
-
 ## Noise suppression is not LiveKit's
 
 The microphone is processed before LiveKit sees it: a DeepFilterNet model runs in the browser

@@ -781,8 +781,7 @@ export function GuestVoicePage({ code }: { code: string }) {
         {phase === "invalid" && <div className="guest-hint">{t("guest.invalidLink")}</div>}
 
         {/* On a phone the app does this better than a browser tab: it keeps the call alive in
-            the background and doesn't fight Safari over the microphone. The custom scheme is
-            the same one the SSO callback already uses. Nothing happens if the app isn't
+            the background and doesn't fight Safari over the microphone. Nothing happens if the app isn't
             installed — the page stays right here, so this is an offer, not a redirect. */}
         {phase === "form" && isMobile && (
           <a className="guest-app-cta" href={`outcome://guest/${encodeURIComponent(code)}`}>

@@ -9,10 +9,6 @@
 //     different security proposition than opening a web page;
 //   • the shell and the UI version then ship together, so a preload API can never be missing
 //     from the bundle that expects it.
-//
-// Edition: RED by default, the same choice mobile/ makes. The desktop client is distributed as
-// a binary, not as source, so it carries the encryption exactly like the iOS and Android apps
-// do. Pass OUTCOME_EDITION=blue to build the cipher-free one.
 
 import { spawnSync } from 'node:child_process';
 import { cp, rm, mkdir, access } from 'node:fs/promises';
@@ -25,10 +21,9 @@ const webSrc = path.join(root, 'frontend');
 const dist = path.join(webSrc, 'dist');
 const dest = path.resolve(here, '..', 'web');
 
-const edition = process.env.OUTCOME_EDITION === 'blue' ? 'blue' : 'red';
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
-console.log(`── building the web client (edition: ${edition})`);
+console.log('── building the web client');
 
 try {
   await access(path.join(webSrc, 'node_modules'));
@@ -44,7 +39,6 @@ const build = spawnSync(npm, ['run', 'build'], {
   cwd: webSrc,
   stdio: 'inherit',
   shell: process.platform === 'win32',
-  env: { ...process.env, OUTCOME_EDITION: edition },
 });
 if (build.status !== 0) {
   console.error('!! the web build failed — not copying a stale bundle into the shell');
@@ -56,7 +50,7 @@ if (build.status !== 0) {
 // to install this, and they already have — and the screenshots alone are 1.4 MB in an
 // installer people download over whatever connection they have.
 const SITE_ONLY = [
-  'landing.html', 'landing.js', 'landing-contact.js', 'shots', 'video',
+  'landing.html', 'landing.js', 'shots', 'video',
   'robots.txt', 'sitemap.xml',
 ];
 

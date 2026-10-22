@@ -52,11 +52,6 @@ ingress:
 config:
   serverName: Outcome
   minioBucket: outcome-uploads
-  email:
-    host: ""                  # empty → 2FA codes are logged instead of emailed
-    port: "587"
-    from: no-reply@example.com
-    useSsl: "true"
 
 # ── Secrets (REGENERATE). Provide values here to have the chart create the Secret,
 #    OR set existingSecret to a Secret you manage (with the same keys). ──────────

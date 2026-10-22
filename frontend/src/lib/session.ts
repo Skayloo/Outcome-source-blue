@@ -231,7 +231,7 @@ function endSession(): void {
   dispatcherCleanup = null;
   clearStoredSession();
   sessionStorage.removeItem(LOCATION_KEY);
-  // Back to same-origin: the login screen's setup/SSO probes must hit the instance that
+  // Back to same-origin: the login screen's setup probe must hit the instance that
   // serves the SPA, not linger on a foreign server. (The server field prefills from
   // the remembered last host, so reconnecting there is one click.)
   api.setConfig({ host: "", token: "" });
@@ -269,9 +269,7 @@ export function restoreSession(): boolean {
   const s = readStoredSession();
   if (!s) return false;
   try {
-    // Only the token is required. An SSO sign-in stores an EMPTY username (the real profile
-    // arrives with auth_ok) — requiring it here silently dropped SSO sessions on every full
-    // page load, bouncing the user to the login form.
+    // Only the token is required: the real profile arrives with auth_ok.
     if (s.token) {
       // Pre-apply the saved location so the WS auth requests the right server and the READY /
       // DM load lands us back where we were (a channel or a DM), not on the primary server.

@@ -25,10 +25,6 @@ proposition from opening a web page, and a LAN instance may not even be reachabl
 Shipping them together also means the preload API can never be missing from the bundle that
 expects it.
 
-Edition is **red** by default, the same choice `mobile/` makes: the client is distributed as a
-binary rather than as source, so it carries the encryption like the phone apps do. Build the
-cipher-free one with `OUTCOME_EDITION=blue npm run sync`.
-
 ## Commands
 
 ```bash
@@ -56,7 +52,7 @@ linux/amd64`), on a scratch copy of `frontend/` and `desktop/` mounted at `/src`
   then run by hand with the arguments it logged, on a copy of `win-unpacked` WITHOUT
   `resources/elevate.exe` (what a combined `--win` build gives).
 - Check before publishing: the sha512 in `latest.yml`/`latest-linux.yml` (`openssl dgst -sha512
-  -binary | base64`), the same `app.asar` in every package, and the bundle being the RED one.
+  -binary | base64`) and the same `app.asar` in every package.
 
 Publishing: the files go into the folder the frontend container serves at `/download/`
 (`DOWNLOADS_DIR` in the compose file), the packages first and `latest.yml`/`latest-linux.yml`

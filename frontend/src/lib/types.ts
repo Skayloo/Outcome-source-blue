@@ -33,77 +33,6 @@ export type WsErrorCode =
   | "VOICE_ERROR"
   | "VIDEO_LIMIT";
 
-/** The support mailbox's folders, by the server's ids (SPECIAL-USE on the mail server). */
-export type MailFolderId = "inbox" | "sent" | "drafts" | "junk" | "trash";
-
-export interface MailFolder {
-  readonly id: MailFolderId;
-  readonly total: number;
-  readonly unread: number;
-}
-
-/** One message in a folder's list (snake_case, as the server sends it). */
-export interface MailSummary {
-  readonly uid: number;
-  readonly from: string;
-  readonly from_name: string;
-  readonly to: readonly string[];
-  readonly subject: string;
-  readonly date: string;
-  readonly seen: boolean;
-  readonly flagged: boolean;
-  readonly answered: boolean;
-  readonly has_attachments: boolean;
-  readonly preview: string;
-}
-
-export interface MailAttachment {
-  readonly index: number;
-  readonly file_name: string;
-  readonly mime: string;
-  readonly size: number;
-}
-
-/** A message, opened. `html` is already SANITISED by the server and still has to be shown in a
- *  sandboxed frame; `text` is always there. Written by strangers — never put into the page. */
-export interface MailMessage {
-  readonly uid: number;
-  readonly folder: MailFolderId;
-  readonly from: string;
-  readonly from_name: string;
-  readonly to: readonly string[];
-  readonly cc: readonly string[];
-  readonly reply_to: string | null;
-  readonly subject: string;
-  readonly date: string;
-  readonly text: string;
-  readonly html: string | null;
-  readonly remote_images: boolean;
-  readonly attachments: readonly MailAttachment[];
-  readonly flagged: boolean;
-  readonly is_draft: boolean;
-}
-
-/** A file of a message already in the mailbox, carried into a new one. */
-export interface MailRef {
-  readonly folder: MailFolderId;
-  readonly uid: number;
-  readonly index: number;
-}
-
-/** A message written in the panel. */
-export interface MailOutgoing {
-  readonly to: string;
-  readonly cc: string;
-  readonly subject: string;
-  readonly text: string;
-  readonly reply_folder?: MailFolderId;
-  readonly reply_uid?: number;
-  readonly draft_uid?: number;
-  readonly keep: readonly MailRef[];
-  readonly files: readonly File[];
-}
-
 /** REST API error codes. */
 export type ApiErrorCode =
   | "UNAUTHORIZED"
@@ -401,8 +330,6 @@ export interface VoiceTokenPayload {
   readonly token: string;
   readonly url: string;
   readonly direct_url?: string;
-  /** Shared room key for a guest-linked channel (base64). Present → use it directly instead of the
-   *  WS key exchange, so members and keyless guests share one key. Absent → ordinary exchange. */
 }
 
 export interface MemberJoinPayload {
@@ -651,27 +578,18 @@ export interface AuthResponse {
   readonly token?: string;
   readonly partial_token?: string;
   readonly requires_2fa: boolean;
-  /** Which 2FA method to complete when requires_2fa: "totp" or "email". */
-  readonly two_factor_method?: string;
 }
 
-/** POST /api/auth/register response. With registration email-verification on, the account
- *  is NOT created yet: the server returns requires_email_verify + a partial token instead,
- *  and the client completes via POST /auth/register/verify. */
+/** POST /api/auth/register response. */
 export interface RegisterResponse {
   readonly user?: { readonly id: number; readonly username: string };
   readonly token?: string;
-  readonly requires_email_verify?: boolean;
-  readonly partial_token?: string;
 }
 
 /** GET /api/health response. */
 export interface HealthResponse {
   readonly status: string;
   readonly version: string;
-  /** "red" (private build, E2EE clients) or "blue" (public self-hosted). The server defaults
-   *  to blue, so a build that does not announce red must never be treated as private. */
-  readonly edition?: string;
   readonly uptime: number;
   readonly online_users: number;
 }
@@ -753,10 +671,6 @@ export interface MemberResponse {
   readonly avatar: string | null;
   readonly role: string;
   readonly status: UserStatus;
-  /** False ⇒ an account made by a provider sign-in, with no password of its own — it
-   *  cannot be signed into from the mobile app, which has no provider sign-in. Absent on
-   *  older servers — treat that as true. */
-  readonly password_set?: boolean;
   /** Show message text in push notifications, or only who sent it. Absent on older
    *  servers — treat that as true. */
   readonly push_preview?: boolean;

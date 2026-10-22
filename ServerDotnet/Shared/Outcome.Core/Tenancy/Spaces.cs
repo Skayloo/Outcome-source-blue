@@ -84,7 +84,7 @@ public sealed class SpaceRegistry : ISpaceRegistry
         await using var conn = new NpgsqlConnection(_pooled);
         await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
-        // One space in this edition. A database brought over from an instance that had others
+        // One space here. A database brought over from an instance that had others
         // keeps their rows; they are simply never served or migrated here.
         cmd.CommandText = $"SELECT {Columns} FROM spaces WHERE id = 1";
         await using var r = await cmd.ExecuteReaderAsync(ct);

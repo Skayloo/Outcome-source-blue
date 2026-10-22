@@ -8,6 +8,10 @@ public sealed class ServerOptions
     public string DataDir { get; set; } = "data";
     public string[] AllowedOrigins { get; set; } = ["*"];
     public string[] TrustedProxies { get; set; } = [];
+    /// <summary>Public https origin of this deployment (e.g. https://chat.example.com) — the
+    /// address push pictures are fetched from. Behind a reverse proxy it cannot be read off the
+    /// request, and the Host a client sends is never trusted for it.</summary>
+    public string PublicOrigin { get; set; } = "";
     public string[] AdminAllowedCidrs { get; set; } =
     [
         "127.0.0.0/8", "::1/128",
@@ -35,27 +39,6 @@ public sealed class UploadOptions
 {
     public int MaxSizeMb { get; set; } = 100;
     public string StorageDir { get; set; } = "data/uploads";
-}
-
-/// <summary>Single-sign-on settings. Bound from the <c>OAuth</c> section. A provider is
-/// ENABLED simply by giving it a client id + secret — clients ask /auth/oauth/providers
-/// and only render buttons for what the server actually holds keys for.</summary>
-public sealed class OAuthOptions
-{
-    /// <summary>Public https origin of this deployment (e.g. https://outcome.bangx.ru) —
-    /// the provider redirect_uri is built from it. Required behind a reverse proxy, where
-    /// the request's own scheme/host are the internal ones.</summary>
-    public string PublicOrigin { get; set; } = "";
-
-    public OAuthProviderOptions Google { get; set; } = new();
-    public OAuthProviderOptions Yandex { get; set; } = new();
-}
-
-public sealed class OAuthProviderOptions
-{
-    public string ClientId { get; set; } = "";
-    public string ClientSecret { get; set; } = "";
-    public bool Enabled => ClientId.Length > 0 && ClientSecret.Length > 0;
 }
 
 /// <summary>LiveKit voice settings. Bound from the <c>Voice</c> section.</summary>

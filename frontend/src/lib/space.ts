@@ -1,5 +1,5 @@
 /**
- * The space this page is served from — in this edition the only one. Its name and logo are what
+ * The space this page is served from — the only one there is. Its name and logo are what
  * the sign-in page shows; the admin console asks whether it is the instance's own (it is).
  *
  * Cached for the session.

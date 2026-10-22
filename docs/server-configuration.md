@@ -18,7 +18,7 @@ An environment variable names its section and key with a **double underscore**, 
 ```
 Section:Key   in JSON   →   OUTCOME_Section__Key   in the environment
 Minio:Bucket             →   OUTCOME_Minio__Bucket
-OAuth:Google:ClientId    →   OUTCOME_OAuth__Google__ClientId
+Voice:LiveKitUrl         →   OUTCOME_Voice__LiveKitUrl
 ```
 
 The prefix is stripped, so `OUTCOME_Minio__Bucket` fills `Minio:Bucket`. Case matches the JSON.
@@ -42,8 +42,9 @@ Bound from `Server` (`ServerOptions`).
 | `Name` | `Outcome Server` | Shown to clients on connect |
 | `DataDir` | `data` | |
 | `AllowedOrigins` | `*` | CORS |
+| `PublicOrigin` | *(empty)* | The public `https://` origin, e.g. `https://chat.example.com` — where push pictures are fetched from. Behind a reverse proxy it cannot be read off the request |
 | `TrustedProxies` | *(empty)* | CIDRs whose `X-Forwarded-For` is believed. **Empty means the header is ignored entirely** — that is deliberate. Trusting it from anyone hands every rate limit to whoever sets a header |
-| `AdminAllowedCidrs` | loopback + RFC1918 | Who may reach the admin surface |
+| `AdminAllowedCidrs` | loopback + RFC1918 | **Bound but not read** — restrict `/admin` at your reverse proxy instead |
 
 ## Authentication
 
@@ -65,7 +66,6 @@ Bound from `Minio`.
 | `AccessKey` / `SecretKey` | `minioadmin` | **Change both** |
 | `Bucket` | `outcome-uploads` | Created on first use |
 | `UseSsl` | `false` | |
-| `EncryptionKey` | *(empty)* | RED only — base64 of exactly 32 bytes, AES-256-GCM at rest. The BLUE edition has no cipher at all and ignores it; see [encryption.md](encryption.md) |
 
 ## Uploads
 
@@ -88,88 +88,6 @@ Bound from `Voice`.
 | `NodeIp` | *(empty)* | The SFU's public IP, advertised to browsers for media. Media bypasses the HTTP proxy, so this must be reachable |
 | `Quality` | `medium` | `low` \| `medium` \| `high` |
 | `LiveKitBinary` | *(empty)* | Path to a `livekit-server` the API should spawn itself instead of running one alongside |
-
-## Mail
-
-Bound from `Email`. With `Host` empty the server prints confirmation codes to its log instead
-of sending them — fine for a first run, not for real users.
-
-| Key | Default |
-| --- | --- |
-| `Host` / `Port` | *(empty)* / `587` |
-| `Username` / `Password` | *(empty)* |
-| `From` / `FromName` | `no-reply@outcome.local` / `Outcome` |
-| `UseSsl` | `true` |
-
-A mail outage answers **503**, not 500: the account exists and the send failed, and the two
-mean different things to whoever is looking at the response.
-
-## Support mailbox
-
-Bound from `SupportMail`. Separate from `Email` above on purpose: that one only ever sends,
-from `no-reply`, and nobody reads what comes back. This is a real mailbox — the admin console
-lists what arrives in it and answers from it (Admin → Mail).
-
-With `Host` empty the feature is simply off: the endpoints answer `configured: false` and the
-panel says the mailbox is not set up, rather than showing an error.
-
-| Key | Default |
-| --- | --- |
-| `Host` / `Port` | *(empty)* / `993` |
-| `UseSsl` | `true` (IMAPS; `143` + `false` is STARTTLS) |
-| `Username` / `Password` | *(empty)* — the full address, e.g. `admin@outcome.ru` |
-| `From` / `FromName` | *(empty ⇒ `Username`)* / `Outcome` |
-| `SmtpHost` / `SmtpPort` | *(empty ⇒ `Host`)* / `465` |
-| `MaxMessages` | `200` |
-
-Replies are threaded (`In-Reply-To` and `References`), so the answer lands in the conversation
-the person started instead of arriving as a new message. They are sent from `From`, which must
-be a mailbox the SMTP host is allowed to send as — sending from anywhere else fails SPF for
-the domain, which is why `SmtpHost` defaults to the IMAP host rather than to the `Email` one.
-
-Only an instance administrator in the **root** space reaches it. It is one mailbox belonging to
-whoever runs the instance; a space owner reading it would be reading someone else's queue.
-
-Everything in the mailbox is untrusted input. HTML-only mail is converted to text on the
-server and never rendered as markup, and bodies are capped at 100 000 characters.
-
-Replies go to the message's `Reply-To` when it has one, else to `From` — requests from the
-landing's contact form arrive from `no-reply` with the person in `Reply-To`.
-
-Since 1.31.56 the panel is a whole mail client over this mailbox — Inbox, Sent, Drafts, Spam,
-Trash (found by their SPECIAL-USE flags, names as a fallback), search, flags, moving, deleting,
-writing with files (18 MB a letter) — see `docs/api.md`. Two things on the MAIL SERVER go with
-it, in `deploy/compose/docker-compose.prod.yml`: `RSPAMD_LEARN: 1` (moving into/out of Junk
-teaches Rspamd — the panel's "Spam" / "Not spam") and `POSTFIX_MESSAGE_SIZE_LIMIT: 26214400`.
-
-## Contact form
-
-The landing page's "Написать нам" form posts to `POST /api/v1/contact` (root space only), and
-the request is mailed — through `Email` above — to one fixed address. Nothing is stored.
-
-| Key | Default |
-| --- | --- |
-| `Contact:To` | *(empty ⇒ `SupportMail:From`, else `SupportMail:Username`)* |
-
-With no recipient, or no `Email:Host`, the form answers **503** and the page points to the
-e-mail address instead (without SMTP the sender would only log the request — a customer's
-message in the server log, answered "sent"). Three requests per client per 10 minutes, 30 an
-hour in all; a hidden honeypot field is answered "sent" and dropped. The person's own address
-only ever becomes the `Reply-To` — the recipient never comes from the request.
-
-## Single sign-on
-
-Bound from `OAuth`. A provider turns on simply by having both halves of its credential —
-clients ask `/api/v1/auth/oauth/providers` and render only what the server holds keys for.
-
-| Key | |
-| --- | --- |
-| `PublicOrigin` | The public `https://` origin. The `redirect_uri` is built from it, so behind a reverse proxy it cannot be inferred from the request |
-| `Google__ClientId` / `Google__ClientSecret` | |
-| `Yandex__ClientId` / `Yandex__ClientSecret` | |
-
-The callback lands at `{PublicOrigin}/api/v1/auth/oauth/{provider}/callback` — register exactly
-that with the provider.
 
 ## Push notifications
 
@@ -231,7 +149,3 @@ by talking to FCM directly, which is what this sender does.
 Bound from `Tls`. `Mode` is `off` \| `self_signed` \| `acme` \| `manual`. Behind Caddy or an
 ingress leave it `off` — the edge terminates TLS and the server speaks plain HTTP to it.
 
-## Edition
-
-`OUTCOME_EDITION` is **baked into the image**, not configured: an image *is* its edition. It is
-reported by `/health` and decides whether the storage cipher exists at all.

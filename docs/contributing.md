@@ -35,16 +35,7 @@ The backing services are easiest to borrow from the deployment kit's compose fil
 
 ## Checks that exist
 
-There is no unit-test project on the server; what there is are two runnable tools that cover
-the paths where being wrong is expensive:
-
-- `ServerDotnet/tools/StorageCompatCheck` — object storage across editions, including whether a
-  build can still read what an earlier one wrote. Needs a throwaway MinIO; endpoint and
-  credentials come from the environment.
-- `ServerDotnet/tools/DecryptBucket` — the migration itself, which is also its own test: run it
-  against a seeded bucket and check the objects read back.
-
-On the client, `npm run typecheck` is the gate that matters — it is what catches a dangling
+There is no unit-test project on the server: `dotnet build` is the gate there. On the client, `npm run typecheck` is the gate that matters — it is what catches a dangling
 reference after something is removed.
 
 ## Conventions
@@ -65,12 +56,3 @@ nothing checks this for you.
 **Permissions.** Role ids and permission bits live in one place on the server. Never redefine
 them client-side; read them from what the server sends.
 
-## Editions
-
-This is the **open self-hosted edition**, and it contains no encryption: not end-to-end, not
-at rest. That is not a build flag — the modules and every call into them are absent from the
-tree. See [encryption.md](encryption.md) for exactly what that does and does not protect.
-
-Please do not add encryption back behind an interface. If you need messages the operator
-cannot read, the commercial edition does that; a half-implementation here would be worse than
-the honest absence.

@@ -30,7 +30,7 @@ public sealed record PushMessage(
     /// anything that is not a picture: a notification cannot preview a zip.</summary>
     string? ImageUrl = null,
     /// <summary>The icon of the message's files ("🎤", "📷", …), for a device that writes the
-    /// body itself — the iOS extension that opens an encrypted caption puts it in front.</summary>
+    /// body itself.</summary>
     string? Icon = null,
     /// <summary>The server of a channel message (null for a DM): a tapped mention from a server
     /// other than the one open in the app has to switch to it before the channel can open.</summary>

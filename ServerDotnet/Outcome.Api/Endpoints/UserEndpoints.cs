@@ -58,11 +58,8 @@ public static class UserEndpoints
             return Results.NoContent();
         });
 
-        // Its own endpoint, not a field on something else. Signing in through a provider creates
-        // the account before anyone has been asked anything, so the tick arrives afterwards —
-        // from the gate that already blocks the app until such an account is finished. Folding
-        // it into the password call would bundle consent with another action, which is the exact
-        // shape 156-ФЗ set out to stop.
+        // Its own endpoint, not a field on something else: folding it into another call would
+        // bundle consent with another action, which is the exact shape 156-ФЗ set out to stop.
         //
         // Write-once: a second call cannot move the date or the version. What is recorded is
         // when this person first agreed and to which text, and that is not a thing later

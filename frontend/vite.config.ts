@@ -6,9 +6,6 @@ import { resolve } from "path";
 // so the dev server behaves same-origin (matching the nginx reverse-proxy used in the container).
 export default defineConfig({
   plugins: [react()],
-  define: {
-    __OUTCOME_EDITION__: JSON.stringify("blue"),
-  },
   resolve: {
     alias: {
       "@": resolve(__dirname, "src"),

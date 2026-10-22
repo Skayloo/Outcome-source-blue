@@ -4,8 +4,8 @@ namespace Outcome.Api.Middleware;
 
 /// <summary>
 /// Pins the instance's space to the scope, so every DbContext built downstream opens its
-/// database. Must run before anything that touches data — including authentication. This
-/// edition serves one space, whatever the request's host.
+/// database. Must run before anything that touches data — including authentication. There is
+/// one space, whatever the request's host.
 /// </summary>
 public sealed class SpaceResolutionMiddleware(RequestDelegate next, ISpaceRegistry registry)
 {

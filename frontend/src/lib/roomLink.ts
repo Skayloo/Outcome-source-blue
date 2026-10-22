@@ -5,8 +5,8 @@
  * has to find and open the link a second time. Anyone who is not a member stays a guest; the
  * link is a seat in one room, not a way into the server.
  *
- * The intent rides sessionStorage, not the URL: it has to survive the login screen and an SSO
- * round-trip in the same tab, and a "join this call" left in the address bar would fire again
+ * The intent rides sessionStorage, not the URL: it has to survive the login screen in the same
+ * tab, and a "join this call" left in the address bar would fire again
  * on every reload.
  */
 import { api } from "@lib/services";
@@ -20,7 +20,7 @@ import { createLogger } from "@lib/logger";
 
 const log = createLogger("roomLink");
 const KEY = "outcome:roomLink";
-/** Long enough for a sign-in, a forgotten password or an SSO detour; short enough that an
+/** Long enough for a sign-in or a registration; short enough that an
  *  abandoned attempt does not pull someone into a call the next time they open the app. */
 const MAX_AGE_MS = 15 * 60_000;
 

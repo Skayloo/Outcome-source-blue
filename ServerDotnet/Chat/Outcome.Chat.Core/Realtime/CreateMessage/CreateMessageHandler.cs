@@ -75,17 +75,14 @@ public sealed class CreateMessageHandler(
         if (content.Length == 0 && cmd.Attachments.Count == 0)
             throw DomainException.BadRequest("message content cannot be empty");
 
-        // The content filter guideline 1.2 requires, and terms.html promises. It sees plaintext
-        // only: a DM on a red server arrives as ciphertext, so what comes through here for one
-        // is an opaque blob the filter folds to nothing and passes. That is not a hole to plug
-        // — it is the point of the encryption — and reporting covers what the server cannot read.
+        // The content filter guideline 1.2 requires; reporting covers what a word list cannot.
         if (ContentFilter.FirstProhibited(content) is { } hit)
             throw DomainException.ContentBlocked($"this message was blocked by the content filter ({hit})");
         if (content.Length > MaxMessageLength)
             throw DomainException.BadRequest($"message content exceeds maximum length of {MaxMessageLength} characters");
 
-        // Forward label: a display string, not a user reference (the source may be an E2EE
-        // DM this server cannot read). Sanitized and capped like any other user text.
+        // Forward label: a display string, not a user reference. Sanitized and capped like any
+        // other user text.
         var forwardedFrom = string.IsNullOrWhiteSpace(cmd.ForwardedFrom)
             ? null
             : TextSanitizer.StripHtml(cmd.ForwardedFrom).Trim() is { Length: > 0 } f

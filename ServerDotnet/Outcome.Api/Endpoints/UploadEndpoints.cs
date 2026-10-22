@@ -291,7 +291,7 @@ public static class UploadEndpoints
             // Never let an upload decide it is a document. The stored MIME type comes from the
             // client whenever MimeSniffer does not recognise the magic bytes, so a file uploaded
             // as text/html used to be served as text/html, inline, on this origin — a page with
-            // script, reading the session token and the E2EE keys out of the browser's storage.
+            // script, reading the session token out of the browser's storage.
             //
             // Only what we render inline is served inline, with its own type; everything else is
             // a download of opaque bytes. The sandbox header is the second lock: it strips the

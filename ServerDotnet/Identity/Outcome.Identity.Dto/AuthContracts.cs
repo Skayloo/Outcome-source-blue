@@ -13,8 +13,7 @@ public sealed record UserDto(
     long RoleId,
     bool TotpEnabled,
     DateTime CreatedAt,
-    /// <summary>False ⇒ SSO-only account with no password of its own: the client must offer a
-    /// separate E2EE backup passphrase, since there is no password to wrap the key backup with.</summary>
+    /// <summary>False ⇒ the account has no password of its own yet.</summary>
     bool PasswordSet = true);
 
 /// <summary>Login/register result. token/partial_token/user are omitted when null (Go omitempty).</summary>
@@ -29,12 +28,7 @@ public sealed class AuthResult
     [JsonProperty("requires_2fa")]
     public bool Requires2fa { get; init; }
 
-    /// <summary>Registration parked pending an email code; complete via /auth/register/verify
-    /// with <see cref="PartialToken"/>. Omitted (false) on every pre-existing response shape.</summary>
-    [JsonProperty("requires_email_verify", DefaultValueHandling = DefaultValueHandling.Ignore)]
-    public bool RequiresEmailVerify { get; init; }
-
-    /// <summary>Which 2FA method to complete: "totp" or "email". Set only when requires_2fa.</summary>
+    /// <summary>Which 2FA method to complete: always "totp". Set only when requires_2fa.</summary>
     [JsonProperty("two_factor_method", NullValueHandling = NullValueHandling.Ignore)]
     public string? TwoFactorMethod { get; init; }
 

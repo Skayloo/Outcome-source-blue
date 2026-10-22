@@ -35,7 +35,7 @@ const GROUP_WINDOW_MS = 5 * 60 * 1000;
 // uploads, ones sent "as a file") is decoded here by HeicPhoto.
 const isImage = (mime: string) => mime.startsWith("image/") && !/^image\/hei[cf]/i.test(mime);
 /** A HEIC the server made JPEG copies of (it measured it, so it could read it): the album draws
- *  those copies. A blob: url (an opened sealed file) has no server copies. */
+ *  those copies. A blob: url (a file made on this device) has no server copies. */
 const hasJpegCopies = (a: { mime: string; filename: string; url: string; width?: number | null }) =>
   looksHeif(a.mime, a.filename) && a.width != null && !a.url.startsWith("blob:");
 const inAlbum = (a: { mime: string; filename: string; url: string; width?: number | null }) => isImage(a.mime) || hasJpegCopies(a);
@@ -76,10 +76,9 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
     return () => window.removeEventListener("focus", onFocus);
   }, [channelId]);
 
-  // Read the flag during render, not inside the effect, and depend on it: unlocking E2EE
-  // clears the loaded set to force a refetch, and with [channelId] alone the OPEN channel
-  // never noticed — the history you were looking at stayed as lock placeholders until a
-  // reload. The component already re-renders on this store, so the flag flipping is enough.
+  // Read the flag during render, not inside the effect, and depend on it: clearing the loaded
+  // set forces a refetch, and with [channelId] alone the OPEN channel never noticed. The
+  // component already re-renders on this store, so the flag flipping is enough.
   const channelLoaded = channelId != null && isChannelLoaded(channelId);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -601,8 +600,7 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           stickRef.current = false;
         } else if (stickRef.current) {
           // A scroll event arrives a frame after the scroll and measures the list as it is by
-          // then. A picture that loaded in between (a sealed photo opening, a thumbnail
-          // arriving) made toBottom's own scroll read as "the reader went 700 px up": the view
+          // then. A picture that loaded in between (a photo, a thumbnail arriving) made toBottom's own scroll read as "the reader went 700 px up": the view
           // was unpinned for good and every later picture pushed it further, so a DM with
           // photos opened in the middle. Growth is not the reader leaving — follow it.
           toBottom();

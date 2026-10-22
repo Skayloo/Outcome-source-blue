@@ -9,9 +9,7 @@ namespace Outcome.Infrastructure.Storage;
 ///
 /// Every download used to copy the WHOLE object into memory first, Range requests included: a
 /// recording of a few gigabytes was read in full, on a blocked thread, for each seek in a video
-/// player. Now a request costs the blocks it touches. A block covers one encrypted chunk with room
-/// to spare (1 MiB of plaintext + nonce + tag), so the decrypting reader above it makes one GET per
-/// chunk. Holds no cipher: both storage editions use it.
+/// player. Now a request costs the blocks it touches (a little over 1 MiB each).
 /// </summary>
 public sealed class MinioRangeStream : Stream
 {

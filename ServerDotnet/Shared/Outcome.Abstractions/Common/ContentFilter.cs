@@ -14,12 +14,6 @@ namespace Outcome.Application.Common;
 /// wording is a worse product than one that lets a moderator handle the rest. Reporting and
 /// blocking cover what a word list cannot.
 ///
-/// WHAT IT CANNOT SEE. Direct messages on a red server are end-to-end encrypted — the server
-/// holds ciphertext and could not read them if it wanted to. Filtering therefore applies to
-/// server channels, which are plaintext, and the honest description of the guarantee is
-/// "checked wherever the content is legible to us". Reporting works everywhere, because the
-/// reporter sends the text they can see.
-///
 /// EVASION. Matching is done on a folded form of the message: case dropped, diacritics
 /// stripped, the usual letter/digit swaps undone, and runs of repeated characters collapsed.
 /// This is not a serious defence against a determined person and is not meant to be — it is

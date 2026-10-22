@@ -10,11 +10,6 @@ import { runtimeApiBase } from "./runtimeConfig";
 import { getActiveServerId } from "@stores/servers.store";
 import type {
   PublicUser,
-  MailFolder,
-  MailFolderId,
-  MailSummary,
-  MailMessage,
-  MailOutgoing,
   FriendsListResponse,
   AdminStatsResponse,
   ServiceHealthResponse,
@@ -276,19 +271,6 @@ export function createApiClient(
       );
     },
 
-    /** Record the personal-data consent for the signed-in account. Write-once on the server:
-     *  what is stored is when this person FIRST agreed and to which text. Used by the gate that
-     *  finishes a provider-created account, where the tick necessarily comes after the account
-     *  already exists. */
-    recordConsent(consentVersion: string, signal?: AbortSignal): Promise<void> {
-      return request<void>("POST", "/users/me/consent", { consent_version: consentVersion }, signal);
-    },
-
-    /** Which SSO providers this deployment holds keys for (["google","yandex"], or empty). */
-    ssoProviders(signal?: AbortSignal): Promise<{ providers: string[] }> {
-      return request<{ providers: string[] }>("GET", "/auth/oauth/providers", undefined, signal);
-    },
-
     logout(signal?: AbortSignal): Promise<void> {
       return request<void>("POST", "/auth/logout", undefined, signal);
     },
@@ -336,62 +318,6 @@ export function createApiClient(
       return res.json() as Promise<AuthResponse>;
     },
 
-    /** Complete an email-verified registration: pending token in Authorization, { code } in body. */
-    verifyRegistration(code: string, partialToken: string, signal?: AbortSignal): Promise<AuthResponse> {
-      return doFetch<AuthResponse>("API", baseUrl(), "POST", "/auth/register/verify", { code }, signal,
-        { Authorization: `Bearer ${partialToken}` });
-    },
-
-    /** Request a password-reset code by email. Always resolves (the server answers 204 whether or
-     *  not the address has an account) — never surface existence to the caller. */
-    forgotPassword(email: string, signal?: AbortSignal): Promise<void> {
-      return doFetch<void>("API", baseUrl(), "POST", "/auth/password/forgot", { email }, signal);
-    },
-
-    /** Complete a reset: emailed code + new password → sets it and logs in (returns a session). */
-    resetPassword(email: string, code: string, newPassword: string, signal?: AbortSignal): Promise<AuthResponse> {
-      return doFetch<AuthResponse>("API", baseUrl(), "POST", "/auth/password/reset",
-        { email, code, new_password: newPassword }, signal);
-    },
-
-    async verifyEmailOtp(
-      code: string,
-      partialToken: string,
-      signal?: AbortSignal,
-    ): Promise<AuthResponse> {
-      const url = `${baseUrl()}/auth/verify-email-otp`;
-      const init: RequestInit = {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${partialToken}`,
-          "X-Server-Id": String(getActiveServerId()),
-        },
-        body: JSON.stringify({ code }),
-        signal,
-      };
-
-      let res: Response;
-      try {
-        res = await platformFetch(url, init as RequestInit);
-      } catch (fetchErr) {
-        log.error("API fetch failed", { method: "POST", path: "/auth/verify-email-otp", error: String(fetchErr) });
-        if (fetchErr instanceof Error) throw fetchErr;
-        throw new Error(typeof fetchErr === "string" ? fetchErr : String(fetchErr));
-      }
-
-      if (res.status === 401) {
-        onUnauthorized?.();
-        const err = await parseError(res);
-        throw new ApiClientError(401, err.error, err.message);
-      }
-      if (!res.ok) {
-        const err = await parseError(res);
-        throw new ApiClientError(res.status, err.error, err.message);
-      }
-      return res.json() as Promise<AuthResponse>;
-    },
-
     deleteAccount(password: string, signal?: AbortSignal): Promise<void> {
       return request<void>(
         "DELETE",
@@ -417,14 +343,6 @@ export function createApiClient(
     /** Show message text in push notifications, or only who sent it. Account-wide. */
     setPushPreview(on: boolean, signal?: AbortSignal): Promise<MemberResponse> {
       return request<MemberResponse>("PATCH", "/users/me", { push_preview: on }, signal);
-    },
-
-    /**
-     * Store the RECOVERY copy: the same secret key sealed with a code generated on the device.
-     * Opaque here as well — the server holds two blobs it cannot open rather than one.
-     */
-    putE2eeRecovery(blob: string, signal?: AbortSignal): Promise<MemberResponse> {
-      return request<MemberResponse>("PATCH", "/users/me", { e2ee_recovery: blob }, signal);
     },
 
     changePassword(
@@ -838,76 +756,6 @@ export function createApiClient(
       return pagedGet<MessageReportDto>("API", baseUrl(), "/admin/reports", limit, offset, signal);
     },
 
-    /** Admin: the support mailbox. `configured` is false when the server has no mailbox set,
-     *  which is not an error — the panel says so rather than showing a failure. */
-    adminMailFolders(signal?: AbortSignal):
-      Promise<{ configured: boolean; address: string; folders: MailFolder[] }> {
-      return request("GET", "/admin/mail/folders", undefined, signal);
-    },
-
-    adminListMail(folder: MailFolderId, limit: number, offset: number, q: string, signal?: AbortSignal):
-      Promise<{ configured: boolean; total: number; messages: MailSummary[] }> {
-      const query = q ? `&q=${encodeURIComponent(q)}` : "";
-      return request("GET", `/admin/mail?folder=${folder}&limit=${limit}&offset=${offset}${query}`, undefined, signal);
-    },
-
-    adminGetMail(folder: MailFolderId, uid: number, signal?: AbortSignal): Promise<MailMessage> {
-      return request("GET", `/admin/mail/${uid}?folder=${folder}`, undefined, signal);
-    },
-
-    /** A file of a message, as a Blob — always downloaded, never opened on this origin. */
-    async adminMailAttachment(folder: MailFolderId, uid: number, index: number, signal?: AbortSignal): Promise<Blob> {
-      const h: Record<string, string> = {};
-      if (config.token) h["Authorization"] = `Bearer ${config.token}`;
-      const res = await platformFetch(`${baseUrl()}/admin/mail/${uid}/attachments/${index}?folder=${folder}`,
-        { method: "GET", headers: h, signal } as RequestInit);
-      if (!res.ok) {
-        const err = await parseError(res);
-        throw new ApiClientError(res.status, err.error, err.message);
-      }
-      return res.blob();
-    },
-
-    adminMailFlags(folder: MailFolderId, uids: readonly number[], flags: { seen?: boolean; flagged?: boolean }, signal?: AbortSignal): Promise<void> {
-      return request<void>("POST", "/admin/mail/flags", { folder, uids, ...flags }, signal);
-    },
-
-    adminMailMove(folder: MailFolderId, uids: readonly number[], to: MailFolderId, signal?: AbortSignal): Promise<void> {
-      return request<void>("POST", "/admin/mail/move", { folder, uids, to }, signal);
-    },
-
-    adminMailDelete(folder: MailFolderId, uids: readonly number[], signal?: AbortSignal): Promise<void> {
-      return request<void>("POST", "/admin/mail/delete", { folder, uids }, signal);
-    },
-
-    adminMailEmpty(folder: MailFolderId, signal?: AbortSignal): Promise<void> {
-      return request<void>("POST", "/admin/mail/empty", { folder }, signal);
-    },
-
-    /** Send, or keep as a draft (answers the draft's new uid). Multipart: the files ride along. */
-    async adminMailWrite(kind: "send" | "draft", m: MailOutgoing, signal?: AbortSignal): Promise<{ uid?: number } | undefined> {
-      const fd = new FormData();
-      fd.append("to", m.to);
-      fd.append("cc", m.cc);
-      fd.append("subject", m.subject);
-      fd.append("text", m.text);
-      if (m.reply_folder && m.reply_uid !== undefined) {
-        fd.append("reply_folder", m.reply_folder);
-        fd.append("reply_uid", String(m.reply_uid));
-      }
-      if (m.draft_uid !== undefined) fd.append("draft_uid", String(m.draft_uid));
-      if (m.keep.length > 0) fd.append("keep", JSON.stringify(m.keep));
-      for (const f of m.files) fd.append("files", f, f.name);
-      const h: Record<string, string> = {};
-      if (config.token) h["Authorization"] = `Bearer ${config.token}`;
-      const res = await platformFetch(`${baseUrl()}/admin/mail/${kind}`, { method: "POST", headers: h, body: fd, signal } as RequestInit);
-      if (!res.ok) {
-        const err = await parseError(res);
-        throw new ApiClientError(res.status, err.error, err.message);
-      }
-      return res.status === 204 ? undefined : ((await res.json()) as { uid?: number });
-    },
-
     adminSetReportStatus(id: number, status: ReportStatus, signal?: AbortSignal): Promise<void> {
       return request<void>("PATCH", `/admin/reports/${id}/status`, { status }, signal);
     },
@@ -1120,6 +968,10 @@ export function createApiClient(
 
     // ── Admin: Members ──────────────────────────────────────
 
+    /** The administrator sets a user's password; all their sessions end. */
+    adminSetUserPassword(userId: number, password: string, signal?: AbortSignal): Promise<void> {
+      return adminRequest("PUT", `/users/${userId}/password`, { password }, signal);
+    },
     adminKickMember(
       userId: number,
       signal?: AbortSignal,

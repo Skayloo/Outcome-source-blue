@@ -1,9 +1,7 @@
 /**
  * Server Settings pane (admin). Loads the server's key/value settings via
- * api.getAdminSettings() and lets an admin edit them. server_name and motd get
- * dedicated controls (text input / textarea); every other returned key renders
- * as a generic editable input so unknown keys are still editable and robust.
- * Saving PATCHes only the changed keys via api.updateAdminSettings().
+ * api.getAdminSettings() and edits the ones it has a control for: server_name and motd, and
+ * the registration switches. Saving PATCHes only the changed keys via api.updateAdminSettings().
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Row, Toggle, Banner } from "@components/settings/controls";
@@ -14,12 +12,11 @@ import { api } from "@lib/services";
 const PRIMARY_KEYS = ["server_name", "motd"] as const;
 // Boolean switches that get dedicated Toggle rows. This panel writes "1"/"0", but it is not the
 // only writer, and the server reads "true"/"false" just as happily — see AuthRules.ParseBoolean.
-const REGISTRATION_KEYS = ["registration_open", "registration_invite_only", "registration_email_verify",
-  "registration_pdn_consent"] as const;
+const REGISTRATION_KEYS = ["registration_open", "registration_invite_only"] as const;
 
 /**
  * Read a stored setting the way the SERVER reads it. Comparing `value === "1"` looked equivalent
- * and was not: `registration_email_verify` is stored as "true", so the switch drew itself OFF
+ * and was not: a switch stored as "true" drew itself OFF
  * while the feature was ON — and the next save on this page wrote that lie back as "0". A
  * setting that silently disables itself is worse than one that never worked.
  */
@@ -33,15 +30,6 @@ function isOn(value: string | undefined, fallback: boolean): boolean {
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
-}
-
-/** Humanize a settings key for use as a label (e.g. "max_upload_mb" -> "Max Upload Mb"). */
-function labelFor(key: string): string {
-  return key
-    .split(/[_\s]+/)
-    .filter((w) => w.length > 0)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
 }
 
 export function ServerSettingsPanel() {
@@ -81,14 +69,6 @@ export function ServerSettingsPanel() {
       controller.abort();
     };
   }, []);
-
-  // Keys other than the dedicated-control ones, stable sorted.
-  const extraKeys = useMemo(() => {
-    const dedicated = new Set<string>([...PRIMARY_KEYS, ...REGISTRATION_KEYS]);
-    return Object.keys(original)
-      .filter((k) => !dedicated.has(k))
-      .sort((a, b) => a.localeCompare(b));
-  }, [original]);
 
   // Diff: only keys whose draft value differs from the original.
   const changed = useMemo<Record<string, string>>(() => {
@@ -190,35 +170,8 @@ export function ServerSettingsPanel() {
                   onChange={(v) => setField("registration_invite_only", v ? "1" : "0")}
                 />
               </Row>
-              <Row label={t("admin.regEmailVerify")} desc={t("admin.regEmailVerifyDesc")}>
-                <Toggle
-                  on={isOn(draft["registration_email_verify"], false)}
-                  onChange={(v) => setField("registration_email_verify", v ? "1" : "0")}
-                />
-              </Row>
-              {/* OFF by default: the obligation belongs to whoever operates the space, and this
-                  server ships to people who operate their own. ON for outcome.ru. */}
-              <Row label={t("admin.regPdnConsent")} desc={t("admin.regPdnConsentDesc")}>
-                <Toggle
-                  on={isOn(draft["registration_pdn_consent"], false)}
-                  onChange={(v) => setField("registration_pdn_consent", v ? "1" : "0")}
-                />
-              </Row>
             </div>
           </Card>
-
-          {extraKeys.length > 0 && (
-            <Card title={t("admin.advanced")}>
-              <div className="adm-form-grid adm-form-grid--2">
-                {extraKeys.map((key) => (
-                  <label key={key} className="adm-field">
-                    <span>{labelFor(key)}</span>
-                    <input className="form-input" type="text" value={draft[key] ?? ""} onChange={(e) => setField(key, e.target.value)} />
-                  </label>
-                ))}
-              </div>
-            </Card>
-          )}
 
           {Object.keys(original).length === 0 && (
             <Banner kind="info">{t("admin.noEditableSettings")}</Banner>
@@ -229,7 +182,7 @@ export function ServerSettingsPanel() {
 
           {/* The commit control follows the scroll once anything is unsaved.
               It used to sit at the bottom of a page a screen and a half long, while the
-              switches it commits sit at the top — so flipping "email verification" off, then
+              switches it commits sit at the top — so flipping a switch off, then
               reloading, brought it back ON, and the panel looked like it was refusing to save.
               Nothing was refused: nothing had been sent. A switch reads as applied the moment
               it moves, so the thing that applies it cannot be somewhere the eye never goes. */}

@@ -1020,7 +1020,7 @@ export class LiveKitSession {
   }
 
   async handleVoiceToken(
-    token: string, url: string, channelId: number, directUrl?: string, sharedKey?: string,
+    token: string, url: string, channelId: number, directUrl?: string,
   ): Promise<void> {
     // Connected, or LiveKit recovering the session itself: a token for the same channel is only
     // a refresh. The signal socket rides our server's /livekit proxy, so a server restart puts

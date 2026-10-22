@@ -873,55 +873,6 @@
   .btn-primary:hover::after { animation: none !important; }
 }
 
-/* ── SSO (Google / Yandex) ────────────────────────────────────────────────────
-   Neutral surface buttons, never the accent gradient: the provider's own brand
-   mark carries the identity, and a purple "Continue with Google" reads as ours. */
-.sso-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 18px 0 14px;
-  color: var(--text-faint);
-  font-size: 12px;
-}
-.sso-divider::before,
-.sso-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.sso-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.btn-sso {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  width: 100%;
-  height: 52px;
-  padding: 0 18px;
-  /* Pill, on Google's own dark button surface — the mark must not be restyled to
-     match the host app, so the button is built around it instead. */
-  border-radius: 999px;
-  border: none;
-  background: #202124;
-  color: #fff;
-  font-size: 15.5px;
-  font-weight: 600;
-  letter-spacing: 0.1px;
-  cursor: pointer;
-  transition: filter var(--motion-fast) var(--ease-out);
-}
-.btn-sso:hover:not(:disabled) { filter: brightness(1.18); }
-.btn-sso:disabled { opacity: 0.55; cursor: default; }
-.btn-sso svg { flex: none; }
-
 /* ── Boot splash (restoring a stored session) ────────────────────────────────
    Same canvas as the login page, so a reload never flashes a different surface.
 
@@ -1362,14 +1313,3 @@
   color: var(--text-muted); font-size: 13px; cursor: pointer;
 }
 
-/* The recovery code, shown once. Monospace and widely spaced because it will be copied by
-   hand as often as by button, and a code misread off the screen is a code that does not work. */
-.recovery-code {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 1.15rem; letter-spacing: .08em; line-height: 1.9;
-  text-align: center; word-break: break-all;
-  padding: 16px 14px; margin: 4px 0 14px;
-  border: 1px solid var(--border); border-radius: 12px;
-  background: var(--bg-secondary); color: var(--text-normal);
-  user-select: all;
-}

@@ -9,9 +9,9 @@ browser does. The iOS app is a separate Flutter codebase in `mobile/`.
 ```text
 frontend/
 ├── index.html                 the app shell — an empty #root and nothing else
-├── vite.config.ts             path aliases, the __OUTCOME_EDITION__ define
+├── vite.config.ts             path aliases
 ├── nginx.conf                 routing, CSP, the landing/app split on $host
-├── public/                    served verbatim: landing.html, fonts, the DFN model, robots
+├── public/                    served verbatim: fonts, the DFN model, robots
 └── src/
     ├── main.tsx               mounts <App/>
     ├── App.tsx                the only routing there is — see below
@@ -32,7 +32,6 @@ There is no router. `App.tsx` reads `window.location.pathname` and picks a page:
 | Path | |
 | --- | --- |
 | `/guest/<code>` | `GuestVoicePage` — rendered before any auth gate, because guests have no account |
-| `/privacy` | `PrivacyPage` — public, above the gate, for people deciding whether to sign up |
 | `/admin…` | `AdminPage`, owner only |
 | anything else | `ConnectPage` when signed out, `MainPage` when signed in |
 
@@ -65,15 +64,6 @@ action or a service; it does not touch the socket or `fetch`.
 | `audioPipeline.ts` | Microphone processing — one noise-suppression processor per call, chosen before the graph is built |
 | `noise-suppression-dfn.ts` | DeepFilterNet: fetch, warm, and the depth setting |
 | `protocolTypes.ts` | The wire types, kept in step with the server's `WsFrames` |
-
-## Editions
-
-`vite.config.ts` defines `__OUTCOME_EDITION__`. In the RED build it is `"red"` and the
-encryption modules are compiled in; the public BLUE source contains no encryption at all —
-not aliased out, removed. See [encryption.md](encryption.md).
-
-The privacy policy reads that constant to decide which promises it is allowed to make, which
-is the whole reason it survived the split.
 
 ## Things that will bite
 

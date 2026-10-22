@@ -5,18 +5,14 @@ import { setSidebarMode } from "@stores/ui.store";
 import { PDN_CONSENT_VERSION, PDN_CONSENT_URL, PDN_POLICY_URL, pdnConsentApplies } from "@lib/pdnConsent";
 import { ApiClientError } from "@lib/api";
 import { BrandMark, useSpaceBrand } from "@components/BrandMark";
-import { fetchSsoProviders, forgetPendingSso, startSso, type SsoProvider } from "@lib/sso";
-import { GoogleMark, YandexMark } from "@components/SsoMarks";
 import { Icon } from "@lib/icons";
 import { t } from "@lib/i18n";
 import { readLastHost } from "@lib/serverHost";
 
-type Mode = "loading" | "login" | "register" | "setup" | "totp" | "regcode" | "forgot" | "reset";
+type Mode = "loading" | "login" | "register" | "setup" | "totp";
 
-/** Every sign-in on this page ends here. An SSO attempt started and abandoned before it is over
- *  too: its marker would otherwise let a token turn up later and replace this session unasked. */
+/** Every sign-in on this page ends here. */
 function signedIn(host: string, token: string, username: string): void {
-  forgetPendingSso();
   wirePostAuth(host, token, username);
 }
 
@@ -40,10 +36,8 @@ export function ConnectPage() {
   const [consent, setConsent] = useState(false);
   const [code, setCode] = useState("");
   const [partialToken, setPartialToken] = useState("");
-  const [twoFactorMethod, setTwoFactorMethod] = useState("totp");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ssoProviders, setSsoProviders] = useState<SsoProvider[]>([]);
   // Instance-wide invite-only switch: the register form marks the invite field required
   // up front instead of letting the submit bounce off the server.
   const [inviteRequired, setInviteRequired] = useState(false);
@@ -52,8 +46,8 @@ export function ConnectPage() {
   // Prefilled (and revealed) with the last host the user signed into.
   const [host, setHost] = useState(readLastHost);
   const [showHost, setShowHost] = useState(() => readLastHost() !== "");
-  // The host the setup/SSO probes were last run against — recommitted on field blur, so
-  // the SSO buttons and the setup wizard reflect the TARGET instance, not this one.
+  // The host the setup probe was last run against — recommitted on field blur, so the setup
+  // wizard reflects the TARGET instance, not this one.
   const [committedHost, setCommittedHost] = useState(readLastHost);
   // Whether to ask at all. Derived from the host the form is pointed at, so it appears and
   // disappears as that field changes — no round trip, and the same rule the phone applies.
@@ -69,8 +63,6 @@ export function ConnectPage() {
     api.getSetupStatus()
       .then((s) => { setMode((m) => (m === "loading" || m === "setup" || m === "login") ? (s.needs_setup ? "setup" : "login") : m); setInviteRequired(s.invite_required === true); })
       .catch(() => setMode((m) => (m === "loading" ? "login" : m)));
-    // Render a provider button only when the server actually holds its keys.
-    void fetchSsoProviders().then(setSsoProviders);
   }, [committedHost]);
 
   function fail(e: unknown) {
@@ -111,48 +103,14 @@ export function ConnectPage() {
         // than recording none. A self-hosted server that requires one refuses this.
         const r = await api.register(email, username, password, invite,
           askConsent ? PDN_CONSENT_VERSION : "");
-        // Email verification on: the account does not exist yet — the server parked the
-        // registration and mailed a code. Swap to the code screen; submit completes it.
-        if (r.requires_email_verify && r.partial_token) {
-          setPartialToken(r.partial_token);
-          setMode("regcode");
-          setBusy(false);
-          return;
-        }
         if (r.token) signedUp(targetHost, r.token, username);
-      } else if (mode === "regcode") {
-        const r = await api.verifyRegistration(code, partialToken);
-        if (r.token) signedUp(targetHost, r.token, username);
-      } else if (mode === "forgot") {
-        // Always advances to the code screen — the server answers 204 whether or not the
-        // address exists, so the UI must not branch on it (no account-enumeration signal).
-        await api.forgotPassword(email);
-        setCode("");
-        setMode("reset");
-        setBusy(false);
-        return;
-      } else if (mode === "reset") {
-        const r = await api.resetPassword(email, code, password);
-        // An account with TOTP: the password is set, the second factor still has to be shown.
-        if (r.requires_2fa) {
-          setCode("");
-          setPartialToken(r.partial_token ?? "");
-          setTwoFactorMethod(r.two_factor_method ?? "totp");
-          setMode("totp");
-          setBusy(false);
-          return;
-        }
-        if (r.token) signedIn(targetHost, r.token, email);
       } else if (mode === "totp") {
-        const r = twoFactorMethod === "email"
-          ? await api.verifyEmailOtp(code, partialToken)
-          : await api.verifyTotp(code, partialToken);
+        const r = await api.verifyTotp(code, partialToken);
         if (r.token) signedIn(targetHost, r.token, username || email);
       } else {
         const r = await api.login(email, password);
         if (r.requires_2fa) {
           setPartialToken(r.partial_token ?? "");
-          setTwoFactorMethod(r.two_factor_method ?? "totp");
           setMode("totp");
           setBusy(false);
           return;
@@ -166,10 +124,7 @@ export function ConnectPage() {
 
   const title = mode === "setup" ? t("auth.titleSetup")
     : mode === "register" ? t("auth.titleRegister")
-    : mode === "regcode" ? t("auth.titleRegCode")
-    : mode === "forgot" ? t("auth.titleForgot")
-    : mode === "reset" ? t("auth.titleReset")
-    : mode === "totp" ? (twoFactorMethod === "email" ? t("auth.titleEmailCode") : t("auth.titleTwoFactor"))
+    : mode === "totp" ? t("auth.titleTwoFactor")
     : t("auth.titleLogin");
   const needsUsername = mode === "setup" || mode === "register";
 
@@ -194,49 +149,12 @@ export function ConnectPage() {
           {error && <div className="error-banner visible" role="alert">{error}</div>}
 
           <form className="connect-form" onSubmit={submit} noValidate>
-            {mode === "totp" || mode === "regcode" ? (
+            {mode === "totp" ? (
               <div className="form-group">
-                <label className="form-label" htmlFor="code">
-                  {mode === "regcode" || twoFactorMethod === "email" ? t("auth.labelEmailCode") : t("auth.labelAuthCode")}
-                </label>
+                <label className="form-label" htmlFor="code">{t("auth.labelAuthCode")}</label>
                 <input className="form-input" id="code" inputMode="numeric" autoComplete="one-time-code"
                   placeholder="000000" value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
-                {(mode === "regcode" || twoFactorMethod === "email") && (
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
-                    {t("auth.emailCodeHint")}
-                  </div>
-                )}
               </div>
-            ) : mode === "forgot" ? (
-              <div className="form-group">
-                <label className="form-label" htmlFor="email">{t("auth.labelEmail")}</label>
-                <input className="form-input" id="email" type="email" autoComplete="email"
-                  placeholder={t("auth.emailPlaceholder")} value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
-                <div className="form-hint">{t("auth.forgotHint")}</div>
-              </div>
-            ) : mode === "reset" ? (
-              <>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="code">{t("auth.labelEmailCode")}</label>
-                  <input className="form-input" id="code" inputMode="numeric" autoComplete="one-time-code"
-                    placeholder="000000" value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
-                  <div className="form-hint">{t("auth.resetCodeHint", { email })}</div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label" htmlFor="password">{t("auth.labelNewPassword")}</label>
-                  <div className="password-field">
-                    <input className="form-input" id="password" type={showPassword ? "text" : "password"}
-                      autoComplete="new-password"
-                      value={password} onChange={(e) => setPassword(e.target.value)} />
-                    <button type="button" className="password-reveal" tabIndex={-1}
-                      aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
-                      title={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
-                      onClick={() => setShowPassword((v) => !v)}>
-                      <Icon name={showPassword ? "eye-off" : "eye"} size={18} />
-                    </button>
-                  </div>
-                </div>
-              </>
             ) : (
               <>
                 <div className="form-group">
@@ -311,7 +229,7 @@ export function ConnectPage() {
 
             {/* Optional instance picker — this SPA can sign into any self-hosted Outcome
                 server, not just the one that served it (same idea as a Matrix homeserver
-                field). Hidden behind a toggle; commit on blur re-probes setup/SSO. */}
+                field). Hidden behind a toggle; commit on blur re-probes setup. */}
             {(mode === "login" || mode === "register") && showHost && (
               <div className="form-group">
                 <label className="form-label" htmlFor="server">{t("auth.labelServer")}</label>
@@ -328,57 +246,16 @@ export function ConnectPage() {
               {busy ? t("auth.btnBusy")
                 : mode === "setup" ? t("auth.btnCreateOwner")
                 : mode === "register" ? t("auth.btnRegister")
-                : mode === "forgot" ? t("auth.btnSendCode")
-                : mode === "reset" ? t("auth.btnResetPassword")
-                : mode === "totp" || mode === "regcode" ? t("auth.btnVerify")
+                : mode === "totp" ? t("auth.btnVerify")
                 : t("auth.btnLogin")}
             </button>
 
-            {/* "Forgot password?" — the entry into the email-code reset. Also the ONLY path an
-                SSO-only account has to gain a password (and the rescue for accounts whose SSO
-                provider was later disabled). Back-link returns to login from either step. */}
             {mode === "login" && (
-              <button type="button" className="form-toggle-action" style={{ marginTop: 12 }}
-                onClick={() => { setError(null); setPassword(""); setMode("forgot"); }}>
-                {t("auth.forgotLink")}
-              </button>
-            )}
-            {(mode === "forgot" || mode === "reset") && (
-              <button type="button" className="form-toggle-action" style={{ marginTop: 12 }}
-                onClick={() => { setError(null); setCode(""); setMode("login"); }}>
-                {t("auth.backToLogin")}
-              </button>
+              <div className="form-hint" style={{ marginTop: 12, textAlign: "center" }}>
+                {t("auth.forgotAskAdmin")}
+              </div>
             )}
           </form>
-
-          {/* SSO only makes sense for signing in / signing up — not for the owner-setup
-              wizard (there is no account yet to own the instance) or the 2FA step. */}
-          {(mode === "login" || mode === "register") && ssoProviders.length > 0 && (
-            <>
-              <div className="sso-divider"><span>{t("auth.ssoOr")}</span></div>
-              <div className="sso-buttons">
-                {ssoProviders.includes("google") && (
-                  <button type="button" className="btn-sso" disabled={busy}
-                    onClick={() => startSso("google", host.trim())}>
-                    <GoogleMark /> {t("auth.ssoGoogle")}
-                  </button>
-                )}
-                {ssoProviders.includes("yandex") && (
-                  <button type="button" className="btn-sso" disabled={busy}
-                    onClick={() => startSso("yandex", host.trim())}>
-                    <YandexMark /> {t("auth.ssoYandex")}
-                  </button>
-                )}
-              </div>
-              {/* Invite-only blocks NEW SSO accounts server-side; warn up front on the
-                  register tab instead of bouncing the user off the provider round-trip. */}
-              {inviteRequired && mode === "register" && (
-                <div className="form-hint" style={{ marginTop: 8, textAlign: "center" }}>
-                  {t("auth.ssoInviteOnlyHint")}
-                </div>
-              )}
-            </>
-          )}
 
           {(mode === "login" || mode === "register") && (
             <div className="form-toggle-link">

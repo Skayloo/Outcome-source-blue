@@ -5,11 +5,7 @@
     <ProjectReference Include="..\Outcome.Db.Abstractions\Outcome.Db.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="HtmlSanitizer" Version="9.2.1039" />
     <PackageReference Include="Isopoh.Cryptography.Argon2" Version="2.0.0" />
-    <!-- IMAP has no BCL client and SmtpClient cannot thread a reply; MailKit is the one library
-         everyone uses for both, and it brings MimeKit for parsing what arrives. -->
-    <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Livekit.Server.Sdk.Dotnet" Version="1.2.2" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.9" />

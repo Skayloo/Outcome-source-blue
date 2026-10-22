@@ -83,9 +83,6 @@ public sealed class JoinVoiceHandler(
         var existing = (await voice.GetForChannelAsync(cmd.ChannelId, ct)).Where(v => v.UserId != cmd.UserId).ToList();
         var quality = channel.VoiceQuality is { Length: > 0 } q && VoiceQuality.IsValid(q) ? q : "medium";
 
-        // A guest-linked channel admits anonymous guests who can't do the WS key exchange, so its
-        // members use a shared room key derived from the link code instead — the same key the guest
-        // gets — keeping everyone mutually audible AND encrypted. Null → ordinary WS key exchange.
         return new JoinVoiceResult(token, lk.Url, quality, VoiceQuality.Bitrate(quality), channel.VoiceMaxUsers, joiner, existing, previous);
     }
 }

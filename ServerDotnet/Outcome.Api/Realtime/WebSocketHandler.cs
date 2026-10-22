@@ -28,7 +28,6 @@ public sealed class WebSocketHandler(
     IPendingCallStore pendingCalls,
     IServiceScopeFactory scopeFactory,
     IOptions<ServerOptions> serverOptions,
-    IOptions<OAuthOptions> oauthOptions,
     GuestPresence guestPresence,
     PushNotifier pushNotifier,
     SessionRevocations revocations,
@@ -61,10 +60,7 @@ public sealed class WebSocketHandler(
     }
 
     /// <summary>The connection that holds each user's voice session — the one that sent their last
-    /// voice_join. Relayed key requests reach every device of the account, and one that is not in
-    /// the call (a phone left open on the desk) may hold a stale key from an earlier call; once a
-    /// user's voice connection is known, only the key IT sends is passed on. In memory, so empty
-    /// after a restart until each user joins again.</summary>
+    /// voice_join. In memory, so empty after a restart until each user joins again.</summary>
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(long Space, long User), Guid> voiceConnections = new();
 
     /// <summary>Only what is safe inside a LiveKit identity; anything else is ignored, not rejected.</summary>
@@ -82,7 +78,7 @@ public sealed class WebSocketHandler(
         // Never the Host the socket came in with — any client can send any Host (an unknown one
         // falls back to the root space), and the recipients' phones then fetched the picture, with
         // its signed URL, from wherever the SENDER pointed them. The socket's own only in dev.
-        var configured = space.Domain is { Length: > 0 } d ? $"https://{d}" : oauthOptions.Value.PublicOrigin.TrimEnd('/');
+        var configured = space.Domain is { Length: > 0 } d ? $"https://{d}" : serverOptions.Value.PublicOrigin.TrimEnd('/');
         auth = auth with { Origin = configured.Length > 0 ? configured : origin };
 
         var connId = Guid.NewGuid();
@@ -162,8 +158,8 @@ public sealed class WebSocketHandler(
             // One budget for everything a connection sends: a burst of FrameBurst, refilled at
             // FramesPerSecond. Only presence and calls had limits, and every other frame (a READY
             // rebuild, a broadcast, a LiveKit call) could be sent as fast as one socket can write,
-            // from 64 sockets an address. Far above what any client does — a fast typist and a
-            // key exchange together stay under a tenth of it.
+            // from 64 sockets an address. Far above what any client does — a fast typist stays
+            // under a tenth of it.
             double tokens = FrameBurst;
             var refilledAt = Environment.TickCount64;
             var warnedAt = 0L;
@@ -875,7 +871,7 @@ public sealed class WebSocketHandler(
     /// on purpose: an honest client disconnects on its own a moment after its leave, and the SAME
     /// connection re-joining gets the SAME identity, so removing at once (awaited in the frame loop)
     /// held the leave broadcast back by LiveKit's 3-5 s RPC timeout — it reached the room after the
-    /// re-join and threw the user out of the roster and the key ledger.</summary>
+    /// re-join and threw the user out of the roster.</summary>
     private void DropStaleSessionLater(AuthInfo auth, long channelId, string identity) =>
         _ = Task.Run(async () =>
         {

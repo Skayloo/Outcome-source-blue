@@ -14,4 +14,3 @@ Disallow: /api/
 # for the same searches and wins nothing.
 Disallow: /app
 
-Sitemap: https://outcome.ru/sitemap.xml

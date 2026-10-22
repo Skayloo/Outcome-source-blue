@@ -5,9 +5,7 @@ import { setTransientSuccess, showToast } from "@stores/ui.store";
 
 /**
  * Put a voice channel's no-login guest link in the clipboard — from the call itself or from the
- * channel list, without joining. An existing link is reused: the POST is idempotent on the code,
- * but it also re-latches the channel to the guest key and broadcasts a key-regime frame, which
- * makes every member already in the call rotate keys for nothing.
+ * channel list, without joining. An existing link is reused rather than minted again.
  * Permission (ManageInvites) is enforced server-side — a 403 lands in the toast.
  */
 export async function copyGuestLink(channelId: number): Promise<void> {

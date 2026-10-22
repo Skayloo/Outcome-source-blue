@@ -1,8 +1,6 @@
-﻿using System.Security.Cryptography;
-using MediatR;
+﻿using MediatR;
 using Microsoft.AspNetCore.Identity;
 using Outcome.Shared.Abstractions.Messaging;
-using Outcome.Shared.Abstractions.Notifications;
 using Outcome.Shared.Abstractions.Persistence;
 using Outcome.Shared.Abstractions.Security;
 using Outcome.Application.Common;
@@ -21,10 +19,7 @@ public sealed class RegisterUserHandler(
     IServerRepository servers,
     IAuditRepository audit,
     IJwtTokenService jwt,
-    ISessionRepository sessions,
-    IPendingRegistrationStore pendingRegs,
-    IEmailSender emailSender,
-    IRateLimiter limiter) : IRequestHandler<RegisterUserCommand, AuthResult>
+    ISessionRepository sessions) : IRequestHandler<RegisterUserCommand, AuthResult>
 {
     // Generic failure (avoids revealing whether the invite or the username was the problem).
     private static DomainException GenericAuthError() =>
@@ -47,17 +42,6 @@ public sealed class RegisterUserHandler(
             throw DomainException.InvalidInput(emailErr);
         if (AuthRules.ValidateUsername(username) is { } unameErr)
             throw DomainException.InvalidInput(unameErr);
-        // A consent the client says it showed. OFF by default: this server ships to people who
-        // run their own, and the obligation is the operator's — demanding a consent where none
-        // was published would reject registrations in exchange for nothing. ON for ours.
-        //
-        // Checked HERE and not left to the checkbox: a tick is a courtesy to the person filling
-        // the form in, not a control. An older build, a script or a curl call reaches this same
-        // endpoint, and what is mandatory has to be mandatory where it cannot be skipped.
-        if (AuthRules.ParseBoolean(await settings.GetAsync("registration_pdn_consent", ct), false)
-            && string.IsNullOrWhiteSpace(cmd.ConsentVersion))
-            throw DomainException.InvalidInput("consent to the processing of personal data is required");
-
         if (AuthRules.ValidatePassword(cmd.Password) is { } pwErr)
             throw DomainException.InvalidInput(pwErr);
 
@@ -84,35 +68,11 @@ public sealed class RegisterUserHandler(
         if (await users.ExistsByUsernameAsync(username, ct))
             throw new DomainException("USERNAME_TAKEN", 400, "this username is already taken");
 
-        // Anti-abuse chokepoint: with the switch on, NOTHING touches the users table until a
-        // code sent to the mailbox round-trips (see VerifyRegistrationHandler) — a bot without
-        // a real inbox never creates a row. The password is hashed HERE so the plaintext never
-        // sits in the pending store, and the invite is only consumed on completion.
-        if (AuthRules.ParseBoolean(await settings.GetAsync("registration_email_verify", ct), false))
-        {
-            // Per-address send budget — otherwise re-submitting the form bombs a victim's inbox.
-            // Lower-cased: Victim@ and vICTIM@ are one mailbox, and each spelling had its own budget.
-            if (!limiter.Allow($"regmail:{email.ToLowerInvariant()}", 3, TimeSpan.FromMinutes(15)))
-                throw new DomainException("RATE_LIMITED", 429, "too many codes sent to this email, please try again later");
-
-            var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
-            var hash = userManager.PasswordHasher.HashPassword(
-                new User { UserName = username }, cmd.Password);
-            var pendingToken = pendingRegs.Issue(
-                new PendingRegistration(email, username, hash, inviteCode, cmd.Device, cmd.Ip, code, cmd.ConsentVersion));
-            await emailSender.SendAsync(email, "Your Outcome registration code",
-                $"Your verification code is {code}. It expires in 10 minutes.", ct);
-            await audit.AddAsync(0, "register_email_code_sent", "user", 0, $"registration code sent to {email}{await CodeSuffixAsync(settings, code, ct)}", ct);
-            return new AuthResult { PartialToken = pendingToken, RequiresEmailVerify = true };
-        }
-
         // Recorded at creation, never updated: this is what THIS person agreed to when
         // they signed up, not what the current text happens to say.
         var newUser = new User
         {
             UserName = username, Email = email, RoleId = DefaultRole.Member,
-            // Nobody proved this address — the e-mail check is off on this path. Marked so, single
-            // sign-on will not hand the account to whoever owns the mailbox (see OAuthLogin).
             Status = "offline", EmailConfirmed = false,
             ConsentAt = DateTime.UtcNow,
             ConsentVersion = string.IsNullOrWhiteSpace(cmd.ConsentVersion) ? PdnConsent.Version : cmd.ConsentVersion,
@@ -125,20 +85,10 @@ public sealed class RegisterUserHandler(
             invites, servers, audit, jwt, sessions, users,
             newUser.Id, invite, cmd.Device, cmd.Ip, ct, cmd.HostServerId);
     }
-
-    /// <summary>The code itself, and only while someone has deliberately switched that on.
-    /// Off — the default, and what it should stay outside debugging — the journal still records
-    /// that a code was sent and to whom. That answers "did it go out" without handing "what is
-    /// it" to everyone who can read a log: the code is a short-lived key to an account, and a
-    /// journal read in a browser and kept on disk is exactly how such things leak.</summary>
-    private static async Task<string> CodeSuffixAsync(
-        ISettingsRepository settings, string code, CancellationToken ct) =>
-        AuthRules.ParseBoolean(await settings.GetAsync("debug_email_codes", ct), false)
-            ? $" (код {code})" : string.Empty;
 }
 
-/// <summary>The shared tail of both registration paths (immediate and email-verified):
-/// consume the invite + join its server, audit, issue the JWT, record the session.</summary>
+/// <summary>The tail of a registration: consume the invite + join its server, audit, issue the
+/// JWT, record the session.</summary>
 internal static class RegistrationCompletion
 {
     public static async Task<AuthResult> FinalizeAsync(
@@ -176,15 +126,4 @@ internal static class RegistrationCompletion
 
         return new AuthResult { Token = token, Requires2fa = false, User = UserMapper.ToDto(user) };
     }
-
-    /// <summary>The code itself, and only while someone has deliberately switched that on.
-    /// Off — which is the default and should stay the default outside debugging — the journal
-    /// still records that a code was sent and to whom. That answers "did it go out" without
-    /// handing "what is it" to everyone who can read a log: the code is a short-lived key to
-    /// an account, and a journal read in a browser and kept on disk is exactly the path such
-    /// things leak by.</summary>
-    private static async Task<string> CodeSuffixAsync(
-        ISettingsRepository settings, string code, CancellationToken ct) =>
-        AuthRules.ParseBoolean(await settings.GetAsync("debug_email_codes", ct), false)
-            ? $" (код {code})" : string.Empty;
 }

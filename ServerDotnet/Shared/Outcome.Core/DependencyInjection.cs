@@ -28,10 +28,6 @@ public static class DependencyInjection
         services.Configure<TlsOptions>(config.GetSection("Tls"));
         services.Configure<UploadOptions>(config.GetSection("Upload"));
         services.Configure<VoiceOptions>(config.GetSection("Voice"));
-        services.Configure<EmailOptions>(config.GetSection("Email"));
-        services.Configure<SupportMailOptions>(config.GetSection("SupportMail"));
-        services.Configure<ContactOptions>(config.GetSection("Contact"));
-        services.Configure<OAuthOptions>(config.GetSection("OAuth"));
         services.Configure<MinioOptions>(config.GetSection("Minio"));
         services.Configure<ApnsOptions>(config.GetSection("Apns"));
         services.Configure<RuStorePushOptions>(config.GetSection("RuStorePush"));
@@ -41,13 +37,12 @@ public static class DependencyInjection
         var directConnectionString = config.GetConnectionString("PostgresDirect") ?? connectionString;
 
         // Tenancy. A space owns a database; the registry lives in the ROOT one, and in this
-        // edition the root space is the only one. Everything below that reads data goes through ICurrentSpace, so a
+        // instance the root space is the only one. Everything below that reads data goes through ICurrentSpace, so a
         // request can only ever see the tenant it arrived at.
         var registry = new SpaceRegistry(connectionString, directConnectionString);
         services.AddSingleton<ISpaceRegistry>(registry);
         services.AddSingleton(registry);
         services.AddSingleton<SpaceProvisioner>();
-        services.AddSingleton<Outcome.Infrastructure.Mail.SupportMailbox>();
         services.AddScoped<CurrentSpaceContext>();
         services.AddScoped<ICurrentSpace>(sp => sp.GetRequiredService<CurrentSpaceContext>());
 
@@ -58,7 +53,6 @@ public static class DependencyInjection
             registry.ConnectionFor(sp.GetRequiredService<ICurrentSpace>().Space),
             npg => npg.MigrationsAssembly(typeof(OutcomeDbContext).Assembly.GetName().Name)));
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
-        services.AddScoped<ISpaceSsoConfig, SpaceSsoConfig>();
 
         // ASP.NET Core Identity (UserManager/RoleManager + lockout) over EF.
         services.AddIdentityCore<User>(options =>
@@ -104,11 +98,8 @@ public static class DependencyInjection
         // requesting space, and the space is only known per request. Their state lives in the
         // singleton IMemoryCache either way, so scoping costs nothing.
         services.AddScoped<IPartialAuthStore, PartialAuthStore>();
-        services.AddScoped<IPendingRegistrationStore, PendingRegistrationStore>();
-        services.AddScoped<IPasswordResetStore, PasswordResetStore>();
         services.AddSingleton<ITotpService, TotpService>();
         services.AddScoped<IPendingTotpStore, PendingTotpStore>();
-        services.AddSingleton<IEmailSender, SmtpEmailSender>();
         // Push goes out through whichever gateway issued the device's token, so the senders are
         // registered as themselves and IPushSender resolves to the router over them. Listing them
         // explicitly rather than injecting IEnumerable<IPushSender> is what keeps the router from
@@ -158,9 +149,6 @@ public static class DependencyInjection
         services.AddScoped<Shared.Abstractions.Voice.ILiveKitTokenService, Voice.LiveKitTokenService>();
         services.AddScoped<Shared.Abstractions.Voice.ILiveKitRoomService, Voice.LiveKitRoomService>();
         services.AddSingleton<Shared.Abstractions.Voice.ILiveKitWebhookReceiver, Voice.LiveKitWebhookReceiver>();
-        // Latches a channel's E2EE key regime per room session (mid-call link changes must not
-        // hand re-joiners a key nobody else in the room is using).
-
         services.AddSingleton<IFileStorage, MinioFileStorage>();
         // Voice-message normalization (ffmpeg → m4a + waveform). Stateless singleton.
         services.AddSingleton<Media.VoiceTranscoder>();
