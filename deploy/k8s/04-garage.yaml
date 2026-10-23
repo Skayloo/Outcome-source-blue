@@ -1,0 +1,79 @@
+# Garage (S3) object storage for uploads (avatars/attachments/recordings) — MinIO until 1.31.79,
+# which no longer publishes images. Swap for any S3-compatible service by pointing
+# OUTCOME_Minio__* at it instead. One node: --single-node lays the cluster out, --default-bucket
+# makes the key and the bucket from the env. The image has no shell — nothing to exec into.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garage
+  namespace: outcome
+data:
+  garage.toml: |
+    metadata_dir = "/var/lib/garage/meta"
+    data_dir = "/var/lib/garage/data"
+    db_engine = "sqlite"
+    replication_factor = 1
+    rpc_bind_addr = "[::]:3901"
+    rpc_public_addr = "127.0.0.1:3901"
+
+    [s3_api]
+    s3_region = "us-east-1"
+    api_bind_addr = "[::]:3900"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage
+  namespace: outcome
+spec:
+  selector: { app: garage }
+  ports:
+    - name: s3
+      port: 3900
+      targetPort: 3900
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: garage
+  namespace: outcome
+spec:
+  serviceName: garage
+  replicas: 1
+  selector:
+    matchLabels: { app: garage }
+  template:
+    metadata:
+      labels: { app: garage }
+    spec:
+      containers:
+        - name: garage
+          image: dxflrs/garage:v2.4.1
+          command: ["/garage", "server", "--single-node", "--default-bucket"]
+          ports: [{ containerPort: 3900 }]
+          env:
+            - name: GARAGE_RPC_SECRET
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: garage-rpc-secret } }
+            - name: GARAGE_DEFAULT_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: storage-access-key } }
+            - name: GARAGE_DEFAULT_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: storage-secret-key } }
+            - name: GARAGE_DEFAULT_BUCKET
+              value: "outcome-uploads"
+          volumeMounts:
+            - { name: config, mountPath: /etc/garage.toml, subPath: garage.toml }
+            - { name: data, mountPath: /var/lib/garage/meta, subPath: meta }
+            - { name: data, mountPath: /var/lib/garage/data, subPath: data }
+          readinessProbe:
+            exec: { command: ["/garage", "status"] }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+      volumes:
+        - name: config
+          configMap: { name: garage }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources: { requests: { storage: 20Gi } }

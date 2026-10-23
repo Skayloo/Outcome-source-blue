@@ -19,17 +19,18 @@ modify or redistribute the code, and running Outcome still means pulling the ima
 | `server` | The API. Stateless and replicated |
 | `pgbouncer` → `postgres` | Runtime queries ride the pooler; migrations must not |
 | `redis` | Real-time fan-out between API replicas |
-| `minio` | Uploaded files |
+| `garage` | Uploaded files — Garage, an S3 server (MinIO until 1.31.79; its images are no longer published) |
 | `livekit` | The voice/video SFU |
 
-Only Caddy and LiveKit publish ports. Postgres, Redis, MinIO and the API are reachable on the compose
+Only Caddy and LiveKit publish ports. Postgres, Redis, Garage and the API are reachable on the compose
 network and nowhere else.
 
 ## Before the first start
 
 Generate every secret. `.env.example` marks the ones that must change; reusing the sample
 values is the same as having none. At minimum: `POSTGRES_PASSWORD`, `JWT_KEY`,
-`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY`, `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`.
+`GARAGE_RPC_SECRET`, `GARAGE_ACCESS_KEY`/`GARAGE_SECRET_KEY` (the key id is `GK` + 24 hex characters,
+the secret 64 hex — Garage refuses other shapes), `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`.
 
 `LIVEKIT_API_SECRET` must be **at least 32 characters**. The SDK rejects anything shorter with
 `apiSecret must be at least 256 bits long`, and it fails at the moment somebody tries to join a
@@ -82,13 +83,18 @@ a surprising number of rooms, and past that it wants its own cluster.
 docker compose exec postgres pg_dump -U outcome -Fc outcome > outcome-$(date +%F).dump
 ```
 
-That plus the MinIO volume is the whole state. Back up `.env` as well — losing `JWT_KEY` signs
+That plus the Garage volumes (`garage_data`, `garage_meta`) is the whole state. Back up `.env` as well — losing `JWT_KEY` signs
 everyone out.
 
 ## Upgrading
 
 Bump `OUTCOME_TAG` in `.env`, then `docker compose pull && docker compose up -d`. Migrations
 run at startup, against Postgres directly.
+
+**From MinIO (1.31.78 and earlier):** files now live in Garage. An install that ran MinIO keeps
+its image and its volume; the deployment kit's README ("Upgrading from MinIO") copies every file
+across with rclone under `--profile migrate` — nothing is deleted, and the old volume is removed
+by hand once the files open.
 
 
 ## Already running a web server on 80/443?

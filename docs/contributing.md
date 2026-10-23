@@ -7,7 +7,7 @@
 | .NET SDK 10 | the server |
 | Node 20 | the web client |
 | Flutter 3.44+ and Xcode | the iOS app, macOS only |
-| Docker | Postgres, Redis, MinIO and LiveKit while you work |
+| Docker | Postgres, Redis, Garage and LiveKit while you work |
 
 macOS, Linux and Windows all work — nothing in the toolchain is platform-specific any more.
 

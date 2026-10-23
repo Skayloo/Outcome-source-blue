@@ -15,7 +15,25 @@ export type Dict = Record<string, string>;
 const DICTS: Record<Locale, Dict> = { en, ru };
 const SUPPORTED: Locale[] = ["en", "ru"];
 
-let locale: Locale = normalize(loadPref<string>("language", "en"));
+let locale: Locale = normalize(loadPref<string>("language", firstLocale()));
+
+/**
+ * The language for someone who never chose one here: what the link asked for (`?lang=ru` from the
+ * Russian landing, `?lang=en` from the English one), else what the browser asks for — Russian for
+ * a browser that lists Russian (or Ukrainian, Belarusian, Kazakh) at all, English otherwise. It
+ * used to be English for everyone, so the Russian landing opened an English app. Once chosen in
+ * Settings, the choice wins over both.
+ */
+function firstLocale(): Locale {
+  try {
+    const asked = new URLSearchParams(window.location.search).get("lang");
+    if (asked === "ru" || asked === "en") return asked;
+    const langs = navigator.languages?.length ? navigator.languages : [navigator.language ?? ""];
+    return langs.some((l) => /^(ru|uk|be|kk)\b/i.test(l)) ? "ru" : "en";
+  } catch {
+    return "en";
+  }
+}
 const listeners = new Set<() => void>();
 
 function normalize(l: string): Locale {

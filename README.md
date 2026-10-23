@@ -126,7 +126,7 @@ Then open **http://localhost:8080** in your browser. On first run you'll be walk
 | ---- | ------- | ----- |
 | `8080` | Web frontend (nginx) | What users open; reverse-proxies `/api` and `/livekit` to the backend |
 | `5000` | .NET backend | Not published — the frontend proxies `/api` over the compose network. Uncomment in `docker-compose.yml` if you want to poke it directly |
-| `9000` / `9001` | MinIO (S3 storage / console) | Not published — reached over the compose network. A published S3 port is a second front door to every uploaded file |
+| `3900` | Garage (S3 storage) | Not published — reached over the compose network. A published S3 port is a second front door to every uploaded file |
 | `7880` / `7881` | LiveKit signaling (WS / TCP fallback) | Voice/video |
 | `7882/udp` | LiveKit WebRTC media | Single **muxed** media port shared by all participants — must be reachable directly |
 
@@ -148,7 +148,7 @@ Outcome is a **modular monolith** backend plus a **web SPA**, wired together by 
         │  .NET 10 backend ( :5000 )     │◀──────▶│  PostgreSQL  │
         │  REST · WebSocket · SSE        │        └──────────────┘
         │  MediatR CQRS · EF Core        │        ┌──────────────┐
-        │  OpenAPI/Scalar · SPA fallback │◀──────▶│  MinIO (S3)  │
+        │  OpenAPI/Scalar · SPA fallback │◀──────▶│ Garage (S3)  │
         └───────────────┬───────────────┘        └──────────────┘
                         │  LiveKit tokens / room mgmt
                         ▼
@@ -180,7 +180,7 @@ Outcome/
 │       └── styles/          #   CSS + themes
 ├── docs/                    # Documentation
 ├── deploy/                  # Production deployments: compose (+Caddy TLS), swarm, k8s, helm
-├── docker-compose.yml       # Full stack: backend + frontend + Postgres + MinIO + LiveKit
+├── docker-compose.yml       # Full stack: backend + frontend + Postgres + Garage + LiveKit
 └── docker-compose.scale.yml # Overlay: 3 API replicas behind nginx, coordinated via Redis
 ```
 
@@ -224,7 +224,7 @@ Ready-made deployments live in [deploy/](deploy/): a hardened single-host **Comp
 | --------- | ---------- |
 | Backend | .NET 10, ASP.NET Core minimal APIs, MediatR (CQRS) |
 | Database | PostgreSQL (EF Core + Npgsql, EF Core migrations) |
-| Object storage | MinIO (S3-compatible) |
+| Object storage | Garage (S3-compatible; MinIO until 1.31.79) |
 | Frontend | React + TypeScript (Vite), vanilla reactive stores |
 | Voice / Video | LiveKit SFU (WebRTC) |
 | API docs | OpenAPI + Scalar |

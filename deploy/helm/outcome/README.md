@@ -1,6 +1,6 @@
 # Outcome Helm chart
 
-Deploys the whole stack (API + web + Postgres/Redis/MinIO/LiveKit) on Kubernetes with an
+Deploys the whole stack (API + web + Postgres/Redis/Garage/LiveKit) on Kubernetes with an
 Ingress (cert-manager TLS), optional HPA, and bundled or external data services.
 
 ## Install
@@ -14,8 +14,9 @@ helm install outcome ./deploy/helm/outcome \
   --set frontend.image.tag=v1 \
   --set secrets.jwtKey=$(openssl rand -hex 32) \
   --set secrets.postgresPassword=$(openssl rand -hex 24) \
-  --set secrets.minioAccessKey=outcome-$(openssl rand -hex 6) \
-  --set secrets.minioSecretKey=$(openssl rand -hex 24) \
+  --set secrets.storageAccessKey=GK$(openssl rand -hex 12) \
+  --set secrets.storageSecretKey=$(openssl rand -hex 32) \
+  --set secrets.garageRpcSecret=$(openssl rand -hex 32) \
   --set secrets.livekitApiKey=LK$(openssl rand -hex 6) \
   --set secrets.livekitApiSecret=$(openssl rand -hex 24)
 ```
@@ -29,16 +30,16 @@ ingress: { host: chat.example.com, tls: { clusterIssuer: letsencrypt-prod } }
 server:  { replicas: 4, autoscaling: { enabled: true, maxReplicas: 12 } }
 livekit: { replicas: 2, nodeIp: "" }          # hostIP per node; set an explicit IP if needed
 postgres: { storage: 50Gi, storageClass: fast-ssd }
-minio:    { storage: 100Gi }
+garage:   { storage: 100Gi }
 ```
 
 ## Bring your own data services
 ```yaml
 postgres: { enabled: false, external: { host: my-pg.rds.aws, port: 5432, database: outcome, username: outcome } }
-minio:    { enabled: false, external: { endpoint: s3.amazonaws.com, useSsl: "true" } }
+garage:   { enabled: false, external: { endpoint: s3.amazonaws.com, useSsl: "true" } }
 redis:    { enabled: false, external: { url: my-redis:6379 } }
 ```
-(The Postgres password / MinIO keys still come from the chart Secret or `existingSecret`.)
+(The Postgres password / storage keys still come from the chart Secret or `existingSecret`.)
 
 ## Voice/video note
 LiveKit media (ICE, UDP/TCP) does NOT flow through the Ingress. Pods run with `hostNetwork`
@@ -49,5 +50,5 @@ LiveKit media (ICE, UDP/TCP) does NOT flow through the Ingress. Pods run with `h
 ## Uninstall
 ```bash
 helm uninstall outcome -n outcome
-# PVCs (postgres/minio data) are kept — delete them explicitly to wipe data.
+# PVCs (postgres/garage data) are kept — delete them explicitly to wipe data.
 ```

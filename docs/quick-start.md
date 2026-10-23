@@ -43,7 +43,7 @@ npm install
 npm run dev                             # Vite dev server, proxies /api to :5000
 ```
 
-The backend needs Postgres, Redis and MinIO reachable. The fastest way is to start those from
+The backend needs Postgres, Redis and an S3 store (Garage) reachable. The fastest way is to start those from
 the deployment kit's compose file and point the local server at them — see
 [server-configuration.md](server-configuration.md) for the environment variables, which is how
 every deployment sets them (`OUTCOME_Section__Key`).
@@ -59,7 +59,7 @@ characters; the SDK rejects shorter ones outright.
 | `frontend/` | The web client — React + Vite, served by nginx in production |
 | PostgreSQL | Everything durable. PgBouncer in front of it in production |
 | Redis | Real-time fan-out between API replicas |
-| MinIO | Uploaded files |
+| Garage | Uploaded files (S3) |
 | LiveKit | The voice/video SFU |
 
 ## Where to go next

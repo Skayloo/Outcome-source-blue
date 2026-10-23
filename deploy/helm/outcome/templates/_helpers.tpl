@@ -31,8 +31,8 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- if .Values.redis.enabled -}}{{ include "outcome.fullname" . }}-redis:6379{{- else -}}{{ .Values.redis.external.url }}{{- end -}}
 {{- end -}}
 
-{{- define "outcome.minioEndpoint" -}}
-{{- if .Values.minio.enabled -}}{{ include "outcome.fullname" . }}-minio:9000{{- else -}}{{ .Values.minio.external.endpoint }}{{- end -}}
+{{- define "outcome.storageEndpoint" -}}
+{{- if .Values.garage.enabled -}}{{ include "outcome.fullname" . }}-garage:3900{{- else -}}{{ .Values.garage.external.endpoint }}{{- end -}}
 {{- end -}}
 
 {{- define "outcome.livekitInternalUrl" -}}ws://{{ include "outcome.fullname" . }}-livekit:7880{{- end -}}

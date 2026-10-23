@@ -8,7 +8,7 @@ resources:
   - 01-secrets.yaml
   - 02-postgres.yaml
   - 03-redis.yaml
-  - 04-minio.yaml
+  - 04-garage.yaml
   - 05-livekit.yaml
   - 06-server.yaml
   - 07-frontend.yaml

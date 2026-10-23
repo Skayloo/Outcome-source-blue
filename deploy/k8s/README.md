@@ -32,7 +32,7 @@ Things to adjust for YOUR cluster:
 - **`05-livekit.yaml`** — LiveKit uses `hostNetwork` (one pod per node via anti-affinity);
   open `udp 50000-50200` + `tcp 7880/7881` on those hosts, and set
   `rtc.use_external_ip: true` when nodes sit behind NAT.
-- Postgres/MinIO here are single-replica starters — swap for managed Postgres/S3
+- Postgres/Garage here are single-replica starters — swap for managed Postgres/S3
   (the app only needs `ConnectionStrings__Postgres` and `OUTCOME_Minio__*`) for real HA.
 - Scale the API with `kubectl -n outcome scale deploy/server --replicas=N` — no other
   changes needed.

@@ -12,7 +12,7 @@ Runs the full stack on a Swarm cluster with real **Swarm secrets**, rolling upda
 ## 2. Label nodes (durable storage + media)
 ```bash
 docker node update --label-add pgdata=true    <db-node>
-docker node update --label-add miniodata=true <storage-node>
+docker node update --label-add storage=true   <storage-node>
 docker node update --label-add livekit=true   <media-node>   # its public IP = LIVEKIT_NODE_IP
 ```
 
@@ -20,8 +20,10 @@ docker node update --label-add livekit=true   <media-node>   # its public IP = L
 ```bash
 printf %s "$(openssl rand -hex 32)" | docker secret create jwt_key -
 printf %s "$(openssl rand -hex 24)" | docker secret create postgres_password -
-printf %s "outcome-$(openssl rand -hex 6)" | docker secret create minio_access_key -
-printf %s "$(openssl rand -hex 24)" | docker secret create minio_secret_key -
+printf %s "$(openssl rand -hex 32)" | docker secret create garage_rpc_secret -
+# Garage's own image has no shell to read a secret file, so its S3 key comes from the
+# environment of `docker stack deploy` — keep these two (e.g. in a 0600 file you source):
+export GARAGE_ACCESS_KEY="GK$(openssl rand -hex 12)" GARAGE_SECRET_KEY="$(openssl rand -hex 32)"
 
 LK_KEY="LK$(openssl rand -hex 6)"; LK_SECRET="$(openssl rand -hex 24)"
 printf %s "$LK_KEY"            | docker secret create livekit_api_key -
@@ -57,7 +59,7 @@ docker stack deploy -c docker-stack.yml outcome   # start-first rolling update, 
   media reaches `LIVEKIT_NODE_IP` directly. For serious multi-region voice, run
   `livekit-server` **standalone** (plain `docker run --network host`) on each media host
   and point `OUTCOME_Voice__LiveKitInternalUrl` at it — LiveKit clusters over Redis.
-- **Backups:** the `pgdata` and `minio_data` volumes live on their pinned nodes — snapshot
+- **Backups:** the `pgdata`, `garage_data` and `garage_meta` volumes live on their pinned nodes — snapshot
   those. Redis is disposable.
 - Prefer a managed Postgres / S3 in production; drop those services and repoint the
   `ConnectionStrings__Postgres` / `OUTCOME_Minio__*` config.

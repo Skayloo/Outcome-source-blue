@@ -99,9 +99,10 @@ services:
       OUTCOME_Server__TrustedProxies__1: "::1/128"
       OUTCOME_Server__TrustedProxies__2: "172.16.0.0/12"
       OUTCOME_JwtAuth__JwtKey: "${JWT_KEY}"
-      OUTCOME_Minio__Endpoint: "minio:9000"
-      OUTCOME_Minio__AccessKey: "${MINIO_ACCESS_KEY}"
-      OUTCOME_Minio__SecretKey: "${MINIO_SECRET_KEY}"
+      # Garage since 2026-10-23 (the section keeps MinIO's name: it is any S3 the SDK talks to).
+      OUTCOME_Minio__Endpoint: "garage:3900"
+      OUTCOME_Minio__AccessKey: "${GARAGE_ACCESS_KEY}"
+      OUTCOME_Minio__SecretKey: "${GARAGE_SECRET_KEY}"
       OUTCOME_Minio__Bucket: "${MINIO_BUCKET}"
       OUTCOME_Minio__UseSsl: "false"
       OUTCOME_Voice__LiveKitApiKey: "${LIVEKIT_API_KEY}"
@@ -137,7 +138,7 @@ services:
       postgres: { condition: service_healthy }
       pgbouncer: { condition: service_healthy }
       redis: { condition: service_healthy }
-      minio: { condition: service_started }
+      garage: { condition: service_healthy }
     deploy:
       replicas: ${SERVER_REPLICAS:-3}
   pgbouncer:
@@ -204,6 +205,7 @@ services:
     # доступом, а не как «тега не существует». На проде образ до сих пор жив только потому, что
     # лежит в локальном кеше с тех времён, когда тег был, — и исчезнет при первой же чистке.
     image: quay.io/minio/minio:latest
+    profiles: ["old-storage"]
     command: server /data --console-address ":9001"
     restart: unless-stopped
     <<: *logging
@@ -214,6 +216,32 @@ services:
       - minio_data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  # Object storage since 2026-10-23. MinIO stopped publishing images (gone from Docker Hub and,
+  # since October 2026, from quay.io too); Garage is ~20 times smaller. It sets itself up:
+  # --single-node lays the cluster out, --default-bucket makes the key and the bucket from the
+  # environment. The key id is "GK" + 24 hex characters and the secret 64 hex — Garage refuses
+  # other shapes.
+  garage:
+    image: dxflrs/garage:v2.4.1
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    restart: unless-stopped
+    <<: *logging
+    environment:
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_ACCESS_KEY}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_SECRET_KEY}
+      GARAGE_DEFAULT_BUCKET: ${MINIO_BUCKET}
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -272,5 +300,7 @@ services:
 volumes:
   pgdata:
   minio_data:
+  garage_meta:
+  garage_data:
   caddy_data:
   caddy_config:

@@ -1,7 +1,7 @@
 # Deploying Outcome
 
 Pick the target that matches your infrastructure. All of them run the same six pieces:
-**Caddy/Ingress (edge TLS) → frontend (nginx) → API ×N → Postgres · Redis · MinIO · LiveKit**,
+**Caddy/Ingress (edge TLS) → frontend (nginx) → API ×N → Postgres · Redis · Garage (S3) · LiveKit**,
 with every secret externalized and database migrations self-serializing behind a Postgres
 advisory lock (so any number of API replicas can boot at once).
 
@@ -13,7 +13,7 @@ advisory lock (so any number of API replicas can boot at once).
 | Kubernetes (raw YAML) | [`k8s/`](k8s/) | Plain manifests / kustomize, no Helm. |
 
 ## Two rules that apply everywhere
-1. **Regenerate every secret** before a real deploy (JWT key, DB password, MinIO keys,
+1. **Regenerate every secret** before a real deploy (JWT key, DB password, Garage keys,
    LiveKit key+secret). Never ship the example values.
 2. **LiveKit media is special.** Voice/video RTP (ICE, UDP + TCP 7881) goes **directly**
    from the browser to LiveKit's advertised IP — it does NOT pass through Caddy/Ingress.

@@ -44,11 +44,11 @@ spec:
             - name: OUTCOME_JwtAuth__JwtKey
               valueFrom: { secretKeyRef: { name: outcome-secrets, key: jwt-key } }
             - name: OUTCOME_Minio__Endpoint
-              value: "minio:9000"
+              value: "garage:3900"
             - name: OUTCOME_Minio__AccessKey
-              valueFrom: { secretKeyRef: { name: outcome-secrets, key: minio-access-key } }
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: storage-access-key } }
             - name: OUTCOME_Minio__SecretKey
-              valueFrom: { secretKeyRef: { name: outcome-secrets, key: minio-secret-key } }
+              valueFrom: { secretKeyRef: { name: outcome-secrets, key: storage-secret-key } }
             - name: OUTCOME_Minio__Bucket
               value: "outcome-uploads"
             - name: OUTCOME_Minio__UseSsl

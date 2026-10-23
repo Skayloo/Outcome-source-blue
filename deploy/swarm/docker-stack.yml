@@ -2,9 +2,12 @@
 # Deploy:  docker stack deploy -c docker-stack.yml outcome
 # (see README.md for creating the secrets + labelling the LiveKit node first).
 #
-# Secrets are real Swarm secrets (files under /run/secrets). Postgres/MinIO read them
-# natively via *_FILE; LiveKit via key_file; the .NET API via a tiny sh shim that exports
-# them before exec. Rolling updates are start-first with automatic rollback.
+# Secrets are real Swarm secrets (files under /run/secrets). Postgres reads them natively via
+# *_FILE, Garage its RPC secret via GARAGE_RPC_SECRET_FILE; LiveKit via key_file; the .NET API via
+# a tiny sh shim that exports them before exec. Garage's access key is the one exception: its
+# image has no shell to read a file with, so GARAGE_ACCESS_KEY / GARAGE_SECRET_KEY come from the
+# environment `docker stack deploy` runs in (README). Rolling updates are start-first with
+# automatic rollback.
 version: "3.9"
 
 x-logging: &logging
@@ -67,8 +70,6 @@ services:
       - |
         set -e
         export OUTCOME_JwtAuth__JwtKey="$$(cat /run/secrets/jwt_key)"
-        export OUTCOME_Minio__AccessKey="$$(cat /run/secrets/minio_access_key)"
-        export OUTCOME_Minio__SecretKey="$$(cat /run/secrets/minio_secret_key)"
         export OUTCOME_Voice__LiveKitApiKey="$$(cat /run/secrets/livekit_api_key)"
         export OUTCOME_Voice__LiveKitApiSecret="$$(cat /run/secrets/livekit_api_secret)"
         export ConnectionStrings__Postgres="Host=postgres;Port=5432;Database=outcome;Username=outcome;Password=$$(cat /run/secrets/postgres_password)"
@@ -77,7 +78,9 @@ services:
       ASPNETCORE_URLS: "http://0.0.0.0:5000"
       OUTCOME_Redis__Url: "redis:6379"
       OUTCOME_Server__Name: "${SERVER_NAME:-Outcome}"
-      OUTCOME_Minio__Endpoint: "minio:9000"
+      OUTCOME_Minio__Endpoint: "garage:3900"
+      OUTCOME_Minio__AccessKey: "${GARAGE_ACCESS_KEY:?export GARAGE_ACCESS_KEY (README)}"
+      OUTCOME_Minio__SecretKey: "${GARAGE_SECRET_KEY:?export GARAGE_SECRET_KEY (README)}"
       OUTCOME_Minio__Bucket: "${MINIO_BUCKET:-outcome-uploads}"
       OUTCOME_Minio__UseSsl: "false"
       OUTCOME_Voice__LiveKitUrl: "wss://${OUTCOME_DOMAIN}/livekit"
@@ -85,8 +88,6 @@ services:
       OUTCOME_Server__PublicOrigin: "https://${OUTCOME_DOMAIN}"
     secrets:
       - jwt_key
-      - minio_access_key
-      - minio_secret_key
       - livekit_api_key
       - livekit_api_secret
       - postgres_password
@@ -143,18 +144,26 @@ services:
       replicas: 1
       <<: *restart
 
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  # File storage: Garage (S3), one node — MinIO until 1.31.79, which no longer publishes images.
+  garage:
+    image: dxflrs/garage:v2.4.1
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
     <<: *logging
     environment:
-      MINIO_ROOT_USER_FILE: /run/secrets/minio_access_key
-      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_secret_key
-    secrets: [minio_access_key, minio_secret_key]
+      GARAGE_RPC_SECRET_FILE: /run/secrets/garage_rpc_secret
+      GARAGE_DEFAULT_ACCESS_KEY: "${GARAGE_ACCESS_KEY:?export GARAGE_ACCESS_KEY (README)}"
+      GARAGE_DEFAULT_SECRET_KEY: "${GARAGE_SECRET_KEY:?export GARAGE_SECRET_KEY (README)}"
+      GARAGE_DEFAULT_BUCKET: "${MINIO_BUCKET:-outcome-uploads}"
+    secrets:
+      # Garage refuses a secret file others can read.
+      - { source: garage_rpc_secret, mode: 0400 }
+    configs:
+      - { source: garage_toml, target: /etc/garage.toml }
     volumes:
-      - minio_data:/data
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "/garage", "status"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -162,8 +171,8 @@ services:
     deploy:
       replicas: 1
       <<: *restart
-      # Pin to a node with durable storage (label it: docker node update --label-add miniodata=true <node>).
-      placement: { constraints: ["node.labels.miniodata == true"] }
+      # Pin to a node with durable storage (label it: docker node update --label-add storage=true <node>).
+      placement: { constraints: ["node.labels.storage == true"] }
       resources:
         limits: { cpus: "1.0", memory: 512M }
 
@@ -191,6 +200,8 @@ services:
         limits: { cpus: "1.0", memory: 512M }
 
 configs:
+  garage_toml:
+    file: ../compose/garage/garage.toml
   caddyfile:
     file: ../compose/Caddyfile
   livekit_config:
@@ -199,15 +210,15 @@ configs:
 secrets:
   jwt_key:            { external: true }
   postgres_password:  { external: true }
-  minio_access_key:   { external: true }
-  minio_secret_key:   { external: true }
+  garage_rpc_secret:  { external: true }
   livekit_api_key:    { external: true }
   livekit_api_secret: { external: true }
   livekit_keys:       { external: true }
 
 volumes:
   pgdata:
-  minio_data:
+  garage_meta:
+  garage_data:
   caddy_data:
   caddy_config:
 

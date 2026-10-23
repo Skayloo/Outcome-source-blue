@@ -1,6 +1,6 @@
 apiVersion: v2
 name: outcome
-description: Outcome — self-hosted Discord-style chat (API + web + Postgres/Redis/MinIO/LiveKit)
+description: Outcome — self-hosted Discord-style chat (API + web + Postgres/Redis/Garage/LiveKit)
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

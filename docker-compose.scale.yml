@@ -7,7 +7,7 @@
 #  - WS broadcast fan-out / per-user delivery / force-close  (outcome:bus pub/sub)
 #  - reconnect replay buffer + global frame sequence          (outcome:replay:* / outcome:seq)
 #  - 2FA partial challenges, admin log-stream tickets
-# Postgres/MinIO stay single-node (scale those at the infra level when needed).
+# Postgres/Garage stay single-node (scale those at the infra level when needed).
 #
 # NOTE on voice: LiveKit stays a SINGLE node here. Two SFU nodes behind ONE host's
 # NAT advertise conflicting/unreachable media candidates, which breaks audio

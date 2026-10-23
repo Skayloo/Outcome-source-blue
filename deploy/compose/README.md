@@ -1,7 +1,7 @@
 # Outcome — production Docker Compose
 
 Single-host production deployment: **Caddy** (auto-HTTPS) → **frontend** → **API ×N** →
-**Postgres · Redis · MinIO · LiveKit**. All secrets live in `.env`; internal services are
+**Postgres · Redis · Garage (S3) · LiveKit**. All secrets live in `.env`; internal services are
 never published on the host.
 
 ## 1. Prerequisites
@@ -62,5 +62,5 @@ keyed on IP (per-IP rate limits, per-IP WebSocket caps, audit/ban records) depen
   setting `TLS_SAN` on it to your host/IP (self-signed HTTPS). See the root `docker-compose.yml`.
 - **Managed data services?** Point `ConnectionStrings__Postgres` / `OUTCOME_Minio__*` /
   `OUTCOME_Redis__Url` at external Postgres / S3 / Redis and remove those services.
-- **Backups:** snapshot the `pgdata` (database) and `minio_data` (uploads) volumes. Redis
+- **Backups:** snapshot the `pgdata` (database) and `garage_data` + `garage_meta` (uploads) volumes. Redis
   is pure cache — no backup needed.

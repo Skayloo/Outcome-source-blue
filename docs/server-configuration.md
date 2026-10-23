@@ -56,9 +56,10 @@ Bound from `JwtAuth`.
 | `JwtIssuer` | `outcome` | |
 | `JwtExpirationMinutes` | `43200` (30 days) | |
 
-## Storage (MinIO)
+## Storage (S3 — Garage)
 
-Bound from `Minio`.
+Bound from `Minio` — the name is from before 2026-10-23, when the store was MinIO; any S3 server
+fits, and the compose files run Garage (`garage:3900`, a key id of `GK` + 24 hex).
 
 | Key | Default | |
 | --- | --- | --- |
@@ -74,7 +75,7 @@ Bound from `Upload` (`UploadOptions`).
 | Key | Default | |
 | --- | --- | --- |
 | `MaxSizeMb` | `100` | **Bound but not read** — the cap is the 100 MB constant in `UploadEndpoints.cs`. The edge has to allow at least that much or the request never arrives |
-| `StorageDir` | `data/uploads` | Not read: the disk storage it configured is no longer registered, uploads go to MinIO |
+| `StorageDir` | `data/uploads` | Not read: the disk storage it configured is no longer registered, uploads go to the S3 store |
 
 ## Voice (LiveKit)
 

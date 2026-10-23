@@ -58,10 +58,10 @@ services:
       # to run — so every install that followed the quick start shared one signing key, and it
       # also signs the file URLs. From .env, generated per install.
       OUTCOME_JwtAuth__JwtKey: ${JWT_KEY:?see .env.example}
-      # MinIO/S3 object storage for uploaded files (regenerate credentials per deployment).
-      OUTCOME_Minio__Endpoint: "minio:9000"
-      OUTCOME_Minio__AccessKey: ${MINIO_ACCESS_KEY:?see .env.example}
-      OUTCOME_Minio__SecretKey: ${MINIO_SECRET_KEY:?see .env.example}
+      # Garage (S3) object storage for uploaded files — the settings keep MinIO's name.
+      OUTCOME_Minio__Endpoint: "garage:3900"
+      OUTCOME_Minio__AccessKey: ${GARAGE_ACCESS_KEY:?see .env.example}
+      OUTCOME_Minio__SecretKey: ${GARAGE_SECRET_KEY:?see .env.example}
       OUTCOME_Minio__Bucket: "outcome-uploads"
       OUTCOME_Minio__UseSsl: "false"
       OUTCOME_Voice__LiveKitApiKey: ${LIVEKIT_API_KEY:?see .env.example}
@@ -79,8 +79,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
-        condition: service_started
+      garage:
+        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -106,20 +106,27 @@ services:
       - server
     restart: unless-stopped
 
-  minio:
+  # Garage (S3): sets itself up — one-node layout, then the key and the bucket from .env.
+  garage:
     <<: *logging
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+    image: dxflrs/garage:v2.4.1
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?see .env.example}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?see .env.example}
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?see .env.example}
+      GARAGE_DEFAULT_ACCESS_KEY: ${GARAGE_ACCESS_KEY:?see .env.example}
+      GARAGE_DEFAULT_SECRET_KEY: ${GARAGE_SECRET_KEY:?see .env.example}
+      GARAGE_DEFAULT_BUCKET: "outcome-uploads"
     # Storage is reached over the compose network only. Published, it is a second front door
     # into every uploaded file, guarded by nothing but these credentials.
-    # ports:
-    #   - "9000:9000"   # S3 API
-    #   - "9001:9001"   # web console
     volumes:
-      - outcome_minio:/data
+      - ./deploy/compose/garage/garage.toml:/etc/garage.toml:ro
+      - outcome_garage_meta:/var/lib/garage/meta
+      - outcome_garage_data:/var/lib/garage/data
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   livekit:
@@ -147,4 +154,5 @@ services:
 volumes:
   outcome_pgdata:
   outcome_data:
-  outcome_minio:
+  outcome_garage_meta:
+  outcome_garage_data:

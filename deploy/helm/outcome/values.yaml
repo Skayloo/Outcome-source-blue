@@ -59,8 +59,11 @@ secrets:
   existingSecret: ""
   jwtKey: ""                  # openssl rand -hex 32
   postgresPassword: ""
-  minioAccessKey: ""
-  minioSecretKey: ""
+  # File storage keys. For the bundled Garage the key id is "GK" + 24 hex (echo "GK$(openssl rand -hex 12)")
+  # and the secret 64 hex (openssl rand -hex 32); for an external S3, whatever it issued.
+  storageAccessKey: ""
+  storageSecretKey: ""
+  garageRpcSecret: ""         # bundled Garage only: openssl rand -hex 32
   livekitApiKey: ""           # e.g. LK + 12 hex
   livekitApiSecret: ""        # openssl rand -hex 24
 
@@ -86,16 +89,18 @@ redis:
   external:
     url: redis:6379
 
-minio:
+# File storage — Garage, an S3 server (MinIO until 1.31.79: it no longer publishes images).
+# Disable to use any other S3 (external).
+garage:
   enabled: true
-  image: minio/minio:latest
+  image: dxflrs/garage:v2.4.1
   storage: 20Gi
   storageClass: ""
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-  external:
-    endpoint: minio:9000
-    useSsl: "false"
+    requests: { cpu: 100m, memory: 128Mi }
+  external:                   # used when enabled=false
+    endpoint: s3.example.com
+    useSsl: "true"
 
 # ── LiveKit SFU (voice/video). Media needs direct UDP to each node, so pods use
 #    hostNetwork + anti-affinity (one per host). Open udp 50000-50200 + tcp 7881. ──

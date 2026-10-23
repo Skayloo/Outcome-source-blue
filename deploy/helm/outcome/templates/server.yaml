@@ -2,7 +2,7 @@
 {{- $pgPort := ternary "5432" (toString .Values.postgres.external.port) .Values.postgres.enabled -}}
 {{- $pgDb := ternary "outcome" .Values.postgres.external.database .Values.postgres.enabled -}}
 {{- $pgUser := ternary "outcome" .Values.postgres.external.username .Values.postgres.enabled -}}
-{{- $minioSsl := ternary "false" (toString .Values.minio.external.useSsl) .Values.minio.enabled -}}
+{{- $storageSsl := ternary "false" (toString .Values.garage.external.useSsl) .Values.garage.enabled -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -47,13 +47,13 @@ spec:
             - { name: OUTCOME_Server__Name, value: {{ .Values.config.serverName | quote }} }
             - name: OUTCOME_JwtAuth__JwtKey
               valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: jwt-key } }
-            - { name: OUTCOME_Minio__Endpoint, value: {{ include "outcome.minioEndpoint" . | quote }} }
+            - { name: OUTCOME_Minio__Endpoint, value: {{ include "outcome.storageEndpoint" . | quote }} }
             - name: OUTCOME_Minio__AccessKey
-              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: minio-access-key } }
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: storage-access-key } }
             - name: OUTCOME_Minio__SecretKey
-              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: minio-secret-key } }
+              valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: storage-secret-key } }
             - { name: OUTCOME_Minio__Bucket, value: {{ .Values.config.minioBucket | quote }} }
-            - { name: OUTCOME_Minio__UseSsl, value: {{ $minioSsl | quote }} }
+            - { name: OUTCOME_Minio__UseSsl, value: {{ $storageSsl | quote }} }
             - name: OUTCOME_Voice__LiveKitApiKey
               valueFrom: { secretKeyRef: { name: {{ include "outcome.secretName" . }}, key: livekit-api-key } }
             - name: OUTCOME_Voice__LiveKitApiSecret
