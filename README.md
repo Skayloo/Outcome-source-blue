@@ -2,8 +2,8 @@
 
 *Living chat — your server, your rules.*
 
-> **Early Alpha.**
-> Outcome is under active development and not yet production-hardened. Don't use it for sensitive communications yet.
+> **Stable.** Outcome runs in production every day — on outcome.ru and in companies' own spaces — and
+> releases land weekly. Found a bug? Open an issue.
 
 **Outcome** is a self-hosted Discord-style chat platform. Real-time messaging, direct messages, friends, 1-on-1 calls, voice/video channels, roles & permissions, and a full web admin console — all running on **your** hardware, with **no cloud dependency, no telemetry, and no paid tiers**. Ever.
 
