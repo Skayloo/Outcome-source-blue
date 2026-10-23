@@ -4,7 +4,7 @@
 # frontend's `caddy.*` labels), and adding a service to the edge is adding labels, not
 # editing a config file. Auto Let's Encrypt for every host named in the labels.
 # Edge → frontend (HTTP, nginx routes /api + /livekit to the API) → API (N replicas) →
-# Postgres / Redis / MinIO / LiveKit. All secrets come from .env; data services are NOT
+# Postgres / Redis / Garage / LiveKit. All secrets come from .env; data services are NOT
 # published on the host. Only Caddy (80/443) and LiveKit media ports are reachable
 # from outside.
 #
@@ -199,28 +199,6 @@ services:
       retries: 20
 
 
-  minio:
-    # quay.io, НЕ Docker Hub: там тега latest у MinIO больше нет, и попытка его скачать
-    # отвечает «pull access denied … repository does not exist», что читается как проблема с
-    # доступом, а не как «тега не существует». На проде образ до сих пор жив только потому, что
-    # лежит в локальном кеше с тех времён, когда тег был, — и исчезнет при первой же чистке.
-    image: quay.io/minio/minio:latest
-    profiles: ["old-storage"]
-    command: server /data --console-address ":9001"
-    restart: unless-stopped
-    <<: *logging
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
-
   # Object storage since 2026-10-23. MinIO stopped publishing images (gone from Docker Hub and,
   # since October 2026, from quay.io too); Garage is ~20 times smaller. It sets itself up:
   # --single-node lays the cluster out, --default-bucket makes the key and the bucket from the
@@ -299,7 +277,6 @@ services:
 
 volumes:
   pgdata:
-  minio_data:
   garage_meta:
   garage_data:
   caddy_data:

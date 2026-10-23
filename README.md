@@ -9,7 +9,7 @@
 
 It runs entirely in the **browser** — nothing to install for your users. One `docker compose up` and you have your own chat network.
 
-> This is the source the self-hosted images are built from. It is readable, not open source (see [LICENSE](LICENSE)). Outcome ships as prebuilt Docker images (`skayloo/outcome-server`, `skayloo/outcome-frontend`) — free to self-host with the deployment kit at [github.com/Skayloo/Outcome](https://github.com/Skayloo/Outcome).
+> This is the source the self-hosted images are built from — free software under the GNU Affero General Public License v3 (see [LICENSE](LICENSE)). Outcome ships as prebuilt Docker images (`skayloo/outcome-server`, `skayloo/outcome-frontend`) — run them with the deployment kit at [github.com/Skayloo/Outcome](https://github.com/Skayloo/Outcome), or build your own from here.
 
 <p align="center">
   <img src="docs/images/app.png" alt="Outcome — main chat" width="900">
@@ -232,4 +232,9 @@ Ready-made deployments live in [deploy/](deploy/): a hardened single-host **Comp
 
 ## License
 
-Proprietary — see [LICENSE](LICENSE). The application is distributed as prebuilt Docker images, free to pull and self-host for any personal or commercial use; the deployment kit ([Skayloo/Outcome](https://github.com/Skayloo/Outcome)) is MIT. No paid tiers.
+Copyright © 2026 skayloo. Outcome is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License, version 3 (AGPL-3.0-only) — see
+[LICENSE](LICENSE). In short: use it, change it, run it for any purpose, commercial included; if
+you let people use a modified version over a network, offer them its source. The deployment kit
+([Skayloo/Outcome](https://github.com/Skayloo/Outcome)) is MIT. Third-party components keep their
+own licences.

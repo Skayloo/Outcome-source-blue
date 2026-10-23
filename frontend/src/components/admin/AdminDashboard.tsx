@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "@lib/services";
-import { t } from "@lib/i18n";
+import { getLocale, t } from "@lib/i18n";
 import { Banner } from "@components/settings/controls";
 import { Badge, IconBtn, Spacer, Spinner, Toolbar } from "@components/admin/kit";
 import { Icon, type IconName } from "@lib/icons";
@@ -79,6 +79,17 @@ function buildCards(stats: AdminStatsResponse): readonly StatCard[] {
 // Component
 // ---------------------------------------------------------------------------
 
+/** "1 сокет", "2 сокета", "5 сокетов" — and "1 socket" / "2 sockets". */
+function socketsKey(n: number): string {
+  const tens = n % 100, ones = n % 10;
+  if (getLocale() === "ru") {
+    if (ones === 1 && tens !== 11) return "admin.socketsHereOne";
+    if (ones >= 2 && ones <= 4 && (tens < 12 || tens > 14)) return "admin.socketsHereFew";
+    return "admin.socketsHere";
+  }
+  return n === 1 ? "admin.socketsHereOne" : "admin.socketsHere";
+}
+
 export function AdminDashboard() {
   const [stats, setStats] = useState<AdminStatsResponse | null>(null);
   const [health, setHealth] = useState<ServiceHealthResponse | null>(null);
@@ -130,7 +141,7 @@ export function AdminDashboard() {
           <div className="admin-health-node">
             <span className="ahn-dot" data-ok={allOk} />
             <span>{t("admin.thisNode")}: <code>{health.node.hostname}</code></span>
-            <span className="ahn-meta">{health.node.online_here} {t("admin.socketsHere")}</span>
+            <span className="ahn-meta">{health.node.online_here} {t(socketsKey(health.node.online_here))}</span>
             {health.node.redis_backplane && <span className="ahn-badge">{t("admin.redisBackplane")}</span>}
           </div>
           <div className="admin-health-grid">

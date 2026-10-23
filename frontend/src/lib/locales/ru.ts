@@ -984,4 +984,6 @@ export const ru: Record<string, string> = {
   "chat.reactionsShowAll": "Показать всех",
   "chat.reactionsTitle": "Реакции",
   "chat.reactionsAll": "Все",
+  "admin.socketsHereOne": "сокет здесь",
+  "admin.socketsHereFew": "сокета здесь",
 };

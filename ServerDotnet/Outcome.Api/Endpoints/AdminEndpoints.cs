@@ -368,7 +368,8 @@ public static class AdminEndpoints
             {
                 UserCount = s.Users, MessageCount = s.Messages, ChannelCount = s.Channels,
                 ServerCount = s.Servers, InviteCount = s.Invites, OnlineCount = registry.Count,
-                DbSizeBytes = s.DbSizeBytes, UptimeSeconds = uptime, Version = "0.1.0-dotnet",
+                DbSizeBytes = s.DbSizeBytes, UptimeSeconds = uptime,
+                Version = Environment.GetEnvironmentVariable("OUTCOME_VERSION") is { Length: > 0 } v ? v : "dev",
             };
         });
 
@@ -378,7 +379,7 @@ public static class AdminEndpoints
             ICurrentUser current, ICurrentSpace space, IConnectionRegistry registry,
             IServiceProvider sp, IConfiguration cfg, ISettingsRepository settings) =>
         {
-            // Infrastructure shared by every tenant: Postgres, Redis, MinIO, LiveKit.
+            // Infrastructure shared by every tenant: Postgres, Redis, LiveKit, the file storage.
             RequireInstanceAdmin(current, space);
 
             async Task<object> Check(string name, Func<Task> probe)
@@ -406,10 +407,29 @@ public static class AdminEndpoints
                 .Replace("wss://", "https://").Replace("ws://", "http://");
             checks.Add(await Check("LiveKit", async () => { (await http.GetAsync(lkUrl)).EnsureSuccessStatusCode(); }));
 
-            // MinIO — object storage health endpoint.
-            var minioEp = cfg["Minio:Endpoint"] ?? "minio:9000";
-            var minioScheme = (cfg["Minio:UseSsl"] ?? "false").Equals("true", StringComparison.OrdinalIgnoreCase) ? "https" : "http";
-            checks.Add(await Check("MinIO", async () => { (await http.GetAsync($"{minioScheme}://{minioEp}/minio/health/live")).EnsureSuccessStatusCode(); }));
+            // File storage — a few bytes written, read back and deleted with the server's own keys,
+            // the way an upload goes. It used to ask MinIO's own /minio/health/live, which said
+            // nothing about the keys or the bucket, and after the move to Garage (2026-10-23) read
+            // "down" for a store that worked — Garage has no such path.
+            var storage = sp.GetRequiredService<Outcome.Shared.Abstractions.Storage.IFileStorage>();
+            var storageName = (cfg["Minio:Endpoint"] ?? "").StartsWith("garage", StringComparison.OrdinalIgnoreCase) ? "Garage" : "S3";
+            checks.Add(await Check(storageName, async () =>
+            {
+                var key = $"health-probe-{Environment.MachineName}";
+                var sent = System.Text.Encoding.UTF8.GetBytes(DateTime.UtcNow.ToString("O"));
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await storage.SaveAsync(key, new MemoryStream(sent), cts.Token);
+                // OpenRead and Delete block; a store that hangs must not hang the dashboard.
+                var back = await Task.Run(() =>
+                {
+                    using var read = storage.OpenRead(key) ?? throw new InvalidOperationException("written, but it does not read back");
+                    using var ms = new MemoryStream();
+                    read.CopyTo(ms);
+                    return ms.ToArray();
+                }).WaitAsync(TimeSpan.FromSeconds(5));
+                if (!back.AsSpan().SequenceEqual(sent)) throw new InvalidOperationException("read back different bytes");
+                await Task.Run(() => storage.Delete(key)).WaitAsync(TimeSpan.FromSeconds(5));
+            }));
 
             var proc = System.Diagnostics.Process.GetCurrentProcess();
             return new

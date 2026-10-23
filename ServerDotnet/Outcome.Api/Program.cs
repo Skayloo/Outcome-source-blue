@@ -212,7 +212,9 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 var startedAtUtc = DateTimeOffset.UtcNow;
-const string version = "0.1.0-dotnet";
+// The release (OUTCOME_VERSION, baked into the image by the release scripts). It said
+// "0.1.0-dotnet" in every build ever made, which told nobody which one was running.
+var version = Environment.GetEnvironmentVariable("OUTCOME_VERSION") is { Length: > 0 } v ? v : "dev";
 // Reported by /health; the official apps read it to know which of their features this server
 // has. A constant on purpose.
 const string edition = "blue";

@@ -7,8 +7,8 @@ shape of the stack, the decisions that bite, and how we run it ourselves.
 
 The source those images are built from is published too, at
 [Outcome-source-blue](https://github.com/Skayloo/Outcome-source-blue) — so the claims on this
-page can be checked rather than taken on trust: no telemetry. It is readable, not open source: the licence there grants no right to use,
-modify or redistribute the code, and running Outcome still means pulling the images.
+page can be checked rather than taken on trust: no telemetry. It is free software under the GNU AGPL v3: you may run, change and redistribute
+it, and build your own images from it.
 
 ## The stack
 

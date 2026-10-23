@@ -52,4 +52,8 @@ ENV ASPNETCORE_URLS=http://0.0.0.0:5000
 # The .NET base image sets ASPNETCORE_HTTP_PORTS=8080; with URLS above it is only overridden,
 # and every start logged "Overriding HTTP_PORTS '8080'…". Cleared, so the one port is ours.
 ENV ASPNETCORE_HTTP_PORTS=
+# The release this image is (the release scripts pass it); /health and the admin dashboard show
+# it. "dev" for a build nobody named.
+ARG OUTCOME_VERSION=dev
+ENV OUTCOME_VERSION=${OUTCOME_VERSION}
 ENTRYPOINT ["dotnet", "Outcome.Api.dll"]
