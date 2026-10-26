@@ -1,7 +1,7 @@
 {
   "name": "outcome-desktop",
   "productName": "Outcome",
-  "version": "1.0.4",
+  "version": "1.1.1",
   "private": true,
   "description": "Outcome — мессенджер для команды на своём сервере",
   "author": {
@@ -17,7 +17,7 @@
     "dist:mac": "npm run sync && electron-builder --mac --publish never"
   },
   "devDependencies": {
-    "electron": "^33.2.1",
+    "electron": "^44.9.3",
     "electron-builder": "^25.1.8"
   },
   "build": {
@@ -68,13 +68,36 @@
     },
     "mac": {
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "category": "public.app-category.social-networking",
-      "icon": "build/icon.png",
+      "icon": "build/icon-mac.png",
+      "minimumSystemVersion": "13.0",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Outcome uses the microphone for calls and voice messages.",
+        "NSCameraUsageDescription": "Outcome uses the camera for video calls."
+      },
+      "extraResources": [
+        {
+          "from": "build/mac/ru.lproj",
+          "to": "ru.lproj"
+        }
+      ]
     },
     "publish": [
       {
@@ -120,6 +143,10 @@
       "fpm": [
         "build/deb/apparmor-profile=/etc/apparmor.d/outcome-desktop"
       ]
+    },
+    "dmg": {
+      "sign": false,
+      "artifactName": "${productName}-${version}-mac.${ext}"
     }
   },
   "homepage": "https://outcome.ru",

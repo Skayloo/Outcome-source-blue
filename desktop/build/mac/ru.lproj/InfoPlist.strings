@@ -1,0 +1,3 @@
+/* What macOS shows when Outcome first asks for the microphone or the camera. */
+"NSMicrophoneUsageDescription" = "Outcome использует микрофон в звонках и для голосовых сообщений.";
+"NSCameraUsageDescription" = "Outcome использует камеру в видеозвонках.";

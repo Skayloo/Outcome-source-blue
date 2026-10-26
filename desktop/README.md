@@ -32,7 +32,7 @@ npm install
 npm start          # build the web client, then run the shell
 npm run dist:win   # NSIS installer  → release/
 npm run dist:linux # AppImage + .deb → release/
-npm run dist:mac   # .dmg            → release/   (only on macOS)
+npm run dist:mac   # .dmg + .zip     → release/   (only on macOS; see "The macOS package")
 ```
 
 ## Building the Windows and Linux packages on a Mac
@@ -55,9 +55,63 @@ linux/amd64`), on a scratch copy of `frontend/` and `desktop/` mounted at `/src`
   -binary | base64`) and the same `app.asar` in every package.
 
 Publishing: the files go into the folder the frontend container serves at `/download/`
-(`DOWNLOADS_DIR` in the compose file), the packages first and `latest.yml`/`latest-linux.yml`
-LAST — they are what installed copies update to. Keep the previous version's files: the URLs are
+(`DOWNLOADS_DIR` in the compose file), the packages first and `latest.yml`/`latest-linux.yml`/
+`latest-mac.yml` LAST — they are what installed copies update to. Keep the previous version's files: the URLs are
 cached `immutable`. Then point whatever page links the downloads at the new names and sizes.
+
+## The macOS package (since 1.1.0)
+
+Built on a Mac, notarized with an App Store Connect **team** API key (Developer role or above):
+
+```bash
+unset ELECTRON_RUN_AS_NODE   # VS Code's terminals set it; see the last point below
+APPLE_API_KEY=<path to AuthKey_….p8> APPLE_API_KEY_ID=<key id> APPLE_API_ISSUER=<issuer id> \
+npm run dist:mac
+```
+
+- **One universal package** (Apple Silicon and Intel): ~240 MB instead of two of ~120 MB, so
+  nobody downloads the one that will not start on their Mac. `Outcome-<ver>-mac.dmg` is for
+  people; `Outcome-<ver>-universal-mac.zip` (+ `.blockmap`) and `latest-mac.yml` are for the
+  updater, which on macOS installs only from a zip.
+- **Signed** with a "Developer ID Application" certificate from the login keychain
+  (electron-builder finds it by itself; only the team's Account Holder can issue one —
+  developer.apple.com → Certificates → + → Software → Developer ID Application; "Apple
+  Distribution" certificates are App Store only), hardened runtime, **notarized** by the builder
+  through notarytool and stapled. The dmg then gets the same by hand —
+  `codesign -s "Developer ID Application: …" --timestamp <dmg>`, `xcrun notarytool submit <dmg>
+  --key … --key-id … --issuer … --wait`, `xcrun stapler staple <dmg>` — and its `sha512`/`size`
+  in `latest-mac.yml` are rewritten (`openssl dgst -sha512 -binary | base64`): the updater reads
+  only the zip's entry, but a wrong hash beside it is a trap for the next person. Check with
+  `spctl -a -t open --context context:primary-signature -vv <dmg>` and `spctl -a -vv <app>`,
+  both "Notarized Developer ID".
+- **Electron 44** (1.0.4 was 33): every Electron before 36.9.2 / 37.6 / 38.2 makes the WHOLE Mac
+  lag on macOS 26 and later (it overrode a private AppKit method, `_cornerMask`). The Windows and
+  Linux 1.0.4 packages are still on 33; their next build gets 44 — run it on those systems
+  first (38 made Linux start on Wayland natively; 44 needs Windows 10+ 64-bit, macOS 13+).
+- **macOS specifics in `main.js`:** a menu of our own (without an Edit menu ⌘C/⌘V never reach
+  the page), a template tray icon (`trayTemplate*.png`), "move to Applications" (an app
+  run from the dmg or from Downloads cannot replace itself), and "restart to update" only once
+  Squirrel has unpacked and verified the update — electron-updater announces it earlier, and a
+  quit in between installed nothing.
+- **`ELECTRON_RUN_AS_NODE=1`** is inherited from VS Code's terminals; with it the built app
+  starts as plain Node ("bad option: --remote-debugging-port"). Unset it before starting the app
+  or Playwright from such a terminal.
+
+### Checking the Mac updater
+
+`deploy/e2e/desktop-mac-update.mjs` — two signed builds whose feed is a local server, installed
+into `~/Applications`, the older one updating itself to the newer (no notarization needed: the
+files never get a quarantine flag). Build both from a copy of the `build` config with
+`publish: [{provider: "generic", url: "http://127.0.0.1:8765/"}]`, `mac.notarize: false` and a
+zip-only target, then:
+
+```bash
+npx electron-builder --mac --universal --publish never --config <cfg-a>.json -c.extraMetadata.version=1.0.98
+npx electron-builder --mac --universal --publish never --config <cfg-b>.json -c.extraMetadata.version=1.0.99
+OLD_APP=<a>/mac-universal/Outcome.app FEED=<b> node deploy/e2e/desktop-mac-update.mjs
+```
+
+It failed on the early "ready" above (the bundle stayed 1.0.98) and passes since.
 
 ## What the shell adds over the browser
 
@@ -130,9 +184,11 @@ Unsigned builds run, but each system says something alarming first.
 - **Windows** — without a code-signing certificate SmartScreen warns about an unknown
   publisher. The installer works; the warning costs installs.
 - **macOS** — Gatekeeper refuses a downloaded app that is not signed with a **Developer ID**
-  and **notarized**. This is not the App Store, but it is not optional either. Entitlements for
-  microphone, camera and JIT are in `build/entitlements.mac.plist`; without the first two the
-  hardened runtime silently denies the microphone.
+  and **notarized**. This is not the App Store, but it is not optional either — and the updater
+  (Squirrel) installs only an update signed by the same team. Done since 1.1.0, see "The macOS
+  package". Entitlements for microphone, camera and JIT are in `build/entitlements.mac.plist`;
+  without the first two the hardened runtime silently denies the microphone. The prompts' texts
+  are `mac.extendInfo` (English) and `build/mac/ru.lproj/InfoPlist.strings` (Russian).
 - **Linux** — nothing to sign. AppImage and `.deb` are the targets.
 
 macOS builds must be made on macOS; the other two cross-build from anywhere.

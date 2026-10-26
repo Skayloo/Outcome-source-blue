@@ -2,7 +2,7 @@
 
 const {
   app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, shell,
-  desktopCapturer, nativeImage, protocol, net, nativeTheme,
+  desktopCapturer, nativeImage, protocol, net, nativeTheme, dialog,
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('node:path');
@@ -21,7 +21,13 @@ const WEB_DIR = path.join(__dirname, '..', 'web');
 // which is exactly how the tray icon came out blank: nativeImage answers a missing file with an
 // empty image rather than an error, so the menu worked and the icon was simply invisible.
 const ICON = path.join(__dirname, 'assets', 'app.png');
-const TRAY_ICON = path.join(__dirname, 'assets', 'tray.png');
+// The macOS menu bar draws its icons itself, black or white to suit the bar: it wants only the
+// shape. A file named …Template is marked as such by nativeImage; the coloured ring would sit
+// there as the one colour blob in a monochrome bar, and vanish on a dark one.
+const TRAY_ICON = path.join(__dirname, 'assets', process.platform === 'darwin' ? 'trayTemplate.png' : 'tray.png');
+
+/** The shell's own few words — menus, one dialog — in the system's language, like the web UI's first run. */
+const say = (ru, en) => (/^(ru|uk|be|kk)\b/i.test(app.getPreferredSystemLanguages()[0] || app.getLocale()) ? ru : en);
 
 /** The SPA is served from here rather than file://. See registerAppProtocol below. */
 const APP_ORIGIN = 'app://outcome';
@@ -134,8 +140,8 @@ function createWindow() {
   // terminal of its own, so without this a failure inside the SPA is invisible: the window just
   // does the wrong thing quietly. Cheap, and it is what turned "the microphone does not work"
   // into an actual error message.
-  win.webContents.on('console-message', (_e, level, message, line, source) => {
-    if (level >= 2) console.log(`[renderer] ${message}  (${source}:${line})`);
+  win.webContents.on('console-message', ({ level, message, lineNumber, sourceId }) => {
+    if (level === 'warning' || level === 'error') console.log(`[renderer] ${message}  (${sourceId}:${lineNumber})`);
   });
 
   // OUTCOME_DIAG=1 asks the page what the media stack actually thinks. Behind a flag because
@@ -366,11 +372,23 @@ function wireAutoUpdate() {
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = { info: console.log, warn: console.warn, error: console.error, debug: () => {} };
 
-  autoUpdater.on('update-downloaded', (info) => {
+  const ready = (version) => {
     updateReady = true;
     refreshTrayMenu();
-    console.log(`[update] ${info.version} ready — installs on quit`);
-  });
+    refreshMacMenu();
+    console.log(`[update] ${version} ready — installs on quit`);
+  };
+  // On macOS electron-updater says "downloaded" the moment IT has the zip; Squirrel then still
+  // unpacks it and checks its signature, and a quit before that installs nothing (seen: quitting
+  // right after the announcement left the old version in place). Electron's own updater speaks
+  // when Squirrel is done.
+  if (process.platform === 'darwin') {
+    let version = '';
+    autoUpdater.on('update-downloaded', (info) => { version = info.version; });
+    require('electron').autoUpdater.on('update-downloaded', () => ready(version));
+  } else {
+    autoUpdater.on('update-downloaded', (info) => ready(info.version));
+  }
   // Loud, because a silent updater that has been failing for months looks identical to one
   // that has simply had nothing to do.
   autoUpdater.on('error', (err) => console.error('[update] check failed', err));
@@ -404,23 +422,87 @@ function createTray() {
 function refreshTrayMenu() {
   if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Открыть Outcome', click: () => showWindow() },
-    ...(updateReady
-      ? [{ type: 'separator' }, {
-          label: 'Перезапустить и обновить',
-          click: () => { quitting = true; autoUpdater.quitAndInstall(); },
-        }]
-      : []),
+    { label: say('Открыть Outcome', 'Open Outcome'), click: () => showWindow() },
+    ...(updateReady ? [{ type: 'separator' }, restartToUpdateItem()] : []),
     { type: 'separator' },
     {
-      label: 'Запускать при входе в систему',
+      label: say('Запускать при входе в систему', 'Open at login'),
       type: 'checkbox',
       checked: app.getLoginItemSettings().openAtLogin,
       click: (item) => app.setLoginItemSettings({ openAtLogin: item.checked }),
     },
     { type: 'separator' },
-    { label: 'Выйти', click: () => { quitting = true; app.quit(); } },
+    { label: say('Выйти', 'Quit'), click: () => { quitting = true; app.quit(); } },
   ]));
+}
+
+function restartToUpdateItem() {
+  return {
+    label: say('Перезапустить и обновить', 'Restart to update'),
+    click: () => { quitting = true; autoUpdater.quitAndInstall(); },
+  };
+}
+
+// ── The macOS menu bar ───────────────────────────────────────────────────────
+// Electron's default menu is English and carries Reload and Developer Tools. A menu of our own
+// is not decoration, though: on macOS ⌘C/⌘V/⌘A reach the page only through an Edit menu that
+// has those roles — without one, copy and paste in the message box simply stop working.
+function refreshMacMenu() {
+  if (process.platform !== 'darwin') return;
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about', label: say('О программе Outcome', 'About Outcome') },
+        ...(updateReady ? [{ type: 'separator' }, restartToUpdateItem()] : []),
+        { type: 'separator' },
+        { role: 'hide', label: say('Скрыть Outcome', 'Hide Outcome') },
+        { role: 'hideOthers', label: say('Скрыть остальные', 'Hide Others') },
+        { role: 'unhide', label: say('Показать все', 'Show All') },
+        { type: 'separator' },
+        { role: 'quit', label: say('Завершить Outcome', 'Quit Outcome') },
+      ],
+    },
+    {
+      label: say('Правка', 'Edit'),
+      submenu: [
+        { role: 'undo', label: say('Отменить', 'Undo') },
+        { role: 'redo', label: say('Повторить', 'Redo') },
+        { type: 'separator' },
+        { role: 'cut', label: say('Вырезать', 'Cut') },
+        { role: 'copy', label: say('Скопировать', 'Copy') },
+        { role: 'paste', label: say('Вставить', 'Paste') },
+        { role: 'selectAll', label: say('Выбрать все', 'Select All') },
+      ],
+    },
+    {
+      label: say('Окно', 'Window'),
+      submenu: [
+        { role: 'minimize', label: say('Свернуть', 'Minimize') },
+        { role: 'zoom', label: say('Изменить масштаб', 'Zoom') },
+        { type: 'separator' },
+        { role: 'close', label: say('Закрыть окно', 'Close Window') },
+      ],
+    },
+  ]));
+}
+
+// An app run straight from the disk image — or from Downloads, where Gatekeeper runs it from a
+// randomised read-only copy — cannot replace itself: updates would download and never install.
+// Offered once per launch, the way most Mac apps do; a refusal is not asked again until the next.
+function offerMoveToApplications() {
+  if (process.platform !== 'darwin' || !app.isPackaged || app.isInApplicationsFolder()) return;
+  const choice = dialog.showMessageBoxSync({
+    type: 'question',
+    buttons: [say('Переместить', 'Move'), say('Не сейчас', 'Not now')],
+    defaultId: 0,
+    cancelId: 1,
+    message: say('Переместить Outcome в папку «Программы»?', 'Move Outcome to the Applications folder?'),
+    detail: say('Оттуда приложение сможет обновляться само.', 'From there it can keep itself up to date.'),
+  });
+  if (choice !== 0) return;
+  // On success this relaunches from /Applications once this process has quit.
+  try { app.moveToApplicationsFolder(); } catch (err) { console.error('[move] could not move to Applications', err); }
 }
 
 // ── Push-to-talk ─────────────────────────────────────────────────────────────
@@ -480,6 +562,8 @@ app.whenReady().then(() => {
   // identical to `build.appId` in package.json.
   if (process.platform === 'win32') app.setAppUserModelId('ru.outcome.desktop');
 
+  offerMoveToApplications();
+  refreshMacMenu();
   registerAppProtocol();
   createWindow();
   createTray();

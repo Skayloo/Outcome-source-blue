@@ -211,7 +211,11 @@ export function VoiceTab() {
       <Row label={t("settings.nsEngine")} desc={t("settings.nsEngineDesc")}>
         <Select
           k="nsEngine"
-          def="deepfilter"
+          // MUST match what the pipeline and the prefetch read (`loadPref("nsEngine", "rnnoise")`).
+          // When RNNoise became the default (abf20dd) this stayed "deepfilter": everyone who never
+          // touched the picker saw DeepFilterNet selected while RNNoise ran, the model was never
+          // fetched, and "still downloading" sat there for good.
+          def="rnnoise"
           options={[
             { value: "rnnoise", label: t("settings.nsEngineRnnoise") },
             { value: "deepfilter", label: t("settings.nsEngineDeepFilter") },
@@ -234,7 +238,9 @@ export function VoiceTab() {
           <span className={"ns-active" + (active.startsWith("deepfilter") ? " strong" : "")}>
             {active.startsWith("deepfilter")
               ? t("settings.nsActiveStrong")
-              : t("settings.nsActiveLight")}
+              // "Still downloading" only when DeepFilterNet is what was chosen; RNNoise picked on
+              // purpose is simply RNNoise.
+              : engine === "deepfilter" ? t("settings.nsActiveLight") : t("settings.nsEngineRnnoise")}
           </span>
         </Row>
       )}
@@ -242,7 +248,7 @@ export function VoiceTab() {
         <Row label={t("settings.nsStrength")} desc={t("settings.nsStrengthDesc")}>
           <Slider
             k="nsStrength"
-            def={20}
+            def={25} // = DEFAULT_SUPPRESSION in noise-suppression-dfn.ts, what actually applies
             // Decibels, not percent: the number goes straight to the model's attenuation
             // limit. The old range said 25–100% and read like a quality dial, so 40 looked
             // modest — it is 40 dB, deep into where the model takes speech with the noise.
