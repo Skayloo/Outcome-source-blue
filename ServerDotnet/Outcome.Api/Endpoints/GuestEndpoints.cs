@@ -196,7 +196,7 @@ public static class GuestEndpoints
                 throw new DomainException("RATE_LIMITED", 429, "too many GIFs, slow down");
             GifEndpoints.AllowVideoBody(ctx);
             var (bytes, mime) = await GifEndpoints.PrepareAsync(ctx);
-            var id = ephemeral.Add(space.Space.Id, bytes, mime)
+            var id = await ephemeral.AddAsync(space.Space.Id, bytes, mime)
                      ?? throw new DomainException("BUSY", 503, "too many GIFs at once — try again in a minute");
             return Results.Json(new { url = $"/api/v1/files/{id}" });
         }).DisableAntiforgery();

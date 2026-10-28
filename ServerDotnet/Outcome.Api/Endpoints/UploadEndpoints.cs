@@ -240,7 +240,7 @@ public static class UploadEndpoints
             IUserGifRepository gifs, EphemeralGifs ephemeral, Outcome.Infrastructure.Tenancy.ICurrentSpace space) =>
         {
             // A guest's GIF reaction, alive for a minute in memory and nowhere else (EphemeralGifs).
-            if (ephemeral.Get(space.Space.Id, id) is { } live)
+            if (await ephemeral.GetAsync(space.Space.Id, id) is { } live)
             {
                 ctx.Response.Headers.CacheControl = "private, max-age=60";
                 ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
