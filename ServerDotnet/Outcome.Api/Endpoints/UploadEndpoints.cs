@@ -237,8 +237,17 @@ public static class UploadEndpoints
         // GET /api/v1/files/{id} — no session, but not public: the signed query is the credential.
         app.MapGet("/api/v1/files/{id}", async (string id, HttpContext ctx, IAttachmentRepository attachments,
             IFileStorage storage, IFileUrlSigner fileUrls, IUserRepository users, IServerRepository servers,
-            IUserGifRepository gifs) =>
+            IUserGifRepository gifs, EphemeralGifs ephemeral, Outcome.Infrastructure.Tenancy.ICurrentSpace space) =>
         {
+            // A guest's GIF reaction, alive for a minute in memory and nowhere else (EphemeralGifs).
+            if (ephemeral.Get(space.Space.Id, id) is { } live)
+            {
+                ctx.Response.Headers.CacheControl = "private, max-age=60";
+                ctx.Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
+                ctx.Response.Headers.XContentTypeOptions = "nosniff";
+                return Results.File(live.Bytes, live.Mime);
+            }
+
             // The link IS the credential — an <img src> carries no session — so it has to expire.
             // An id alone was a permanent one: anywhere it was ever forwarded, pasted or logged,
             // it kept working. NotFound rather than Forbidden on purpose: a 403 confirms the id

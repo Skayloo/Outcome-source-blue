@@ -74,11 +74,16 @@ export function FloatingReactions({ items }: { items: readonly FloatingReaction[
 }
 
 /** Hand toggle plus the reaction picker, for a voice control bar. `onGif` adds the user's own
- *  GIF library as a second tab — the signed-in stage has one, a guest does not. */
+ *  GIF library as a second tab — the signed-in stage has one. A guest has no library: `onGuestGif`
+ *  sends one file once (shown to the call, kept nowhere) and answers an error to show, or null. */
 export function VoiceFxControls(
-  { handUp, onHand, onReact, onGif }:
-  { handUp: boolean; onHand: (up: boolean) => void; onReact: (emoji: Reaction) => void; onGif?: (path: string) => void },
+  { handUp, onHand, onReact, onGif, onGuestGif }:
+  {
+    handUp: boolean; onHand: (up: boolean) => void; onReact: (emoji: Reaction) => void;
+    onGif?: (path: string) => void; onGuestGif?: (file: File) => Promise<string | null>;
+  },
 ) {
+  const gifTab = onGif !== undefined || onGuestGif !== undefined;
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"emoji" | "gif">("emoji");
 
@@ -107,8 +112,8 @@ export function VoiceFxControls(
       <div className="vfx-picker-wrap" onPointerDown={(e) => e.stopPropagation()}>
         <VoiceCtl glyph="🙂" label={t("voice.react")} on={open} onClick={() => setOpen((v) => !v)} />
         {open && (
-          <div className={"vfx-picker" + (onGif !== undefined ? " with-tabs" : "")} role="menu">
-            {onGif !== undefined && (
+          <div className={"vfx-picker" + (gifTab ? " with-tabs" : "")} role="menu">
+            {gifTab && (
               <div className="vfx-tabs">
                 <button className={tab === "emoji" ? "on" : ""} onClick={() => setTab("emoji")}>{t("voice.fxEmoji")}</button>
                 <button className={tab === "gif" ? "on" : ""} onClick={() => setTab("gif")}>GIF</button>
@@ -116,6 +121,8 @@ export function VoiceFxControls(
             )}
             {tab === "gif" && onGif !== undefined
               ? <GifTab onPick={(path) => { onGif(path); setOpen(false); }} />
+              : tab === "gif" && onGuestGif !== undefined
+              ? <GuestGifTab send={onGuestGif} onSent={() => setOpen(false)} />
               : <div className="vfx-emoji-grid">
                   {REACTIONS.map((emoji) => (
                     <button
@@ -131,6 +138,35 @@ export function VoiceFxControls(
         )}
       </div>
     </>
+  );
+}
+
+/** A guest's GIF: pick a file, it goes to the call once and is kept nowhere. */
+function GuestGifTab({ send, onSent }: { send: (file: File) => Promise<string | null>; onSent: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pick = (file: File | undefined): void => {
+    if (file === undefined || busy) return;
+    setError(null);
+    setBusy(true);
+    void send(file).then((err) => {
+      setBusy(false);
+      if (err === null) onSent();
+      else setError(err === "type" ? t("voice.gifType") : err === "size" ? t("voice.gifSize") : err);
+    });
+  };
+  return (
+    <div className="vfx-gif-tab">
+      <div className="vfx-gif-grid">
+        <label className={"vfx-gif-add" + (busy ? " busy" : "")} title={t("voice.gifGuestPick")}>
+          <Icon name={busy ? "loader" : "plus"} size={20} />
+          <input type="file" accept={GIF_ACCEPT} hidden disabled={busy}
+            onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
+        </label>
+      </div>
+      <div className="vfx-gif-hint">{t("voice.gifGuestHint")}</div>
+      {error && <div className="vfx-gif-error">{error}</div>}
+    </div>
   );
 }
 

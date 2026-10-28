@@ -302,6 +302,9 @@ body.theme-light .admin-app { color-scheme: light; }
   background: var(--bg-primary); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13.5px; color: var(--text-normal);
 }
 .adm-item-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+/* A reported channel message's files, opened for the moderators (ReportFiles). */
+.adm-report-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+.adm-report-img { max-width: 320px; max-height: 240px; border-radius: 8px; border: 1px solid var(--border); display: block; }
 .adm-select-sm { height: 30px; width: auto; padding: 0 8px; font-size: 12.5px; }
 .adm-select { height: 34px; width: auto; }
 .adm-shots { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }

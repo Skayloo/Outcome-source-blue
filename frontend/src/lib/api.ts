@@ -581,6 +581,9 @@ export function createApiClient(
      */
     async uploadRecording(
       file: Blob, filename: string, mime: string, onProgress?: (sent: number, total: number) => void,
+      /** Each part may be turned into something else on its way (by its offset in the file), and the
+       *  completing request may carry more fields. */
+      how?: { part?: (part: Blob, offset: number) => Promise<Blob>; complete?: Record<string, string> },
     ): Promise<{ id: string; url: string; size: number }> {
       const PART = 16 * 1024 * 1024;
       const upload = crypto.randomUUID();
@@ -588,7 +591,8 @@ export function createApiClient(
       if (config.token) h["Authorization"] = `Bearer ${config.token}`;
       const parts = Math.max(1, Math.ceil(file.size / PART));
       for (let i = 0; i < parts; i++) {
-        const chunk = file.slice(i * PART, Math.min(file.size, (i + 1) * PART));
+        const plain = file.slice(i * PART, Math.min(file.size, (i + 1) * PART));
+        const chunk = how?.part ? await how.part(plain, i * PART) : plain;
         for (let attempt = 1; ; attempt++) {
           const res = await platformFetch(`${baseUrl()}/recordings/${upload}/parts/${i}`, { method: "PUT", headers: h, body: chunk } as RequestInit)
             .catch(() => null);
@@ -604,7 +608,7 @@ export function createApiClient(
       const res = await platformFetch(`${baseUrl()}/recordings/${upload}/complete`, {
         method: "POST",
         headers: { ...h, "Content-Type": "application/json" },
-        body: JSON.stringify({ parts, filename, mime }),
+        body: JSON.stringify({ parts, filename, mime, ...how?.complete }),
       } as RequestInit);
       if (!res.ok) {
         const err = await parseError(res);
@@ -751,6 +755,7 @@ export function createApiClient(
       return request<void>("POST", `/messages/${messageId}/report`, { reason }, signal);
     },
 
+
     /** Admin: paged moderation inbox. */
     adminListReportsPaged(limit: number, offset: number, signal?: AbortSignal): Promise<{ items: MessageReportDto[]; total: number }> {
       return pagedGet<MessageReportDto>("API", baseUrl(), "/admin/reports", limit, offset, signal);
@@ -864,6 +869,11 @@ export function createApiClient(
     /** Who reacted to a message, emoji by emoji (people newest first). */
     getMessageReactions(messageId: number, signal?: AbortSignal): Promise<{ message_id: number; reactions: { emoji: string; count: number; users: { id: number; username: string; avatar: string | null }[] }[] }> {
       return request("GET", `/messages/${messageId}/reactions`, undefined, signal);
+    },
+
+    /** Who read one's own message (its author only), by name. */
+    getMessageReaders(messageId: number, signal?: AbortSignal): Promise<{ message_id: number; count: number; users: { id: number; username: string; avatar: string | null }[] }> {
+      return request("GET", `/messages/${messageId}/readers`, undefined, signal);
     },
 
     /** Close a DM (hide from sidebar). */

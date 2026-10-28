@@ -181,6 +181,26 @@ public static class GuestEndpoints
             }));
         });
 
+        // A guest's GIF reaction (EphemeralGifs): made ready like a member's, then held in memory for a
+        // minute and fired into the call by its path — never stored. Open on red too: unlike the room's
+        // chat it is not a channel line, and a reaction is what everyone in the call sees anyway.
+        app.MapPost("/api/v1/guest/{code}/gifs", async (string code, HttpContext ctx,
+            IGuestLinkRepository links, IChannelRepository channels, ILiveKitTokenService livekit, ICurrentSpace space,
+            IRateLimiter limiter, EphemeralGifs ephemeral) =>
+        {
+            var (_, channel) = await ResolveAsync(code, links, channels);
+            var guest = GuestOf(ctx, livekit, space, channel.Id);
+            // A GIF is converted, held and fetched by everyone in the call — far heavier than a line.
+            if (!limiter.Allow($"guest_gif:{space.Space.Id}:{guest.Identity}", 6, TimeSpan.FromMinutes(1))
+                || !limiter.Allow($"global:guest_gif:{space.Space.Id}", 120, TimeSpan.FromMinutes(1)))
+                throw new DomainException("RATE_LIMITED", 429, "too many GIFs, slow down");
+            GifEndpoints.AllowVideoBody(ctx);
+            var (bytes, mime) = await GifEndpoints.PrepareAsync(ctx);
+            var id = ephemeral.Add(space.Space.Id, bytes, mime)
+                     ?? throw new DomainException("BUSY", 503, "too many GIFs at once — try again in a minute");
+            return Results.Json(new { url = $"/api/v1/files/{id}" });
+        }).DisableAntiforgery();
+
         app.MapPost("/api/v1/guest/{code}/chat", async (string code, GuestChatBody? body, HttpContext ctx,
             IGuestLinkRepository links, IChannelRepository channels, IMessageRepository messages, IUserRepository users,
             ILiveKitTokenService livekit, ICurrentSpace space, IRateLimiter limiter,

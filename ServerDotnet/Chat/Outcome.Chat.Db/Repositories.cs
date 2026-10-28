@@ -34,7 +34,15 @@ public interface IReadStateRepository
     /// <summary>Per channel: the furthest message id anyone OTHER than this user has read —
     /// drives the sender's ✓✓ ticks.</summary>
     Task<IReadOnlyDictionary<long, long>> MaxOtherReadAsync(long userId, IReadOnlyCollection<long> channelIds, CancellationToken ct = default);
+
+    /// <summary>Who has read a channel at least as far as <paramref name="messageId"/> — their marker
+    /// reaches it — apart from <paramref name="exceptUserId"/> and deleted accounts; in a server's
+    /// channel only people still in that server. By name, at most <paramref name="limit"/>.</summary>
+    Task<(int Count, IReadOnlyList<ReaderDto> Readers)> ReadersAsync(
+        long channelId, long? serverId, long messageId, long exceptUserId, int limit, CancellationToken ct = default);
 }
+
+public sealed record ReaderDto(long UserId, string Username, string? Avatar);
 
 public interface IVoiceListenRepository
 {

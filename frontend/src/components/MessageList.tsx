@@ -20,6 +20,8 @@ import { api, wsSend } from "@lib/services";
 import { HeicPhoto } from "@components/HeicPhoto";
 import { looksHeif } from "@lib/heic";
 import { ForwardModal } from "@components/ForwardModal";
+import { ReadersModal, loadReaders, readersLabel, type Readers } from "@components/ReadersModal";
+import { ContextMenu } from "@components/ContextMenu";
 import { UserProfileModal } from "@components/UserProfileModal";
 import { messagePreview } from "@lib/messagePreview";
 import { markListenedBulk, markListenedByOthersBulk } from "@stores/listened.store";
@@ -208,6 +210,9 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   const jumpHoldRef = useRef(0);
   // Forward: Telegram-style centered dialog with search over every chat.
   const [fwdFor, setFwdFor] = useState<Message | null>(null);
+  // Own channel messages: who read them, on a right click and from the actions bar.
+  const [readersFor, setReadersFor] = useState<number | null>(null);
+  const [ownMenu, setOwnMenu] = useState<{ x: number; y: number; m: Message; readers: Readers | null | "failed" } | null>(null);
   // Clicking whoever wrote a line opens them — the same door the mobile app has.
   const [profile, setProfile] = useState<{ id: number; username: string; avatar: string | null } | null>(null);
   /** Scroll to a message that is on the page and flash it; false when it is not there. */
@@ -326,15 +331,22 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   const mentionNames = new Set([...members.values()].map((u) => u.username.toLowerCase()));
   const selfName = me?.username?.toLowerCase() ?? null;
   const linkOpts = { isMention: (n: string) => mentionNames.has(n.toLowerCase()), selfName };
-  // Own-message ticks (Telegram model): one check = sent, two = read by someone else.
-  const dmPeerRead = isDm
+  // Own-message ticks in a DM (Telegram model): one check = sent, two = read by the other side. A
+  // channel has none — who read a line is asked on a right click instead (ReadersModal).
+  const readUpTo = isDm
     ? (dmStore.getState().channels.find((d) => d.channelId === channelId)?.peerReadUpTo ?? 0)
     : 0;
-  const chOthersRead = !isDm ? (ch.channels.get(channelId ?? -1)?.othersReadUpTo ?? 0) : 0;
-  const readUpTo = isDm ? dmPeerRead : chOthersRead;
-  const ticks = (m: Message): React.ReactNode => (
+  const ticks = (m: Message): React.ReactNode => isDm && (
     <span className={"msg-ticks" + (m.id <= readUpTo ? " read" : "")}>{m.id <= readUpTo ? "✓✓" : "✓"}</span>
   );
+  const openOwnMenu = (e: React.MouseEvent, m: Message): void => {
+    e.preventDefault();
+    setOwnMenu({ x: e.clientX, y: e.clientY, m, readers: null });
+    loadReaders(m.id).then(
+      (r) => setOwnMenu((cur) => (cur?.m.id === m.id ? { ...cur, readers: r } : cur)),
+      () => setOwnMenu((cur) => (cur?.m.id === m.id ? { ...cur, readers: "failed" } : cur)),
+    );
+  };
   const mentionsMe = (content: string): boolean =>
     selfName != null && new RegExp(`@${selfName.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")}(?![\\w.\\-])`, "i").test(content);
   const react = (m: Message, emoji: string, mine: boolean) =>
@@ -526,10 +538,14 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           </div>
           <button title={t("chat.reply")} onClick={() => setReply(m)}><Icon name="reply" size={16} /></button>
           <button title={t("chat.forward")} onClick={() => setFwdFor(m)}><Icon name="arrow-right" size={16} /></button>
-          {me?.id !== m.user.id && (
+          {/* A direct message is not reported: "Block" is the answer there, and it tells the moderators. */}
+          {me?.id !== m.user.id && !isDm && (
             <button title={t("chat.report")} onClick={() => reportMessage(m)}><Icon name="flag" size={16} /></button>
           )}
           <button title={m.pinned ? t("chat.unpin") : t("chat.pin")} onClick={() => togglePin(m)}><Icon name={m.pinned ? "pin-off" : "pin"} size={16} /></button>
+          {me?.id === m.user.id && !isDm && (
+            <button title={t("chat.readers")} onClick={() => setReadersFor(m.id)}><Icon name="eye" size={16} /></button>
+          )}
           {me?.id === m.user.id && (
             <button title={t("chat.edit")} onClick={() => setEditing(m)}><Icon name="pencil" size={16} /></button>
           )}
@@ -547,7 +563,8 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       // bubbles; the phone has always been bubbles for both, and two different chats in one
       // product is just two things to keep in sync. A channel adds the author's name inside
       // the bubble, which a DM does not need — there are only two people in it.
-      <div id={`msg-${m.id}`} className={"message dm-row" + (own ? " own" : " theirs") + (grouped ? " grouped" : "") + (pickerFor === m.id ? " picker-open" : "") + (flashId === m.id ? " flash" : "") + (!own && mentionsMe(m.content) ? " mention-me" : "")} key={m.id}>
+      <div id={`msg-${m.id}`} className={"message dm-row" + (own ? " own" : " theirs") + (grouped ? " grouped" : "") + (pickerFor === m.id ? " picker-open" : "") + (flashId === m.id ? " flash" : "") + (!own && mentionsMe(m.content) ? " mention-me" : "")} key={m.id}
+        onContextMenu={own && !isDm ? (e) => openOwnMenu(e, m) : undefined}>
         {!own && (grouped
           ? <span className="dm-ava-spacer" />
           : m.guestName
@@ -631,6 +648,21 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
         </button>
       )}
       {fwdFor && <ForwardModal message={fwdFor} onClose={() => setFwdFor(null)} />}
+      {readersFor !== null && <ReadersModal messageId={readersFor} onClose={() => setReadersFor(null)} />}
+      {ownMenu && (
+        <ContextMenu
+          x={ownMenu.x} y={ownMenu.y} onClose={() => setOwnMenu(null)}
+          items={[
+            { label: readersLabel(ownMenu.readers), icon: <Icon name="eye" size={15} />, onClick: () => setReadersFor(ownMenu.m.id) },
+            { separator: true },
+            ...(ownMenu.m.content.trim()
+              ? [{ label: t("chat.copyText"), icon: <Icon name="copy" size={15} />, onClick: () => { void navigator.clipboard.writeText(ownMenu.m.content); } }]
+              : []),
+            { label: t("chat.reply"), icon: <Icon name="reply" size={15} />, onClick: () => setReply(ownMenu.m) },
+            { label: t("chat.edit"), icon: <Icon name="pencil" size={15} />, onClick: () => setEditing(ownMenu.m) },
+          ]}
+        />
+      )}
       {profile && (
         <UserProfileModal
           userId={profile.id}

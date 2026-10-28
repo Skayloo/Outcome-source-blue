@@ -19,6 +19,10 @@ public static class ChannelEndpoints
         app.MapGet("/api/v1/messages/{id:long}/reactions", async (long id, ISender mediator) =>
             await mediator.Send(new GetMessageReactionsQuery(id)));
 
+        // Who read one's own message — "Прочитали" on a right click, where channels used to show ✓✓.
+        app.MapGet("/api/v1/messages/{id:long}/readers", async (long id, ISender mediator) =>
+            await mediator.Send(new GetMessageReadersQuery(id)));
+
         // ── per-user notification mute (chat context menu) ───────────────────
         app.MapPut("/api/v1/channels/{id:long}/mute", async (long id, ICurrentUser current, ISender mediator) =>
         {

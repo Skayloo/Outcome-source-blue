@@ -30,6 +30,7 @@ var logRing = new Outcome.Api.Logging.LogRingBuffer();
 builder.Logging.AddProvider(new Outcome.Api.Logging.RingBufferLoggerProvider(logRing));
 builder.Services.AddSingleton(logRing);
 builder.Services.AddSingleton<Outcome.Api.Logging.LogTicketStore>();
+builder.Services.AddSingleton<Outcome.Api.Endpoints.EphemeralGifs>();
 
 // Layered config: appsettings + environment variables. OUTCOME_-prefixed vars override
 // (e.g. OUTCOME_Server__Name override the matching config key).

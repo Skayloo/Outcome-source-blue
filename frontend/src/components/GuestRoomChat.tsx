@@ -19,8 +19,8 @@ const POLL_MS = 2500;
 const MAX_LINES = 300;
 
 export function GuestRoomChat(
-  { code, token, open, onClose, onUnseen }:
-  { code: string; token: string; open: boolean; onClose: () => void; onUnseen: (n: number) => void },
+  { code, token, open, closed = false, onClose, onUnseen }:
+  { code: string; token: string; open: boolean; closed?: boolean; onClose: () => void; onUnseen: (n: number) => void },
 ) {
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
@@ -45,6 +45,7 @@ export function GuestRoomChat(
     let stopped = false;
     let timer: number | undefined;
     const poll = async (): Promise<void> => {
+      if (closed) return; // nothing to read: the server answers 410
       try {
         const r = await fetch(`/api/v1/guest/${encodeURIComponent(code)}/chat?after=${lastId.current}`, {
           headers: { "X-Guest-Token": token },
@@ -55,7 +56,7 @@ export function GuestRoomChat(
     };
     void poll();
     return () => { stopped = true; window.clearTimeout(timer); };
-  }, [code, token]);
+  }, [code, token, closed]);
 
   // What arrived while the panel was shut, other people's only.
   useEffect(() => {
@@ -103,7 +104,13 @@ export function GuestRoomChat(
         </button>
       </div>
       <div className="guest-chat-list" ref={listRef}>
-        {lines.length === 0 && <div className="guest-chat-empty">{t("guest.chatEmpty")}</div>}
+        {closed && (
+          <div className="guest-chat-empty">
+            {t("guest.chatSignup", { host: window.location.host })}{" "}
+            <a href="/" target="_blank" rel="noopener">{window.location.host}</a>
+          </div>
+        )}
+        {!closed && lines.length === 0 && <div className="guest-chat-empty">{t("guest.chatEmpty")}</div>}
         {lines.map((l) => {
           const own = mine.current.has(l.id);
           return (
@@ -120,7 +127,7 @@ export function GuestRoomChat(
         })}
       </div>
       {error && <div className="guest-chat-error" role="alert">{error}</div>}
-      <form className="guest-chat-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+      {!closed && <form className="guest-chat-form" onSubmit={(e) => { e.preventDefault(); void send(); }}>
         <input
           className="form-input" maxLength={1000} placeholder={t("guest.chatPlaceholder")}
           value={draft} onChange={(e) => setDraft(e.target.value)}
@@ -128,7 +135,7 @@ export function GuestRoomChat(
         <button className="vsc-btn" type="submit" disabled={sending || draft.trim().length === 0} title={t("guest.chatSend")}>
           <Icon name="send" size={18} />
         </button>
-      </form>
+      </form>}
     </aside>
   );
 }

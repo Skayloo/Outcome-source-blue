@@ -100,6 +100,12 @@ An invite, or a server's own domain, puts the newcomer in that server instead an
 someone who may read the message (a DM's participants; READ_MESSAGES in the active server) —
 anyone else gets 404, as for a message that does not exist.
 
+`GET /api/v1/messages/{id}/readers` — who has read one's own message: `{message_id, count, users:
+[{id, username, avatar}]}`, by name, at most 500 listed. Everyone whose read marker in the channel
+has reached it (a marker moves when someone opens the channel), still in its server, not deleted,
+not the author. Only the message's AUTHOR may ask (as in Telegram); anyone else gets 404. Channels
+show no ✓/✓✓ — clients ask this on a right click; a DM keeps its ticks.
+
 
 | `GET` | `/api/v1/channels` |
 | `GET` | `/api/v1/channels/{id}/messages` |

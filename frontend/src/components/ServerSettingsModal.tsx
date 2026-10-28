@@ -36,10 +36,12 @@ const TABS: { id: Tab; icon: string; label: () => string }[] = [
 const REPORTS_TAB = { id: "reports" as Tab, icon: "flag", label: () => t("srvset.reports") };
 
 export function ServerSettingsModal(
-  { serverId, canDelete, canModerate, overviewOnly = false, onClose }:
-  { serverId: number; canDelete: boolean; canModerate: boolean; overviewOnly?: boolean; onClose: () => void },
+  { serverId, canDelete, canModerate, overviewOnly = false, reportsOnly = false, onClose }:
+  // reportsOnly: a server's moderator — the report queue is theirs (ManageMessages), the rest of
+  // the server's settings are not, and the server would refuse every edit on the other tabs.
+  { serverId: number; canDelete: boolean; canModerate: boolean; overviewOnly?: boolean; reportsOnly?: boolean; onClose: () => void },
 ) {
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(reportsOnly ? "reports" : "overview");
   // SUBSCRIBED, not sampled. `select` reads once: uploading an icon refreshed the store and
   // the rail redrew, while the panel doing the uploading went on showing the old one — the one
   // place where seeing the change matters most.
@@ -51,7 +53,7 @@ export function ServerSettingsModal(
         <div className="srvset-modal" onClick={(e) => e.stopPropagation()}>
           <aside className="srvset-nav">
             <div className="srvset-nav-title">{server?.name ?? t("srvset.title")}</div>
-            {(overviewOnly ? TABS.slice(0, 1) : [...TABS, ...(canModerate ? [REPORTS_TAB] : [])]).map((it) => (
+            {(reportsOnly ? [REPORTS_TAB] : overviewOnly ? TABS.slice(0, 1) : [...TABS, ...(canModerate ? [REPORTS_TAB] : [])]).map((it) => (
               <button key={it.id} className={"srvset-nav-item" + (tab === it.id ? " active" : "")} onClick={() => setTab(it.id)}>
                 <Icon name={it.icon as never} size={16} /> <span>{it.label()}</span>
               </button>

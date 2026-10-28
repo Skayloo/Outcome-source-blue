@@ -38,6 +38,24 @@ public sealed class ReadStateRepository(OutcomeDbContext db) : IReadStateReposit
         return rows.ToDictionary(x => x.Key, x => x.Max);
     }
 
+    public async Task<(int Count, IReadOnlyList<ReaderDto> Readers)> ReadersAsync(
+        long channelId, long? serverId, long messageId, long exceptUserId, int limit, CancellationToken ct = default)
+    {
+        var q = from r in db.ReadStates.AsNoTracking()
+                join u in db.Users.AsNoTracking() on r.UserId equals u.Id
+                where r.ChannelId == channelId && r.LastMessageId >= messageId && r.UserId != exceptUserId && !u.Deleted
+                select u;
+        // A read marker outlives membership: someone removed from the server read it then, but is no
+        // longer among the people this channel is shared with.
+        if (serverId is { } sid)
+            q = q.Where(u => db.ServerMembers.Any(m => m.ServerId == sid && m.UserId == u.Id));
+        var count = await q.CountAsync(ct);
+        var readers = await q.OrderBy(u => u.UserName).Take(limit)
+            .Select(u => new ReaderDto(u.Id, u.UserName ?? "", u.Avatar))
+            .ToListAsync(ct);
+        return (count, readers);
+    }
+
     public async Task<IReadOnlyDictionary<long, int>> UnreadCountsAsync(
         long userId, IReadOnlyCollection<long> channelIds, CancellationToken ct = default)
     {

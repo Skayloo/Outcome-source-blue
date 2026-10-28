@@ -20,7 +20,8 @@ import { avatarColor } from "@lib/format";
 import { VoiceCtl } from "@components/VoiceCtl";
 import { FloatingReactions, VoiceFxControls, useReactionFeed } from "@components/VoiceFx";
 import { describeMediaError } from "@lib/mediaErrors";
-import { onReaction, playHandCue, raisedHands, recordersIn, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
+import { onReaction, playHandCue, raisedHands, recordersIn, sendGif, sendReaction, setHandRaised, type Reaction } from "@lib/voiceReactions";
+import { gifFileProblem } from "@lib/gifs";
 import { createLogger } from "@lib/logger";
 import { t } from "@lib/i18n";
 import { createRNNoiseProcessor, MIN_DENOISE_RATE, micInputRate, handBackToBrowser } from "@lib/noise-suppression";
@@ -296,6 +297,8 @@ export function GuestVoicePage({ code }: { code: string }) {
   /** The LiveKit token from the join — also the guest's pass to the room chat. */
   const [guestToken, setGuestToken] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  /** The server keeps the room's chat from guests (`chat: false`): the panel invites them to sign up. */
+  const [chatClosed, setChatClosed] = useState(false);
   const [chatUnseen, setChatUnseen] = useState(0);
   /** Names of whoever is recording the call right now. */
   const [recording, setRecording] = useState<string[]>([]);
@@ -375,6 +378,29 @@ export function GuestVoicePage({ code }: { code: string }) {
     window.location.assign("/app");
   };
 
+  // A GIF from a guest goes to the call once: the server makes it ready, holds it in memory for a
+  // minute while everyone loads it, and keeps it nowhere (EphemeralGifs) — then it is fired like a
+  // member's.
+  const sendGuestGif = async (file: File, token: string): Promise<string | null> => {
+    const problem = gifFileProblem(file);
+    if (problem) return problem;
+    const room = roomRef.current;
+    if (room === null) return t("guest.gifFailed");
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const r = await fetch(`/api/v1/guest/${encodeURIComponent(code)}/gifs`, {
+        method: "POST", headers: { "X-Guest-Token": token }, body: form,
+      });
+      const body = await r.json().catch(() => null) as { url?: string; message?: string } | null;
+      if (!r.ok || typeof body?.url !== "string") return body?.message ?? t("guest.gifFailed");
+      await sendGif(room, body.url);
+      return null;
+    } catch {
+      return t("guest.gifFailed");
+    }
+  };
+
   const copyInvite = (): void => {
     void copyText(`${window.location.origin}/guest/${encodeURIComponent(code)}`).then((ok) => {
       if (!ok) { setError(t("guestAccess.copyFailed")); return; }
@@ -391,6 +417,7 @@ export function GuestVoicePage({ code }: { code: string }) {
         setChannelName(d.channel_name);
         setServerName(d.server_name);
         setCanShare(d.can_share === true);
+        setChatClosed(d.chat === false);
         setPhase("form");
       })
       .catch(() => setPhase("invalid"));
@@ -945,6 +972,7 @@ export function GuestVoicePage({ code }: { code: string }) {
                 onReact={(emoji: Reaction) => {
                   if (roomRef.current !== null) void sendReaction(roomRef.current, emoji);
                 }}
+                onGuestGif={guestToken === null ? undefined : (file) => sendGuestGif(file, guestToken)}
               />
               <div className="vsc-badged">
                 <VoiceCtl name="message-circle" label={t("voice.roomChat")} on={chatOpen} onClick={() => setChatOpen((v) => !v)} />
@@ -962,7 +990,7 @@ export function GuestVoicePage({ code }: { code: string }) {
         )}
 
         {connected && guestToken !== null && (
-          <GuestRoomChat code={code} token={guestToken} open={chatOpen}
+          <GuestRoomChat code={code} token={guestToken} open={chatOpen} closed={chatClosed}
             onClose={() => setChatOpen(false)} onUnseen={setChatUnseen} />
         )}
 

@@ -39,6 +39,12 @@ export function canManageServer(user: UserWithRole | null | undefined): boolean 
   return isSpaceAdmin(user) || r === "owner" || r === "admin";
 }
 
+/** The active server's report queue: whoever holds ManageMessages there — its owner, admins and
+ *  moderators (ServerRoles.Grant on the server) — or the space's Administrator. */
+export function canModerateServer(user: UserWithRole | null | undefined): boolean {
+  return canManageServer(user) || serverRole(user?.role) === "moderator";
+}
+
 /** Invites and guest links into the active server. */
 export function canInviteToServer(user: UserWithRole | null | undefined): boolean {
   return canManageServer(user) || serverRole(user?.role) === "moderator";

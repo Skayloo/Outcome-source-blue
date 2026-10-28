@@ -23,7 +23,7 @@ import { InboxView } from "@components/InboxView";
 import { VoiceUserMenu } from "@components/VoiceUserMenu";
 import { CreateChannelModal } from "@components/CreateChannelModal";
 import { ServerHeaderMenu } from "@components/ServerHeaderMenu";
-import { canInviteToServer, canManageServer, isSpaceAdmin } from "@lib/access";
+import { canInviteToServer, canManageServer, canModerateServer, isSpaceAdmin } from "@lib/access";
 
 export function Sidebar() {
   useStoreState(channelsStore);
@@ -126,6 +126,7 @@ export function Sidebar() {
         canCreateChannel={canManage}
         canDeleteServer={canDeleteServer}
         canManageServer={canManage}
+        canModerate={canModerateServer(auth.user)}
         isGlobalAdmin={isGlobalAdmin}
         onCreateChannel={() => setCreateCat(null)}
       />

@@ -20,6 +20,8 @@ interface Props {
   canDeleteServer: boolean;
   /** Can open in-app Server Settings (owner of the active server or a server-admin). */
   canManageServer: boolean;
+  /** Can read and act on the active server's reports: its owner, admins and moderators. */
+  canModerate: boolean;
   /** Can open the INSTANCE admin console (global owner only). */
   isGlobalAdmin: boolean;
   /** Opens the create-channel modal owned by the Sidebar. */
@@ -27,11 +29,12 @@ interface Props {
 }
 
 /** Discord-style server header: click to open a dropdown with server actions. */
-export function ServerHeaderMenu({ serverName, onlineCount, canInvite, canCreateChannel, canDeleteServer, canManageServer, isGlobalAdmin, onCreateChannel }: Props) {
+export function ServerHeaderMenu({ serverName, onlineCount, canInvite, canCreateChannel, canDeleteServer, canManageServer, canModerate, isGlobalAdmin, onCreateChannel }: Props) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showVis, setShowVis] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showReports, setShowReports] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,7 +76,7 @@ export function ServerHeaderMenu({ serverName, onlineCount, canInvite, canCreate
     }
   }
 
-  const anyActions = canInvite || isGlobalAdmin || canManageServer || canCreateChannel || canDeleteServer;
+  const anyActions = canInvite || isGlobalAdmin || canManageServer || canModerate || canCreateChannel || canDeleteServer;
 
   return (
     <div className="unified-sidebar-header server-header" ref={ref}>
@@ -95,6 +98,14 @@ export function ServerHeaderMenu({ serverName, onlineCount, canInvite, canCreate
             <button className="server-dropdown-item accent" role="menuitem" onClick={() => run(() => openModal("invites"))}>
               <span>{t("server.invitePeople")}</span>
               <Icon name="user-plus" size={16} />
+            </button>
+          )}
+          {/* A moderator has no Server Settings, but the report queue is theirs: before this the server
+              answered them /servers/reports and the web never showed it. */}
+          {canModerate && !canManageServer && (
+            <button className="server-dropdown-item" role="menuitem" onClick={() => run(() => setShowReports(true))}>
+              <span>{t("srvset.reports")}</span>
+              <Icon name="flag" size={16} />
             </button>
           )}
           {canManageServer && (
@@ -141,6 +152,7 @@ export function ServerHeaderMenu({ serverName, onlineCount, canInvite, canCreate
       )}
 
       {showVis && <ServerVisibilityModal serverId={getActiveServerId()} name={serverName} onClose={() => setShowVis(false)} />}
+      {showReports && <ServerSettingsModal serverId={getActiveServerId()} canDelete={false} canModerate reportsOnly onClose={() => setShowReports(false)} />}
       {showSettings && <ServerSettingsModal serverId={getActiveServerId()} canDelete={canDeleteServer} canModerate={canManageServer} onClose={() => setShowSettings(false)} />}
     </div>
   );
