@@ -563,7 +563,7 @@ function setPushToTalk(accelerator) {
 }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Windows draws the caption bar from the SYSTEM theme, not the page — so a light-themed
   // Windows put a white strip above a near-black app and the window read as two halves glued
   // together. This makes the OS draw it dark. It is not the same as a frameless window with

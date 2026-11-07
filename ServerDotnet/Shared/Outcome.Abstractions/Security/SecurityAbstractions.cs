@@ -69,12 +69,16 @@ public interface IPendingTotpStore
 }
 
 /// <summary>A pending authenticator (TOTP) challenge issued at login.</summary>
-public sealed record PartialChallenge(long UserId, string? Device, string Ip);
+/// <param name="PendingMove">An account made before login v2 moving on this sign-in: its new
+/// credential (LoginKeyAuth.PackPending), written only once the second factor checks out — a proof
+/// alone must not change how the account signs in.</param>
+public sealed record PartialChallenge(long UserId, string? Device, string Ip, string? PendingMove = null);
 
 /// <summary>Short-lived store of partial 2FA challenges (TTL 10 min, 5-attempt budget).</summary>
 public interface IPartialAuthStore
 {
-    string Issue(long userId, string? device, string ip);
+    /// <summary>Issues a TOTP challenge; <paramref name="pendingMove"/> as in <see cref="PartialChallenge"/>.</summary>
+    string Issue(long userId, string? device, string ip, string? pendingMove = null);
     PartialChallenge? Lookup(string partialToken);
     PartialChallenge? Consume(string partialToken);
     void RegisterFailure(string partialToken, int maxFailures);

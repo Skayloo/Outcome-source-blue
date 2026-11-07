@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity;
 using MediatR;
 using Outcome.Shared.Abstractions.Messaging;
 using Outcome.Shared.Abstractions.Persistence;
@@ -12,7 +13,9 @@ public sealed class VerifyTotpHandler(
     ITotpService totp,
     IPartialAuthStore partialStore,
     IJwtTokenService jwt,
-    ISessionRepository sessions) : IRequestHandler<VerifyTotpCommand, AuthResult>
+    ISessionRepository sessions,
+    UserManager<User> userManager,
+    IAuditRepository audit) : IRequestHandler<VerifyTotpCommand, AuthResult>
 {
     public async Task<AuthResult> Handle(VerifyTotpCommand cmd, CancellationToken ct)
     {
@@ -30,6 +33,10 @@ public sealed class VerifyTotpHandler(
         }
 
         partialStore.Consume(cmd.PartialToken);
+
+        // A sign-in that moved the account to login v2 (LoginCommandHandler): applied only now.
+        if (challenge.PendingMove is { } move)
+            await PendingMoves.ApplyAsync(userManager, audit, user.Id, move, ct);
 
         var token = jwt.Issue(user.Id);
         await Outcome.Application.Common.SessionIssuer.RecordAsync(sessions, jwt, user.Id, token, challenge.Device, challenge.Ip, ct);

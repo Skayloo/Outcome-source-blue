@@ -18,10 +18,10 @@ public sealed class PartialAuthStore(IMemoryCache cache, ICurrentSpace space) : 
 
     private string Key(string token) => $"partial_auth:s{space.Space.Id}:" + token;
 
-    public string Issue(long userId, string? device, string ip)
+    public string Issue(long userId, string? device, string ip, string? pendingMove = null)
     {
         var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
-        cache.Set(Key(token), new Entry { Challenge = new PartialChallenge(userId, device, ip) }, Ttl);
+        cache.Set(Key(token), new Entry { Challenge = new PartialChallenge(userId, device, ip, PendingMove: pendingMove) }, Ttl);
         return token;
     }
 

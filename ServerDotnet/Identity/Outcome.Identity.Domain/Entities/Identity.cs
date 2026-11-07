@@ -26,8 +26,8 @@ public sealed class User : IdentityUser<long>
     /// client made this account's login key with, and the Argon2id hash of that key — the password
     /// itself never reaches the server. All three null ⇒ the account predates login v2 and has only
     /// <c>PasswordHash</c>, a hash of the password; its first sign-in from a current client moves it
-    /// by proving that hash on the device (LoginKeys.DescribeLegacy). <c>PasswordHash</c> is left in
-    /// place by that move, so an older server put back still signs the account in.</summary>
+    /// by proving that hash on the device (LoginKeys.DescribeLegacy). Until then <c>PasswordHash</c>
+    /// is kept WRAPPED (LoginKeys.WrapPrefix — the stored value is no proof); the move drops it.</summary>
     public string? AuthSalt { get; set; }
     public int? AuthIterations { get; set; }
     public string? AuthHash { get; set; }

@@ -110,7 +110,7 @@ public static class LoginKeys
 
     public static Legacy DescribeLegacy(string? stored)
     {
-        var parsed = ParseLegacy(stored);
+        var parsed = ParseLegacy(stored) ?? ParseWrapped(stored)?.Parsed;
         if (parsed is null) return new Legacy("unsupported");
         var p = parsed.Value;
         return p.Kind switch
@@ -123,22 +123,82 @@ public static class LoginKeys
         };
     }
 
-    /// <summary>Does the client's legacy proof equal the stored hash? Constant-time; false for
-    /// anything <see cref="DescribeLegacy"/> would not have offered.</summary>
+    /// <summary>Does the client's legacy proof equal the stored PLAIN hash? Constant-time; false for
+    /// anything <see cref="DescribeLegacy"/> would not have offered, and for a wrapped hash — that
+    /// one is checked with the password hasher (LoginKeyAuth.LegacyMatches).</summary>
     public static bool LegacyProofMatches(string? stored, string? proof)
     {
-        if (DescribeLegacy(stored).Kind == "unsupported") return false;
+        if (IsWrapped(stored) || DescribeLegacy(stored).Kind == "unsupported") return false;
         var parsed = ParseLegacy(stored);
         if (parsed is null) return false;
         var given = Decode(proof, parsed.Value.Hash.Length);
         return given is not null && CryptographicOperations.FixedTimeEquals(given, parsed.Value.Hash);
     }
 
+    // ── old hashes wrapped once more (2026-11-07) ──────────────────────────────────────────────
+    //
+    // The proof that moves an account IS its old hash, so a plain old hash read out of the database
+    // would move the account by itself, with no password guessed. Every old hash is therefore kept
+    // wrapped (Program.cs, WrapLegacyHashesAsync): what the client needs to recompute it — kind,
+    // parameters, salt, length — and Argon2id over the old hash made by the server's own password
+    // hasher. A proof is hashed again and compared with the wrap, so nothing the database holds
+    // passes as a proof any more.
+    //
+    //   owrap1|argon2id|<m>,<t>,<p>|<salt base64>|<length>|<Argon2id PHC of base64(old hash)>
+    //   owrap1|pbkdf2|<prf>,<iterations>|<salt base64>|<length>|<the same>
+    //
+    // A server from before this cannot read the wrapped form: rolling back past it means a password
+    // reset for every account that had not moved yet.
+
+    public const string WrapPrefix = "owrap1|";
+
+    public static bool IsWrapped(string? stored) => stored?.StartsWith(WrapPrefix, StringComparison.Ordinal) == true;
+
+    /// <summary>The bytes to wrap (the old hash itself), or null for anything but a plain old hash.</summary>
+    public static byte[]? LegacyHashBytes(string? stored) => ParseLegacy(stored)?.Hash;
+
+    /// <summary>The wrapped form of a plain old hash, given the wrap made over base64 of its bytes.</summary>
+    public static string? WrapLegacy(string? stored, string wrapPhc)
+    {
+        if (wrapPhc.Contains('|') || !wrapPhc.StartsWith("$argon2", StringComparison.Ordinal)) return null;
+        if (ParseLegacy(stored) is not { } v) return null;
+        var parameters = v.Kind == "argon2id" ? $"{v.M},{v.T},{v.P}" : $"{v.Prf},{v.Iterations}";
+        return $"{WrapPrefix}{v.Kind}|{parameters}|{Convert.ToBase64String(v.Salt)}|{v.Hash.Length}|{wrapPhc}";
+    }
+
+    /// <summary>The wrap a proof is checked against and the old hash's length, for a wrapped hash.</summary>
+    public static (string WrapPhc, int Length)? Unwrap(string? stored) =>
+        ParseWrapped(stored) is { } w ? (w.WrapPhc, w.Parsed.Hash.Length) : null;
+
+    /// <summary>A proof decoded to exactly <paramref name="length"/> bytes, or null.</summary>
+    public static byte[]? DecodeProof(string? proof, int length) => Decode(proof, length);
+
+    private static (Parsed Parsed, string WrapPhc)? ParseWrapped(string? stored)
+    {
+        if (!IsWrapped(stored)) return null;
+        var parts = stored!.Split('|');
+        if (parts.Length != 6 || !int.TryParse(parts[4], out var length) || length is < 16 or > 64) return null;
+        if (!parts[5].StartsWith("$argon2", StringComparison.Ordinal)) return null;
+        byte[] salt;
+        try { salt = Convert.FromBase64String(parts[3]); } catch (FormatException) { return null; }
+        if (salt.Length < 8) return null;
+        // Only the length of the old hash is kept; a wrapped hash is never compared as bytes.
+        var length0 = new byte[length];
+        var ps = parts[2].Split(',');
+        if (parts[1] == "argon2id" && ps.Length == 3
+            && int.TryParse(ps[0], out var m) && int.TryParse(ps[1], out var t) && int.TryParse(ps[2], out var p))
+            return (new Parsed("argon2id", salt, length0, m, t, p, null, 0), parts[5]);
+        if (parts[1] == "pbkdf2" && ps.Length == 2 && ps[0] is "sha256" or "sha512" or "sha1"
+            && int.TryParse(ps[1], out var iterations))
+            return (new Parsed("pbkdf2", salt, length0, 0, 0, 0, ps[0], iterations), parts[5]);
+        return null;
+    }
+
     private readonly record struct Parsed(string Kind, byte[] Salt, byte[] Hash, int M, int T, int P, string? Prf, int Iterations);
 
     private static Parsed? ParseLegacy(string? stored)
     {
-        if (string.IsNullOrEmpty(stored)) return null;
+        if (string.IsNullOrEmpty(stored) || IsWrapped(stored)) return null;
         try
         {
             if (stored.StartsWith("$argon2id$", StringComparison.Ordinal))

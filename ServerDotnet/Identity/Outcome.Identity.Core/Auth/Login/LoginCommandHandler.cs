@@ -46,23 +46,25 @@ public sealed class LoginCommandHandler(
 
         var hasher = userManager.PasswordHasher;
         var hashBefore = user?.AuthHash;
+        // A move is only CHECKED here (LegacyMatches changes nothing); the new credential is written
+        // once the whole sign-in has passed — after the ban check and the second factor. Written
+        // before them, a proof alone replaced the login of an account with 2FA: whoever could not
+        // pass the code still locked the owner out of their own password.
         var opened = user is not null && (moving is null
             ? LoginKeyAuth.Verify(user, cmd.LoginKey, hasher)
-            : LoginKeyAuth.TryMove(user, cmd.LegacyProof, moving, hasher));
+            : LoginKeyAuth.LegacyMatches(user, cmd.LegacyProof, hasher));
         if (user is null || !opened)
         {
             if (user is not null) await userManager.AccessFailedAsync(user);
             throw DomainException.Unauthorized("invalid credentials");
         }
-        // Only a move or a re-hash changes the row, and only then is it saved. Saving it on EVERY
+        // Only a re-hash changes the row here, and only then is it saved. Saving it on EVERY
         // sign-in made two sign-ins of one account in the same moment collide on the concurrency
         // stamp: the loser's UpdateAsync failed quietly, its session insert then saved the stale user
         // again and the whole sign-in answered 500 (production, 2026-11-07 — voice.mjs signs one QA
         // account into two browsers at once; a person on two devices hits it too).
-        if (moving is not null || user.AuthHash != hashBefore) await userManager.UpdateAsync(user);
+        if (user.AuthHash != hashBefore) await userManager.UpdateAsync(user);
         await userManager.ResetAccessFailedCountAsync(user); // a no-op at zero, as before login v2
-        if (moving is not null)
-            await audit.AddAsync(user.Id, "login_key_set", "user", user.Id, "moved to sign-in without the password", ct);
 
         if (IsEffectivelyBanned(user))
         {
@@ -71,15 +73,24 @@ public sealed class LoginCommandHandler(
         }
 
         var require2fa = AuthRules.ParseBoolean(await settings.GetAsync("require_2fa", ct), false);
+        // The move waits in the challenge and is applied with the second factor (PendingMoves).
+        string? Parked() => moving is null ? null : LoginKeyAuth.PackPending(moving, hasher, user);
 
         if (user.TotpSecret is not null)
         {
-            var partial = partialStore.Issue(user.Id, cmd.Device, ip);
+            var partial = partialStore.Issue(user.Id, cmd.Device, ip, Parked());
             return new AuthResult { PartialToken = partial, Requires2fa = true, TwoFactorMethod = "totp" };
         }
 
         if (require2fa)
             throw DomainException.Forbidden("two-factor authentication must be enabled on this account before login");
+
+        if (moving is not null)
+        {
+            LoginKeyAuth.Set(user, moving, hasher);
+            await userManager.UpdateAsync(user);
+            await audit.AddAsync(user.Id, "login_key_set", "user", user.Id, "moved to sign-in without the password", ct);
+        }
 
         var token = jwt.Issue(user.Id);
         await SessionIssuer.RecordAsync(sessions, jwt, user.Id, token, cmd.Device, ip, ct);

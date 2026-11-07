@@ -404,6 +404,7 @@ static async Task MigrateDatabaseAsync(WebApplication app)
             // In the background: a recording can be hundreds of megabytes, and startup must not
             // wait on ffmpeg.
             _ = Task.Run(() => RemuxOldRecordingsAsync(app, logger));
+            _ = Task.Run(() => LegacyHashes.WrapAsync(app.Services, logger));
             return;
         }
         catch (Exception ex) when (attempt < maxAttempts)

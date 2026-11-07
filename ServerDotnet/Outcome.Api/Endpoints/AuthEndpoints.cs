@@ -110,7 +110,7 @@ public static class AuthEndpoints
         // POST /api/v1/auth/upgrade — moves a signed-in account made before login v2 (a session
         // from before it, now asked for its password by a confirmation): the client proves the old
         // hash on the device and sends a new credential, exactly as a sign-in would. The old hash
-        // stays, like a move at sign-in (LoginKeyAuth.TryMove).
+        // goes (LoginKeyAuth.TryMove), as with any password set the new way.
         app.MapPost("/api/v1/auth/upgrade", async (UpgradeBody body, ICurrentUser current,
             UserManager<Outcome.Domain.Entities.User> userManager, IAuditRepository audit) =>
         {

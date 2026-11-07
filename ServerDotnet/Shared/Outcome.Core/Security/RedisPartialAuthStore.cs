@@ -16,11 +16,12 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(10);
     private readonly IDatabase _db = redis.GetDatabase();
 
-    private sealed record Entry(long UserId, string? Device, string Ip, int Failures);
+    private sealed record Entry(long UserId, string? Device, string Ip, int Failures, string? PendingMove = null);
 
     private string Key(string token) => $"outcome:s{space.Space.Id}:partial:" + token;
 
-    public string Issue(long userId, string? device, string ip) => Store(new Entry(userId, device, ip, 0));
+    public string Issue(long userId, string? device, string ip, string? pendingMove = null) =>
+        Store(new Entry(userId, device, ip, 0, pendingMove));
 
     private string Store(Entry entry)
     {
@@ -30,7 +31,7 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
     }
 
     public PartialChallenge? Lookup(string partialToken) => Load(partialToken) is { } e
-        ? new PartialChallenge(e.UserId, e.Device, e.Ip)
+        ? new PartialChallenge(e.UserId, e.Device, e.Ip, e.PendingMove)
         : null;
 
     public PartialChallenge? Consume(string partialToken)
@@ -39,7 +40,7 @@ public sealed class RedisPartialAuthStore(IConnectionMultiplexer redis, ICurrent
         _db.KeyDelete(FailKey(partialToken));
         if (raw.IsNullOrEmpty) return null;
         var e = JsonSerializer.Deserialize<Entry>((string)raw!);
-        return e is null ? null : new PartialChallenge(e.UserId, e.Device, e.Ip);
+        return e is null ? null : new PartialChallenge(e.UserId, e.Device, e.Ip, e.PendingMove);
     }
 
     private string FailKey(string token) => Key(token) + ":f";

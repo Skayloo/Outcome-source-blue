@@ -5,6 +5,7 @@ import { setSidebarMode } from "@stores/ui.store";
 import { PDN_CONSENT_VERSION, PDN_CONSENT_URL, PDN_POLICY_URL, pdnConsentApplies } from "@lib/pdnConsent";
 import { ApiClientError } from "@lib/api";
 import { BrandMark, useSpaceBrand } from "@components/BrandMark";
+import { Toast } from "@components/Toast";
 import { Icon } from "@lib/icons";
 import { t } from "@lib/i18n";
 import { readLastHost } from "@lib/serverHost";
@@ -289,6 +290,9 @@ export function ConnectPage() {
           )}
         </div>
       </div>
+      {/* App.tsx reports some sign-in failures as toasts; with none mounted on this page they were
+          lost on exactly the screen the person is looking at. */}
+      <Toast />
     </div>
   );
 }

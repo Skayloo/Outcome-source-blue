@@ -45,22 +45,58 @@ public static class LoginKeyAuth
     }
 
     /// <summary>
-    /// Moves an account made before login v2: the client computed the stored hash of the password
-    /// on the device (<paramref name="legacyProof"/>) and sent a fresh credential with it. The old
-    /// hash STAYS, so an older server put back still signs the account in with its password.
-    /// False when the proof does not match or the account already moved. The caller saves the user.
+    /// Does the client's proof open an account made before login v2? The client computed the old
+    /// hash of the password on the device (<paramref name="legacyProof"/>). Against a wrapped old
+    /// hash (<see cref="LoginKeys.WrapPrefix"/>) the proof is hashed again and compared with the
+    /// wrap, so the stored value itself is no proof. False for an account that already moved.
+    /// Changes nothing: a sign-in still waiting for its second factor must not move the account.
+    /// </summary>
+    public static bool LegacyMatches(User user, string? legacyProof, IPasswordHasher<User> hasher)
+    {
+        if (user.AuthHash is not null || string.IsNullOrEmpty(legacyProof)) return false;
+        if (LoginKeys.Unwrap(user.PasswordHash) is { } wrap)
+        {
+            if (LoginKeys.DescribeLegacy(user.PasswordHash).Kind == "unsupported") return false;
+            var proof = LoginKeys.DecodeProof(legacyProof, wrap.Length);
+            return proof is not null
+                   && hasher.VerifyHashedPassword(user, wrap.WrapPhc, Convert.ToBase64String(proof)) != PasswordVerificationResult.Failed;
+        }
+        return LoginKeys.LegacyProofMatches(user.PasswordHash, legacyProof);
+    }
+
+    /// <summary>
+    /// Moves an account made before login v2 at once (a signed-in session confirming its password):
+    /// the proof, then the fresh credential the client sent with it. The old hash goes, as with any
+    /// password set the new way. False when the proof does not match or the account already moved.
+    /// The caller saves the user.
     /// </summary>
     public static bool TryMove(User user, string? legacyProof, LoginKeys.Valid credential, IPasswordHasher<User> hasher)
     {
-        if (user.AuthHash is not null || string.IsNullOrEmpty(legacyProof)) return false;
-        if (!LoginKeys.LegacyProofMatches(user.PasswordHash, legacyProof)) return false;
-        user.AuthSalt = credential.Salt;
-        user.AuthIterations = credential.Iterations;
-        user.AuthHash = hasher.HashPassword(user, credential.Key);
+        if (!LegacyMatches(user, legacyProof, hasher)) return false;
+        Set(user, credential, hasher);
         return true;
     }
 
-    // ── a credential waiting for the second factor (password reset on a 2FA account) ──────────
+    /// <summary>
+    /// The wrapped form of the account's plain old hash (<see cref="LoginKeys.WrapLegacy"/>), or
+    /// null when there is nothing to wrap.
+    /// </summary>
+    public static string? WrapStored(User user, IPasswordHasher<User> hasher)
+    {
+        var old = LoginKeys.LegacyHashBytes(user.PasswordHash);
+        return old is null ? null
+            : LoginKeys.WrapLegacy(user.PasswordHash, hasher.HashPassword(user, Convert.ToBase64String(old)));
+    }
+
+    /// <summary>
+    /// Applies a move parked until the second factor (<see cref="PackPending"/>). True when the
+    /// account has a login key afterwards — also when another device moved it meanwhile, whose
+    /// credential then stays. The caller saves the user when it had none before.
+    /// </summary>
+    public static bool ApplyPendingMove(User user, string packed) =>
+        user.AuthHash is not null || ApplyPending(user, packed);
+
+    // ── a credential waiting for the second factor (a password reset or a move on a 2FA account) ──
 
     /// <summary>Packs a set credential for the 2FA step: "salt:iterations:hash". None of the three
     /// contains ':' (base64, digits, a PHC string).</summary>
