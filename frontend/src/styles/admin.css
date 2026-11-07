@@ -6,8 +6,21 @@
    Colours come from the theme tokens only, so every theme (light included) works as is. */
 
 /* ── Shell ─────────────────────────────────────────────────────────────────────── */
-.admin-app { grid-template-columns: 252px minmax(0, 1fr); background: var(--bg-primary); }
-.admin-sidebar { background: var(--bg-tertiary); border-right: 1px solid var(--border); }
+.admin-app {
+  grid-template-columns: 252px minmax(0, 1fr);
+  /* The same lit room as the chat (glass.css): the theme's own light behind the console. */
+  background:
+    radial-gradient(1100px 760px at 0% -10%, var(--ambient-1), transparent 58%),
+    radial-gradient(900px 680px at 105% 112%, var(--ambient-2), transparent 60%),
+    radial-gradient(700px 520px at 75% -16%, var(--ambient-3), transparent 62%),
+    var(--bg-primary);
+}
+.admin-sidebar {
+  background: var(--glass-panel);
+  backdrop-filter: blur(var(--glass-blur-panel)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-panel)) saturate(150%);
+  border-right: 1px solid var(--glass-edge);
+}
 .admin-brand { padding: 18px 18px 16px; border-bottom: 1px solid var(--border); }
 .admin-nav { padding: 14px 10px 24px; gap: 16px; }
 .admin-nav-title { padding: 0 10px 6px; font-size: 11px; letter-spacing: .06em; color: var(--text-faint); }
@@ -26,11 +39,12 @@
 }
 .admin-nav-count {
   margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
-  background: var(--accent); color: #fff; font-size: 11px; font-weight: 700;
+  background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700;
   display: inline-flex; align-items: center; justify-content: center;
 }
 .admin-topbar { min-height: 68px; padding: 14px 28px; border-bottom: 1px solid var(--border); background: var(--bg-primary); }
-.admin-topbar-title h1 { font-size: 20px; letter-spacing: -.01em; }
+/* Big type is light, not bold — figures and titles read by size, the way a good dashboard does. */
+.admin-topbar-title h1 { font-size: 24px; font-weight: 400; letter-spacing: -.015em; }
 .admin-topbar-title p { font-size: 13px; }
 .admin-whoami { border-radius: 8px; }
 .admin-body { padding: 24px 28px 40px; }
@@ -45,7 +59,7 @@
 }
 .adm-btn:disabled { opacity: .5; cursor: not-allowed; }
 .adm-btn--sm { height: 28px; padding: 0 10px; font-size: 12.5px; gap: 6px; border-radius: 7px; }
-.adm-btn--primary { background: var(--accent); color: #fff; }
+.adm-btn--primary { background: var(--accent); color: var(--on-accent); }
 .adm-btn--primary:hover:not(:disabled) { background: var(--accent-hover); }
 .adm-btn--secondary { background: var(--bg-input); color: var(--text-normal); border-color: var(--border-strong); }
 .adm-btn--secondary:hover:not(:disabled) { background: var(--bg-active); }
@@ -70,7 +84,7 @@
   background: var(--bg-modifier-active); color: var(--text-muted);
 }
 .adm-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.adm-badge--accent { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--accent-hover); }
+.adm-badge--accent { background: color-mix(in oklab, var(--tint) 16%, transparent); color: var(--accent-hover); }
 .adm-badge--success { background: color-mix(in oklab, var(--green) 14%, transparent); color: var(--text-positive); }
 .adm-badge--warning { background: color-mix(in oklab, var(--yellow) 14%, transparent); color: var(--text-warning); }
 .adm-badge--danger { background: color-mix(in oklab, var(--red) 14%, transparent); color: var(--text-danger); }
@@ -191,14 +205,18 @@
 .admin-app .admin-stat-card {
   background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
 }
-.admin-app .asc-value { font-size: 24px; font-weight: 700; color: var(--header-primary); font-variant-numeric: tabular-nums; }
+.admin-app .asc-value { font-size: 30px; font-weight: 300; letter-spacing: -.02em; color: var(--header-primary); font-variant-numeric: tabular-nums;
+  /* One line, clear of the card's icon: a long value ("1.31.102-rc2") ends in an ellipsis instead of wrapping. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 44px); }
+.admin-app .asc-value--long { font-size: 21px; line-height: 43px; }
 .admin-app .asc-label { font-size: 12.5px; color: var(--text-muted); margin-top: 2px; }
 .admin-app .admin-health-node { border-radius: 10px; background: var(--bg-secondary); border: 1px solid var(--border); }
 .admin-app .admin-health-card { border-radius: 10px; background: var(--bg-secondary); border: 1px solid var(--border); }
 
 /* Native controls (checkboxes, scrollbars, date pickers) in the theme's own lightness. */
 .admin-app { color-scheme: dark; }
-body.theme-light .admin-app { color-scheme: light; }
+body.theme-light .admin-app,
+body.theme-sky .admin-app { color-scheme: light; }
 
 /* A phone: the sections become a strip across the top instead of disappearing — hiding the
    sidebar used to leave no way to any other section. */

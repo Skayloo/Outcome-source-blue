@@ -15,7 +15,9 @@ namespace Outcome.Application.Common;
 /// blocking cover what a word list cannot.
 ///
 /// EVASION. Matching is done on a folded form of the message: case dropped, diacritics
-/// stripped, the usual letter/digit swaps undone, and runs of repeated characters collapsed.
+/// stripped, the usual letter/digit swaps undone, Cyrillic letters that look Latin read as Latin
+/// (a Russian "с" in "сptrade" passed until 2026-11-04 — the term and the text fold alike, so a
+/// Latin "e" in a Russian word is caught too), and runs of repeated characters collapsed.
 /// This is not a serious defence against a determined person and is not meant to be — it is
 /// meant to stop the lazy spelling that would otherwise make the list decorative.
 /// </summary>
@@ -29,16 +31,28 @@ public static partial class ContentFilter
     /// </summary>
     private static readonly string[] Prohibited =
     [
-        // Child sexual abuse material — the category Apple names first and the one that must
-        // never rely on a moderator getting to the queue in time.
-        "childporn", "childpornography", "cp4sale", "pedoporn",
-        "детскоепорно", "детпорно",
-        // Solicitation of minors.
-        "loli hentai", "lolicon", "shotacon",
+        // Child sexual abuse material — the category Apple names first and the one that must never wait for a moderator.
+        "childporn", "childpornography", "cp4sale", "pedoporn", "kid porn", "kiddie porn",
+        "kiddy porn", "preteen porn", "underage porn", "toddler porn", "jailbait", "детскоепорно",
+        "детпорно", "детская порнография", "порно с детьми", "порно дети", "порно малолетки",
+        "малолетки порно", "педопорно", "чайлд порн", "detskoe porno", "detporno",
+        "detskaya pornografiya",
+        // Sexualised minors.
+        "loli hentai", "lolicon", "shotacon", "lolita porn", "лоликон", "шотакон",
         // Explicit non-consensual material.
-        "rapevideo", "revengeporn",
+        "rapevideo", "revengeporn", "rape porn", "snuff video", "snuff porn", "ревендж порн",
+        "слив интим",
         // Trade in the above.
         "cpselling", "cptrade",
+        // Selling drugs — a sale or a courier's job, never a drug's name alone, which news and medicine use.
+        "работа кладменом", "работа закладчиком", "купить мефедрон", "продам мефедрон",
+        "купить амфетамин", "продам амфетамин", "купить кокаин", "продам кокаин", "купить героин",
+        "продам героин", "купить гашиш", "продам гашиш", "купить спайс", "продам спайс",
+        "купить лсд", "buy cocaine", "cocaine for sale", "meth for sale", "buy crystal meth",
+        "buy fentanyl", "fentanyl for sale",
+        // Terrorist recruitment and calls to kill — the organisation's name alone still passes: the news uses it.
+        "вступай в игил", "вступить в игил", "присоединяйся к игил", "смерть неверным", "join isis",
+        "join daesh", "death to infidels", "kill the infidels",
     ];
 
     [GeneratedRegex(@"[^\p{L}\p{N}]+")]
@@ -84,6 +98,9 @@ public static partial class ContentFilter
             sb.Append(ch switch
             {
                 '0' => 'o', '1' => 'i', '3' => 'e', '4' => 'a', '5' => 's', '7' => 't', '@' => 'a', '$' => 's',
+                // Cyrillic that looks Latin, upper case included (lowered above).
+                'а' => 'a', 'в' => 'b', 'е' => 'e', 'к' => 'k', 'м' => 'm', 'н' => 'h', 'о' => 'o', 'р' => 'p',
+                'с' => 'c', 'т' => 't', 'у' => 'y', 'х' => 'x', 'і' => 'i', 'ј' => 'j', 'ѕ' => 's',
                 _ => ch,
             });
         }

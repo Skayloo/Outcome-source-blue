@@ -9,9 +9,9 @@
 .connect-page::before {
   content: ''; position: absolute; inset: 0;
   background:
-    radial-gradient(ellipse 700px 480px at 15% 80%, color-mix(in oklab, var(--accent) 22%, transparent) 0%, transparent 70%),
+    radial-gradient(ellipse 700px 480px at 15% 80%, color-mix(in oklab, var(--tint) 22%, transparent) 0%, transparent 70%),
     radial-gradient(ellipse 560px 400px at 85% 20%, color-mix(in oklab, var(--accent-hover, var(--accent)) 18%, transparent) 0%, transparent 70%),
-    radial-gradient(ellipse 340px 340px at 50% 50%, color-mix(in oklab, var(--accent) 10%, transparent) 0%, transparent 70%);
+    radial-gradient(ellipse 340px 340px at 50% 50%, color-mix(in oklab, var(--tint) 10%, transparent) 0%, transparent 70%);
   pointer-events: none; z-index: 0;
   animation: bgShift 20s ease-in-out infinite alternate;
 }
@@ -33,11 +33,11 @@
 .server-panel {
   width: 320px;
   /* The theme's own background with an accent hush — follows whatever palette is active
-     (cyan in neon-glow, iris in graphite) instead of a baked-in violet. */
+     (cyan in neon-glow, iris in graphite, mint, pink in the sky themes) instead of a baked-in colour. */
   background: linear-gradient(168deg,
-    color-mix(in oklab, var(--accent) 16%, var(--bg-tertiary)) 0%,
-    color-mix(in oklab, var(--accent) 26%, var(--bg-secondary)) 52%,
-    color-mix(in oklab, var(--accent) 9%, var(--bg-tertiary)) 100%);
+    color-mix(in oklab, var(--tint) 16%, var(--bg-tertiary)) 0%,
+    color-mix(in oklab, var(--tint) 26%, var(--bg-secondary)) 52%,
+    color-mix(in oklab, var(--tint) 9%, var(--bg-tertiary)) 100%);
   display: flex; flex-direction: column; flex-shrink: 0;
   z-index: 1; position: relative; overflow: hidden;
   border-right: 1px solid var(--border);
@@ -46,7 +46,7 @@
 .server-panel::before {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background:
-    radial-gradient(ellipse 280px 280px at 28% 18%, color-mix(in oklab, var(--accent) 32%, transparent) 0%, transparent 70%),
+    radial-gradient(ellipse 280px 280px at 28% 18%, color-mix(in oklab, var(--tint) 32%, transparent) 0%, transparent 70%),
     radial-gradient(ellipse 220px 220px at 72% 82%, color-mix(in oklab, var(--accent-secondary, var(--accent)) 20%, transparent) 0%, transparent 70%);
   animation: bgShift 20s ease-in-out infinite alternate;
 }
@@ -96,7 +96,7 @@
 .server-item:nth-child(4) { animation-delay: 0.6s; }
 .server-item:nth-child(5) { animation-delay: 0.7s; }
 .server-item:hover { background: rgba(255,255,255,.04); }
-.server-item.active { background: color-mix(in oklab, var(--accent) 15%, transparent); border-left-color: var(--accent); }
+.server-item.active { background: color-mix(in oklab, var(--tint) 15%, transparent); border-left-color: var(--accent); }
 .server-item .srv-icon {
   width: 28px; height: 28px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
@@ -359,7 +359,7 @@
 .checkbox-box svg { opacity: 0; transition: opacity .15s; }
 .form-checkbox:hover .checkbox-box { border-color: var(--accent); }
 .form-checkbox input:checked + .checkbox-box {
-  background: var(--accent); border-color: var(--accent);
+  background: var(--accent); border-color: var(--accent); color: var(--on-accent);
 }
 .form-checkbox input:checked + .checkbox-box svg { opacity: 1; }
 .checkbox-label { font-size: 13px; color: var(--text-muted); }
@@ -383,7 +383,7 @@
   width: 100%; padding: 12px; border-radius: 12px;
   /* Brand accent gradient (follows the accent picker) — not a hardcoded blurple. */
   background: var(--accent-gradient, linear-gradient(135deg, var(--accent), var(--accent-hover)));
-  color: white; font-size: 15px; font-weight: 600;
+  color: var(--on-accent); font-size: 15px; font-weight: 600;
   transition: box-shadow var(--dur-fast) var(--ease-out),
               filter var(--dur-fast) var(--ease-out),
               transform var(--dur-press) var(--ease-out);
@@ -466,7 +466,7 @@
   align-items: center; justify-content: center;
   margin: 0 auto 20px; box-shadow: 0 8px 32px -6px color-mix(in oklab, var(--accent) 40%, transparent);
 }
-.totp-icon svg { width: 32px; height: 32px; color: white; }
+.totp-icon svg { width: 32px; height: 32px; color: var(--on-accent); }
 .totp-title { text-align: center; font-size: 22px; font-weight: 700; color: white; margin-bottom: 6px; }
 .totp-subtitle { text-align: center; font-size: 14px; color: var(--text-muted); margin-bottom: 24px; line-height: 1.5; }
 .totp-inputs {
@@ -535,7 +535,7 @@
 .btn-cancel:hover { color: var(--text-normal); text-decoration: underline; }
 .btn-modal-save {
   padding: 8px 20px; border-radius: var(--radius-sm);
-  background: var(--accent); color: white;
+  background: var(--accent); color: var(--on-accent);
   font-size: 13px; font-weight: 600; transition: background .15s;
 }
 .btn-modal-save:hover { background: var(--accent-hover); }
@@ -708,7 +708,7 @@
 /* Mic test */
 .mic-test-btn {
   padding: 8px 16px; border-radius: var(--radius-sm);
-  background: var(--accent); color: white; font-size: 13px;
+  background: var(--accent); color: var(--on-accent); font-size: 13px;
   font-weight: 600; transition: background .15s;
 }
 .mic-test-btn:hover { background: var(--accent-hover); }
@@ -964,7 +964,7 @@
   padding: 8px 18px;
   border-radius: var(--radius-sm);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 600;
   cursor: pointer;
   border: none;
@@ -993,7 +993,8 @@
 .toast-error  { background: var(--danger, #f23f43); }
 /* Everything else wears the brand accent: a success is not a failure. */
 .toast-accent {
-  background: var(--accent, #8b5cf6);
+  background: var(--accent, #3ec9a7);
+  color: var(--on-accent);
   box-shadow: 0 8px 28px color-mix(in oklab, var(--accent) 40%, transparent);
 }
 
@@ -1005,12 +1006,12 @@
 /* The emphasised subject (account/channel/server name) inside a confirm dialog — so it is
    unmistakable WHAT the destructive action will hit. */
 .confirm-highlight {
-  color: var(--accent, #8b5cf6);
+  color: var(--accent, #3ec9a7);
   font-weight: 700;
   padding: 0 1px;
 }
 .confirm-modal.danger .confirm-highlight,
-.confirm-message .confirm-highlight { color: var(--accent, #8b5cf6); }
+.confirm-message .confirm-highlight { color: var(--accent, #3ec9a7); }
 
 /* ── "Need an account? Register" toggle under the sign-in form ─────────────── */
 .form-toggle-link {
@@ -1026,7 +1027,7 @@
   border: none;
   padding: 0;
   font: inherit;
-  color: var(--accent, #8b5cf6);
+  color: var(--accent, #3ec9a7);
   font-weight: 600;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -1073,7 +1074,7 @@
   align-self: flex-start; max-width: 85%;
   padding: 7px 10px; border-radius: 12px; background: var(--bg-input);
 }
-.guest-chat-line.own { align-self: flex-end; background: color-mix(in srgb, var(--accent) 22%, var(--bg-input)); }
+.guest-chat-line.own { align-self: flex-end; background: color-mix(in srgb, var(--tint) 22%, var(--bg-input)); }
 .guest-chat-author { font-size: 12px; font-weight: 600; color: var(--header-primary); margin-bottom: 2px; }
 .guest-chat-text { white-space: pre-wrap; word-break: break-word; color: var(--text-normal); font-size: 14px; }
 .guest-chat-time { margin-top: 2px; font-size: 11px; color: var(--text-muted); text-align: right; }
@@ -1313,3 +1314,20 @@
   color: var(--text-muted); font-size: 13px; cursor: pointer;
 }
 
+
+/* ── The sign-in page on a light theme (Sky, Daylight) ─────────────────────────
+   Everything above was drawn for a dark room: titles in white, the saved-servers
+   panel in translucent white. On a light theme those vanish into the page, so they
+   take the theme's own ink instead. Text on a solid fill (the server icons, the
+   primary button) stays white. */
+:is(body.theme-sky, body.theme-light) :is(
+  .brand-name, .form-logo h1, .auto-connect-title, .totp-title, .totp-digit,
+  .modal-header h3, .modal-danger-text strong, .cert-title, .settings-nav-item.active,
+  .settings-section-title, .connected-text, .server-item.active .srv-name) {
+  color: var(--header-primary);
+}
+:is(body.theme-sky, body.theme-light) :is(.brand-tagline, .server-item .srv-name) { color: var(--text-muted); }
+:is(body.theme-sky, body.theme-light) :is(.server-panel-header h2, .header-btn, .server-item .srv-host) { color: var(--text-faint); }
+:is(body.theme-sky, body.theme-light) .header-btn:hover { color: var(--text-normal); }
+:is(body.theme-sky, body.theme-light) .server-item:hover { background: var(--bg-hover); }
+:is(body.theme-sky, body.theme-light) :is(.server-panel-header, .server-panel-footer) { border-color: var(--border); }

@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { Section, Row, Slider, ToggleRow } from "@components/settings/controls";
 import { loadPref, savePref } from "@components/settings/helpers";
-import { applyTheme, applyFontSize } from "@lib/applyPreferences";
+import { applyTheme, applyFontSize, normalizeTheme, savedAccent, DEFAULT_THEME } from "@lib/applyPreferences";
 import { t, setLocale, getLocale, LOCALES } from "@lib/i18n";
 
 interface ThemeOpt {
@@ -15,16 +15,23 @@ interface ThemeOpt {
 
 // Labels resolved through t() at render so they follow the active locale.
 const THEMES: readonly ThemeOpt[] = [
+  { value: "neon-glow", labelKey: "settings.themeNeon" },
+  { value: "mint", labelKey: "settings.themeMint" },
+  { value: "sky-night", labelKey: "settings.themeSkyNight" },
+  { value: "sky", labelKey: "settings.themeSky" },
   { value: "graphite", labelKey: "settings.themeGraphite" },
   { value: "deep-ink", labelKey: "settings.themeDeepInk" },
   { value: "light", labelKey: "settings.themeDaylight" },
-  { value: "neon-glow", labelKey: "settings.themeNeon" },
   { value: "midnight", labelKey: "settings.themeMidnight" },
 ];
 
 // Preset accent swatches (hex with leading "#" for display; stored without it).
 const ACCENT_PRESETS: readonly string[] = [
-  "#8b5cf6", // iris (brand default)
+  "#00c8ff", // neon cyan (the default theme's own)
+  "#3ec9a7", // mint
+  "#c63d86", // raspberry
+  "#8b5cf6", // iris
+  "#a78bfa", // lavender
   "#22d3ee", // cyan
   "#34d399", // emerald
   "#fbbf24", // amber
@@ -32,7 +39,6 @@ const ACCENT_PRESETS: readonly string[] = [
   "#f472b6", // pink
   "#f97316", // orange
   "#60a5fa", // sky
-  "#a78bfa", // lavender
   "#94a3b8", // slate
 ];
 
@@ -46,17 +52,17 @@ function applyAccent(hex: string): void {
 }
 
 export function AppearanceTab() {
-  const [theme, setThemeState] = useState<string>(() => loadPref<string>("theme", "graphite"));
+  const [theme, setThemeState] = useState<string>(() => normalizeTheme(loadPref<string>("theme", DEFAULT_THEME)));
   // Accent stored without a leading "#".
-  const [accent, setAccent] = useState<string>(() => loadPref<string>("accentColor", ""));
+  const [accent, setAccent] = useState<string>(() => savedAccent());
 
   // Apply saved values on mount so the UI reflects persisted state.
   useEffect(() => {
-    applyTheme(loadPref<string>("theme", "graphite"));
+    applyTheme(loadPref<string>("theme", DEFAULT_THEME));
     applyFontSize();
     document.documentElement.classList.toggle("compact-mode", loadPref<boolean>("compactMode", false));
-    const savedAccent = loadPref<string>("accentColor", "");
-    if (savedAccent) applyAccent(savedAccent);
+    const accentHex = savedAccent();
+    if (accentHex) applyAccent(accentHex);
   }, []);
 
   const selectTheme = (name: string): void => {
@@ -163,7 +169,7 @@ export function AppearanceTab() {
           className="form-input"
           type="text"
           maxLength={6}
-          placeholder="5865f2"
+          placeholder="00c8ff"
           value={accent}
           style={{ width: 120 }}
           onChange={onHexInput}

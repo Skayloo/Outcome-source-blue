@@ -18,8 +18,13 @@ browser, DTLS-SRTP for media), authentication, authorisation and rate limiting.
 
 ## Authentication
 
-- Passwords are stored as Argon2 hashes. There is no path that recovers one: an administrator
-  sets a new one instead, which ends every session of that account.
+- The password never reaches the server (since 1.31.102). Clients turn it into a login key on
+  the device — PBKDF2-HMAC-SHA256 with the account's salt (`POST /auth/prelogin`), then HKDF —
+  and the server stores an Argon2 hash of that key. An account made earlier moves at its next
+  sign-in by recomputing its old hash on the device. A request that still carries a password is
+  refused (`CLIENT_UPDATE_REQUIRED`); password rules are checked by the clients. There is no path
+  that recovers a password: an administrator sets a new one instead, which ends every session of
+  that account.
 - Sessions are JWTs signed with `JwtAuth:JwtKey`. Rotating that key signs everyone out, which
   is the intended way to end a compromise.
 - TOTP two-factor is available per account and can be required server-wide. Login answers

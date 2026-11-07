@@ -10,4 +10,4 @@ using Outcome.Domain.Errors;
 namespace Outcome.Application.Auth;
 
 // ── disable ──────────────────────────────────────────────────────────────────
-public sealed record DisableTotpCommand(long UserId, string Password) : ICommand;
+public sealed record DisableTotpCommand(long UserId, string LoginKey) : ICommand;

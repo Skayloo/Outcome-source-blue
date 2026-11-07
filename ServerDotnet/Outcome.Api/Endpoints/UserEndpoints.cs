@@ -10,7 +10,10 @@ namespace Outcome.Api.Endpoints;
 public static class UserEndpoints
 {
     public sealed record UpdateProfileBody(string? Username, string? Avatar, bool? PushPreview);
-    public sealed record ChangePasswordBody(string CurrentPassword, string NewPassword);
+    // The password stays on the device (LoginKeys): the current one is proven by its login key, the
+    // new one arrives as a credential. CurrentPassword/NewPassword only mark an out-of-date client.
+    public sealed record ChangePasswordBody(string? CurrentPassword, string? NewPassword,
+        string? CurrentAuthKey = null, Outcome.Shared.Abstractions.Security.LoginCredential? Credential = null);
     public sealed record ConsentBody(string ConsentVersion);
 
     public static void MapUserEndpoints(this IEndpointRouteBuilder app)
@@ -53,7 +56,7 @@ public static class UserEndpoints
             Outcome.Infrastructure.Tenancy.ICurrentSpace space, Outcome.Api.Realtime.SessionRevocations revocations) =>
         {
             if (!current.IsAuthenticated) throw DomainException.Unauthorized("not authenticated");
-            await mediator.Send(new ChangePasswordCommand(current.UserId, body.CurrentPassword, body.NewPassword));
+            await mediator.Send(new ChangePasswordCommand(current.UserId, body.CurrentPassword, body.NewPassword, body.CurrentAuthKey, body.Credential));
             revocations.Revoked(space.Space.Id, current.UserId);
             return Results.NoContent();
         });

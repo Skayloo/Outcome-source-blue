@@ -8,7 +8,8 @@ namespace Outcome.Api.Endpoints;
 
 public static class SetupEndpoints
 {
-    public sealed record SetupBody(string Email, string Username, string Password);
+    // The password stays on the device (LoginKeys); `Password` only marks an out-of-date client.
+    public sealed record SetupBody(string Email, string Username, string? Password, LoginCredential? Credential = null);
 
     /// <summary>Serialises setup within this process, so the handler's "is there a user yet?"
     /// check and the insert that follows it cannot interleave with another attempt.</summary>
@@ -35,7 +36,7 @@ public static class SetupEndpoints
             {
                 return await mediator.Send(new SetupCommand(
                     body.Email, body.Username, body.Password, ctx.Request.Headers.UserAgent.ToString(),
-                    ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown"));
+                    ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown", body.Credential));
             }
             finally { SetupGate.Release(); }
         });

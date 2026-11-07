@@ -1,0 +1,96 @@
+/* Mint — from the reference the owner sent on 2026-11-07 ("возьми цветовую гамму и адаптируй
+   под нас"): a near-black graphite room, panels a step lighter with a hairline edge, one mint
+   signature with DARK text on its fill, amber for "needs attention", a muted red for errors and
+   a deep teal light behind the glass. Applied as body.theme-mint. */
+
+body.theme-mint {
+  /* Backgrounds — graphite ramp (content = lightest, room = deepest) */
+  --bg-tertiary:   #0b0d0f;  /* the room behind the panels, deepest */
+  --bg-secondary:  #111416;  /* sidebars, member list, panels */
+  --bg-primary:    #14171a;  /* message/content area */
+  --bg-input:      #1a1e21;  /* inputs, composer */
+  --bg-hover:      #191d20;
+  --bg-active:     #20262a;
+  --bg-floating:   #14171a;  /* menus, popovers */
+  --bg-overlay:    rgba(2, 3, 4, 0.76);
+
+  /* Background modifiers (semi-transparent overlays) */
+  --bg-modifier-hover:    rgba(255, 255, 255, 0.035);
+  --bg-modifier-active:   rgba(255, 255, 255, 0.06);
+  --bg-modifier-selected: rgba(62, 201, 167, 0.12);
+
+  /* Accent — mint. Secondary = deep teal (the light behind the glass). */
+  --accent:        #3ec9a7;
+  --accent-hover:  #5ad6b8;
+  --accent-active: #2fae8f;
+  --accent-primary:   var(--accent);
+  --accent-secondary: #2a9d9a;
+  --accent-gradient:  linear-gradient(135deg, var(--accent-hover), var(--accent));
+  --border-glow:      transparent;
+  /* Text that sits ON an accent fill (buttons, the active rail icon, badges). Mint is
+     light, so it carries dark ink; the other themes set white (glass.css). */
+  --on-accent:     #04201a;
+  /* What tints a surface (a selected row, your own bubble, a mention, a hover). */
+  --tint:          var(--accent);
+
+  /* Text — soft white on graphite, thin and quiet */
+  --text-normal:   #e4e7e8;
+  --text-muted:    #8e9499;
+  --text-faint:    #6b7176;
+  --text-micro:    #50565a;
+  --text-link:     #5fd3b8;
+
+  /* Semantic text aliases */
+  --text-positive: #5ccf8e;
+  --text-warning:  #e3a84e;
+  --text-danger:   #e46a62;
+
+  /* Header colors */
+  --header-primary:   #f2f4f4;
+  --header-secondary: #b9bfc2;
+
+  /* Interactive icon states */
+  --interactive-normal: #a2a8ac;
+  --interactive-hover:  #e4e7e8;
+  --interactive-active: #ffffff;
+  --interactive-muted:  #3a4044;
+
+  /* Channel icon */
+  --channel-icon: #6b7176;
+
+  /* Status colors */
+  --green:         #5ccf8e;
+  --yellow:        #e3a84e;
+  --red:           #e46a62;
+
+  /* Borders — hairlines (surfaces separate by tone + 1px line, not glow) */
+  --border:        rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.10);
+
+  /* Role colors */
+  --role-owner:    #f08a7e;
+  --role-admin:    #e3a84e;
+  --role-mod:      #5ccf8e;
+  --role-member:   #8e9499;
+
+  /* Elevation shadows — neutral, layered. */
+  --elevation-low:  0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+  --elevation-med:  0 8px 24px -8px rgba(0, 0, 0, 0.62), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --elevation-high: 0 20px 52px -14px rgba(0, 0, 0, 0.74), 0 6px 16px rgba(0, 0, 0, 0.45);
+  /* Accent glow — the brand's one purposeful lighting effect (active/focus/brand only). */
+  --glow-accent:    0 0 0 1px color-mix(in oklab, var(--accent) 50%, transparent),
+                    0 0 20px -3px color-mix(in oklab, var(--accent) 36%, transparent);
+  --glow-accent-sm: 0 0 14px -4px color-mix(in oklab, var(--accent) 42%, transparent);
+
+  /* The room's light (glass.css paints .app and .admin-app with these): a deep teal glow
+     from the top, a fainter one in the far corner. Fixed colours, not mixes of --accent,
+     so a personal accent re-tints the buttons without re-lighting the room. */
+  --ambient-1: rgba(38, 150, 132, 0.26);
+  --ambient-2: rgba(30, 112, 104, 0.16);
+  --ambient-3: rgba(62, 201, 167, 0.12);
+
+  /* Scrollbar colors */
+  --scrollbar-thin-thumb:  #23282c;
+  --scrollbar-auto-thumb:  #23282c;
+  --scrollbar-auto-track:  transparent;
+}

@@ -48,16 +48,34 @@ public sealed class MessageReportRepository(OutcomeDbContext db) : IMessageRepor
         return report.Id;
     }
 
-    public Task<IReadOnlyList<MessageReportDto>> ListAllAsync(int limit = int.MaxValue, int offset = 0, CancellationToken ct = default) =>
-        PageAsync(db.MessageReports.AsNoTracking(), limit, offset, ct);
+    public Task<IReadOnlyList<MessageReportDto>> ListAllAsync(int limit = int.MaxValue, int offset = 0, bool? blocks = null, CancellationToken ct = default) =>
+        PageAsync(Of(db.MessageReports.AsNoTracking(), blocks), limit, offset, ct);
 
     /// A server's own moderators see complaints about ITS channels and nothing else — least of
     /// all direct messages, which belong to no server and to nobody but their two participants.
-    public Task<IReadOnlyList<MessageReportDto>> ListForServerAsync(long serverId, int limit = int.MaxValue, int offset = 0, CancellationToken ct = default) =>
-        PageAsync(db.MessageReports.AsNoTracking().Where(r => r.ServerId == serverId), limit, offset, ct);
+    public Task<IReadOnlyList<MessageReportDto>> ListForServerAsync(long serverId, int limit = int.MaxValue, int offset = 0, bool? blocks = null, CancellationToken ct = default) =>
+        PageAsync(Of(db.MessageReports.AsNoTracking().Where(r => r.ServerId == serverId), blocks), limit, offset, ct);
 
-    public Task<int> CountForServerAsync(long serverId, CancellationToken ct = default) =>
-        db.MessageReports.AsNoTracking().CountAsync(r => r.ServerId == serverId, ct);
+    public Task<int> CountForServerAsync(long serverId, bool? blocks = null, CancellationToken ct = default) =>
+        Of(db.MessageReports.AsNoTracking().Where(r => r.ServerId == serverId), blocks).CountAsync(ct);
+
+    public async Task<(int Reports, int Blocks)> CountOpenAsync(long? serverId = null, CancellationToken ct = default)
+    {
+        var open = db.MessageReports.AsNoTracking().Where(r => r.Status == MessageReport.StatusOpen);
+        if (serverId is { } sid) open = open.Where(r => r.ServerId == sid);
+        var byKind = await open.GroupBy(r => r.Reason == MessageReport.BlockReason)
+            .Select(g => new { Block = g.Key, Count = g.Count() }).ToListAsync(ct);
+        return (byKind.Where(x => !x.Block).Sum(x => x.Count), byKind.Where(x => x.Block).Sum(x => x.Count));
+    }
+
+    /// A block files its entry with <see cref="MessageReport.BlockReason"/>, and a complaint can never
+    /// carry that reason (the report endpoint drops it) — so the reason alone tells the two queues apart.
+    private static IQueryable<MessageReport> Of(IQueryable<MessageReport> q, bool? blocks) => blocks switch
+    {
+        true => q.Where(r => r.Reason == MessageReport.BlockReason),
+        false => q.Where(r => r.Reason != MessageReport.BlockReason),
+        null => q,
+    };
 
     private async Task<IReadOnlyList<MessageReportDto>> PageAsync(IQueryable<MessageReport> q, int limit, int offset, CancellationToken ct)
     {
@@ -77,11 +95,11 @@ public sealed class MessageReportRepository(OutcomeDbContext db) : IMessageRepor
         return rows.Select(r => new MessageReportDto(
             r.Id, r.ReporterId, names.GetValueOrDefault(r.ReporterId, "deleted user"),
             r.MessageId, r.AuthorId, names.GetValueOrDefault(r.AuthorId, "deleted user"),
-            r.Content, r.Reason, r.Status, r.CreatedAt)).ToList();
+            r.Content, r.Reason, r.Status, r.CreatedAt, r.ServerId)).ToList();
     }
 
-    public Task<int> CountAsync(CancellationToken ct = default) =>
-        db.MessageReports.AsNoTracking().CountAsync(ct);
+    public Task<int> CountAsync(bool? blocks = null, CancellationToken ct = default) =>
+        Of(db.MessageReports.AsNoTracking(), blocks).CountAsync(ct);
 
     public async Task<bool> SetStatusAsync(long id, string status, CancellationToken ct = default) =>
         await db.MessageReports.Where(r => r.Id == id)

@@ -24,10 +24,10 @@ public sealed class DeleteAccountHandler(
         if (limiter.IsLockedOut(lockKey))
             throw DomainException.RateLimited("too many failed attempts, try again later");
 
-        if (string.IsNullOrEmpty(cmd.Password))
+        if (string.IsNullOrEmpty(cmd.LoginKey))
             throw DomainException.InvalidInput("password is required");
 
-        if (!await userManager.CheckPasswordAsync(user, cmd.Password))
+        if (!LoginKeyAuth.Verify(user, cmd.LoginKey, userManager.PasswordHasher))
         {
             if (!limiter.Allow($"delete_fail:{user.Id}", 3, TimeSpan.FromMinutes(15)))
                 limiter.Lockout(lockKey, TimeSpan.FromMinutes(15));

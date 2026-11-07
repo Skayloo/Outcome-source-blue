@@ -10,4 +10,4 @@ using Outcome.Domain.Errors;
 namespace Outcome.Application.Auth;
 
 // ── enable ───────────────────────────────────────────────────────────────────
-public sealed record EnableTotpCommand(long UserId, string Password) : ICommand<TotpEnableResult>;
+public sealed record EnableTotpCommand(long UserId, string LoginKey) : ICommand<TotpEnableResult>;

@@ -64,7 +64,7 @@ everything else is absolute.
 | `DELETE` | `/users/{id}/sessions` |
 | `POST` | `/users/{id}/unban` |
 
-`PUT /users/{id}/password` `{password}` is how a forgotten password is recovered: the
+`PUT /users/{id}/password` `{credential}` is how a forgotten password is recovered: the
 administrator sets a new one, every session of that user ends, a lockout from wrong guesses is
 lifted, and the audit log records it. Not the Owner's, and not one's own (that is the profile).
 
@@ -75,8 +75,11 @@ lifted, and the audit log records it. Not the Owner's, and not one's own (that i
 | `POST` | `/api/v1/users/me/totp/confirm` |
 | `POST` | `/api/v1/users/me/totp/enable` |
 | `POST` | `/login` |
+| `GET` | `/login-params` |
 | `POST` | `/logout` |
 | `GET` | `/me` |
+| `POST` | `/prelogin` |
+| `POST` | `/upgrade` |
 | `POST` | `/register` |
 | `POST` | `/verify-totp` |
 
@@ -85,6 +88,22 @@ address — is given a server of its own in the same
 transaction: "`<username>` Server", owned by it, with `#general` and the "General" voice room
 (`DefaultServer`, `RegistrationCompletion`). It counts towards the three servers a user may own.
 An invite, or a server's own domain, puts the newcomer in that server instead and nothing is made.
+
+No request carries the password (login v2, since 1.31.102). `POST /prelogin {email}` →
+`{salt, iterations, legacy}`; the client derives `auth_key = HKDF-SHA256(PBKDF2-HMAC-SHA256(password,
+salt, iterations), info "outcome/login/v2")` (`Shared/Outcome.Abstractions/Security/LoginKeys.cs`)
+and signs in with `/login {email, auth_key}`. An unknown address gets a made-up salt that stays the
+same. Setting a password sends `credential {salt, iterations, key}` (a salt the client drew, at
+least 600 000 iterations, the login key) — in these:
+`/register`, `PUT /api/v1/users/me/password`, `/setup`, the administrator's `PUT /users/{id}/password`.
+Confirming one sends `auth_key`: `/account`, the TOTP routes, and the current password of
+`PUT /api/v1/users/me/password` as `current_auth_key`. An account made before login v2 answers prelogin with `legacy` (`kind` argon2id with
+`m`/`t`/`p`, pbkdf2 with `prf`/`iterations`, or `unsupported`: reset the password), and moves with
+`/login {email, legacy_proof, credential}` — the old hash recomputed on the device — or, signed in,
+`POST /upgrade {legacy_proof, credential}`; `GET /login-params` gives a signed-in client the prelogin
+answer for itself. A body with `password`, `new_password` or `current_password` is answered 400
+`CLIENT_UPDATE_REQUIRED`. Password rules (8–72 bytes, an upper- and a lower-case letter, a digit)
+are the clients' to check.
 
 ### Bug
 

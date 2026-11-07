@@ -21,10 +21,11 @@ import { Icon } from "@lib/icons";
 import { Avatar } from "@components/Avatar";
 import { InviteManager } from "@components/admin/InviteManager";
 import { AdminReportsPanel } from "@components/admin/AdminReportsPanel";
+import { useOpenReportCounts } from "@components/admin/reportCounts";
 import { ASSIGNABLE_SERVER_ROLES, SERVER_ROLE_ORDER, canManageServer, canRemoveMember, serverRole, serverRoleLabel } from "@lib/access";
 import { authStore } from "@stores/auth.store";
 
-type Tab = "overview" | "channels" | "members" | "invites" | "reports";
+type Tab = "overview" | "channels" | "members" | "invites" | "reports" | "blocks";
 const TABS: { id: Tab; icon: string; label: () => string }[] = [
   { id: "overview", icon: "settings", label: () => t("srvset.overview") },
   { id: "channels", icon: "hash", label: () => t("srvset.channels") },
@@ -34,6 +35,9 @@ const TABS: { id: Tab; icon: string; label: () => string }[] = [
 // Complaints about THIS server's channels. Shown only to whoever may act on them, because a
 // queue you can read and not answer is worse than not having one.
 const REPORTS_TAB = { id: "reports" as Tab, icon: "flag", label: () => t("srvset.reports") };
+// What blocks made from this server's messages filed — notices, kept apart from the complaints.
+const BLOCKS_TAB = { id: "blocks" as Tab, icon: "shield-off", label: () => t("srvset.blocks") };
+const QUEUE_TABS = [REPORTS_TAB, BLOCKS_TAB];
 
 export function ServerSettingsModal(
   { serverId, canDelete, canModerate, overviewOnly = false, reportsOnly = false, onClose }:
@@ -42,6 +46,8 @@ export function ServerSettingsModal(
   { serverId: number; canDelete: boolean; canModerate: boolean; overviewOnly?: boolean; reportsOnly?: boolean; onClose: () => void },
 ) {
   const [tab, setTab] = useState<Tab>(reportsOnly ? "reports" : "overview");
+  // The queues are the ACTIVE server's; an overview of another server shows none.
+  const open = useOpenReportCounts("server", !overviewOnly && (reportsOnly || canModerate));
   // SUBSCRIBED, not sampled. `select` reads once: uploading an icon refreshed the store and
   // the rail redrew, while the panel doing the uploading went on showing the old one — the one
   // place where seeing the change matters most.
@@ -53,9 +59,11 @@ export function ServerSettingsModal(
         <div className="srvset-modal" onClick={(e) => e.stopPropagation()}>
           <aside className="srvset-nav">
             <div className="srvset-nav-title">{server?.name ?? t("srvset.title")}</div>
-            {(reportsOnly ? [REPORTS_TAB] : overviewOnly ? TABS.slice(0, 1) : [...TABS, ...(canModerate ? [REPORTS_TAB] : [])]).map((it) => (
+            {(reportsOnly ? QUEUE_TABS : overviewOnly ? TABS.slice(0, 1) : [...TABS, ...(canModerate ? QUEUE_TABS : [])]).map((it) => (
               <button key={it.id} className={"srvset-nav-item" + (tab === it.id ? " active" : "")} onClick={() => setTab(it.id)}>
                 <Icon name={it.icon as never} size={16} /> <span>{it.label()}</span>
+                {it.id === "reports" && open.reports > 0 && <span className="srvset-nav-count">{open.reports}</span>}
+                {it.id === "blocks" && open.blocks > 0 && <span className="srvset-nav-count">{open.blocks}</span>}
               </button>
             ))}
             <button className="srvset-close" onClick={onClose}><Icon name="x" size={16} /> {t("rail.cancel")}</button>
@@ -65,7 +73,8 @@ export function ServerSettingsModal(
             {tab === "channels" && <ChannelsTab />}
             {tab === "members" && <MembersTab serverId={serverId} />}
             {tab === "invites" && <div className="srvset-pane"><InviteManager /></div>}
-            {tab === "reports" && <div className="srvset-pane"><AdminReportsPanel scope="server" /></div>}
+            {tab === "reports" && <div className="srvset-pane"><AdminReportsPanel scope="server" kind="report" /></div>}
+            {tab === "blocks" && <div className="srvset-pane"><AdminReportsPanel scope="server" kind="block" /></div>}
           </div>
         </div>
       </div>

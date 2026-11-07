@@ -10,4 +10,5 @@ using Outcome.Domain.Permissions;
 namespace Outcome.Application.Auth;
 
 /// <summary>DELETE /api/v1/auth/account — password-confirmed self-deletion with last-admin guard.</summary>
-public sealed record DeleteAccountCommand(long UserId, string Password) : ICommand;
+/// <param name="LoginKey">The current password's login key (LoginKeys) — the password stays on the device.</param>
+public sealed record DeleteAccountCommand(long UserId, string LoginKey) : ICommand;

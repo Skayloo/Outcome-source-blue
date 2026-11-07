@@ -1,0 +1,98 @@
+/* Night Sky — a deep navy room with a teal hush, sky-blue light on the panel edges and one
+   raspberry-pink signature for the primary action; its daytime twin is theme-sky.css.
+   Surfaces tint SKY (--tint), not pink: pink mixed into navy comes out plum. Gradients run
+   pink → deeper pink, never pink → sky (violet halfway). Applied as body.theme-sky-night. */
+
+body.theme-sky-night {
+  /* Backgrounds — navy ramp (content = lightest, rail = deepest) */
+  --bg-tertiary:   #07131f;  /* the room behind the panels, deepest */
+  --bg-secondary:  #0c1e2e;  /* sidebars, member list, panels */
+  --bg-primary:    #0f2436;  /* message/content area */
+  --bg-input:      #132c42;  /* inputs, composer */
+  --bg-hover:      #13293d;
+  --bg-active:     #19354f;
+  --bg-floating:   #0d2132;  /* menus, popovers */
+  --bg-overlay:    rgba(3, 9, 16, 0.72);
+
+  /* Background modifiers (semi-transparent overlays, sky-tinted) */
+  --bg-modifier-hover:    rgba(160, 215, 245, 0.05);
+  --bg-modifier-active:   rgba(160, 215, 245, 0.08);
+  --bg-modifier-selected: rgba(92, 198, 239, 0.14);
+
+  /* Accent — raspberry pink for actions/selection. Secondary = sky (the logo's blue). */
+  --accent:        #c63d86;
+  --accent-hover:  #d4549a;
+  --accent-active: #a9306f;
+  --accent-primary:   var(--accent);
+  --accent-secondary: #5cc6ef;
+  /* Pink to deeper pink, never pink to sky: halfway between the two is violet. */
+  --accent-gradient:  linear-gradient(135deg, var(--accent-hover), var(--accent-active));
+  /* What tints a SURFACE (a selected row, your own bubble, a mention, a hover): sky, not the
+     pink. Pink mixed into navy or sky blue comes out plum or lilac — the violet this theme
+     replaced. Pink stays for what you press and for the glyphs on top. The accent themes
+     tint with their accent (glass.css). */
+  --tint: var(--accent-secondary);
+  --on-accent: #fff;
+  --border-glow:      transparent;
+
+  /* Text — cool white on navy */
+  --text-normal:   #e9f3fa;
+  --text-muted:    #9db4c6;
+  --text-faint:    #7590a5;
+  --text-micro:    #5b7488;
+  --text-link:     #6ccdf5;
+
+  /* Semantic text aliases */
+  --text-positive: #5fd99a;
+  --text-warning:  #f5c45a;
+  --text-danger:   #f07a6a;
+
+  /* Header colors */
+  --header-primary:   #f4f9fd;
+  --header-secondary: #bcd0de;
+
+  /* Interactive icon states */
+  --interactive-normal: #a8bfd0;
+  --interactive-hover:  #e9f3fa;
+  --interactive-active: #ffffff;
+  --interactive-muted:  #3f5a70;
+
+  /* Channel icon */
+  --channel-icon: #7590a5;
+
+  /* Status colors */
+  --green:         #5fd99a;
+  --yellow:        #f5c45a;
+  --red:           #f07a6a;
+
+  /* Borders — sky hairlines (surfaces separate by tone + 1px line, not glow) */
+  --border:        rgba(150, 205, 235, 0.10);
+  --border-strong: rgba(150, 205, 235, 0.18);
+
+  /* Role colors */
+  --role-owner:    #f472b6;
+  --role-admin:    #f5c45a;
+  --role-mod:      #5fd99a;
+  --role-member:   #9db4c6;
+
+  /* Elevation shadows — layered + tinted toward the navy canvas. */
+  --elevation-low:  0 1px 2px rgba(2, 8, 16, 0.45), 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+  --elevation-med:  0 8px 24px -8px rgba(2, 8, 16, 0.62), 0 2px 6px rgba(2, 8, 16, 0.4);
+  --elevation-high: 0 20px 52px -14px rgba(1, 6, 12, 0.74), 0 6px 16px rgba(1, 6, 12, 0.45);
+  /* Accent glow — the brand's one purposeful lighting effect (active/focus/brand only). */
+  --glow-accent:    0 0 0 1px color-mix(in oklab, var(--accent) 55%, transparent),
+                    0 0 20px -3px color-mix(in oklab, var(--accent) 42%, transparent);
+  --glow-accent-sm: 0 0 14px -4px color-mix(in oklab, var(--accent) 48%, transparent);
+
+  /* The room's light (glass.css paints .app with these): sky from the top left, teal
+     from the bottom right, a breath of pink at the top. Fixed colours, not mixes of
+     --accent, so a personal accent re-tints the buttons without turning the sky pink. */
+  --ambient-1: rgba(56, 160, 212, 0.30);
+  --ambient-2: rgba(34, 122, 152, 0.30);
+  --ambient-3: rgba(198, 61, 134, 0.10);
+
+  /* Scrollbar colors */
+  --scrollbar-thin-thumb:  #1d3a52;
+  --scrollbar-auto-thumb:  #1d3a52;
+  --scrollbar-auto-track:  transparent;
+}

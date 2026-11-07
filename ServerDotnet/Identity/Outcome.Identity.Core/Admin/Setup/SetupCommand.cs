@@ -11,4 +11,5 @@ using Outcome.Domain.Permissions;
 
 namespace Outcome.Application.Admin;
 
-public sealed record SetupCommand(string Email, string Username, string Password, string? Device, string Ip) : ICommand<SetupResult>;
+/// <param name="Password">Only an out-of-date client sends it; it is refused (LoginKeys).</param>
+public sealed record SetupCommand(string Email, string Username, string? Password, string? Device, string Ip, LoginCredential? Credential = null) : ICommand<SetupResult>;

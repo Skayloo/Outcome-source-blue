@@ -28,11 +28,12 @@ public sealed class SetupHandler(
 
         var email = (cmd.Email ?? string.Empty).Trim();
         var username = TextSanitizer.StripHtml(cmd.Username);
-        if (email.Length == 0 || username.Length == 0 || string.IsNullOrEmpty(cmd.Password))
+        LoginKeys.RefuseRawPassword(cmd.Password);
+        if (email.Length == 0 || username.Length == 0 || cmd.Credential is null)
             throw DomainException.BadRequest("email, username and password are required");
         if (AuthRules.ValidateEmail(email) is { } emailErr) throw DomainException.BadRequest(emailErr);
         if (AuthRules.ValidateUsername(username) is { } unameErr) throw DomainException.BadRequest(unameErr);
-        if (AuthRules.ValidatePassword(cmd.Password) is { } pwErr) throw DomainException.BadRequest(pwErr);
+        var credential = LoginKeys.Validate(cmd.Credential);
 
         // The owner is a subject too, and this is the one account nobody can create twice.
         var user = new User
@@ -41,7 +42,8 @@ public sealed class SetupHandler(
             Status = "offline", EmailConfirmed = true,
             ConsentAt = DateTime.UtcNow, ConsentVersion = PdnConsent.Version,
         };
-        var created = await userManager.CreateAsync(user, cmd.Password);
+        Outcome.Application.Auth.LoginKeyAuth.Set(user, credential, userManager.PasswordHasher);
+        var created = await userManager.CreateAsync(user);
         if (!created.Succeeded)
             throw DomainException.BadRequest(string.Join("; ", created.Errors.Select(e => e.Description)));
         var uid = user.Id;

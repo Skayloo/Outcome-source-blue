@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/build-rnnoise-worklet.mjs && node scripts/hooks-after-return-check.mjs && tsc --noEmit && vite build",
-    "check": "node --experimental-strip-types scripts/message-window-check.mjs && node --experimental-strip-types scripts/loudness-norm-check.mjs",
+    "check": "node --experimental-strip-types scripts/message-window-check.mjs && node --experimental-strip-types scripts/loudness-norm-check.mjs && node --experimental-strip-types scripts/login-key-check.mjs",
     "hooks": "node scripts/hooks-after-return-check.mjs",
     "worklet": "node scripts/build-rnnoise-worklet.mjs",
     "preview": "vite preview",
@@ -15,6 +15,7 @@
   "dependencies": {
     "@jitsi/rnnoise-wasm": "^0.2.1",
     "deepfilternet3-noise-filter": "1.3.0",
+    "hash-wasm": "4.12.0",
     "heic-to": "1.6.6",
     "livekit-client": "^2.18.0",
     "react": "^18.3.1",

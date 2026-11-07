@@ -10,4 +10,4 @@ using Outcome.Domain.Errors;
 namespace Outcome.Application.Auth;
 
 // ── confirm ──────────────────────────────────────────────────────────────────
-public sealed record ConfirmTotpCommand(long UserId, string Password, string Code) : ICommand;
+public sealed record ConfirmTotpCommand(long UserId, string LoginKey, string Code) : ICommand;

@@ -101,6 +101,14 @@ export async function loadDmChannels(): Promise<void> {
   }
 }
 
+/** The line under a DM's name is its newest message. Deleting or editing THAT message left the
+ *  old text in the list until a reload (the owner, 2026-10-29). The server's list skips deleted
+ *  rows and opens the new last line the way the list always does, so it is asked again. */
+function refreshDmPreviewIfLast(channelId: number, messageId: number): void {
+  const dm = dmStore.getState().channels.find((c) => c.channelId === channelId);
+  if (dm !== undefined && (dm.lastMessageId === messageId || dm.lastMessageId === null)) void loadDmChannels();
+}
+
 function mapDmPayload(p: DmChannelPayload): DmChannel {
   return {
     channelId: p.channel_id,
@@ -360,12 +368,14 @@ export function wireDispatcher(ws: WsClient): DispatcherCleanup {
   unsubs.push(
     ws.on(S.CHAT_EDITED, (payload) => {
       editMessage(payload);
+      refreshDmPreviewIfLast(payload.channel_id, payload.message_id);
     }),
   );
 
   unsubs.push(
     ws.on(S.CHAT_DELETED, (payload) => {
       deleteMessage(payload);
+      refreshDmPreviewIfLast(payload.channel_id, payload.message_id);
     }),
   );
 

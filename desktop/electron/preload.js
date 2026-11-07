@@ -64,4 +64,17 @@ contextBridge.exposeInMainWorld('outcomeDesktop', {
     ipcRenderer.on('outcome:ptt-toggle', listener);
     return () => ipcRenderer.removeListener('outcome:ptt-toggle', listener);
   },
+
+  /** Whether a downloaded update is waiting, and which version — asked when the page mounts. */
+  updateState: () => ipcRenderer.invoke('outcome:update-state'),
+
+  /** Fires with the version once an update has been downloaded and can be installed. */
+  onUpdateReady: (handler) => {
+    const listener = (_e, version) => handler(String(version || ''));
+    ipcRenderer.on('outcome:update-ready', listener);
+    return () => ipcRenderer.removeListener('outcome:update-ready', listener);
+  },
+
+  /** Quit, install the downloaded update and start again. False when none is waiting. */
+  installUpdate: () => ipcRenderer.invoke('outcome:install-update'),
 });

@@ -18,9 +18,13 @@ public sealed class LoginCommandHandler(
 {
     public async Task<AuthResult> Handle(LoginCommand cmd, CancellationToken ct)
     {
+        LoginKeys.RefuseRawPassword(cmd.Password);
         var email = (cmd.Email ?? string.Empty).Trim();
-        if (email.Length == 0 || string.IsNullOrEmpty(cmd.Password))
+        if (email.Length == 0 || (string.IsNullOrEmpty(cmd.LoginKey) && string.IsNullOrEmpty(cmd.LegacyProof)))
             throw DomainException.InvalidInput("email and password are required");
+        // An account made before login v2 moves on this sign-in: a malformed credential is a client
+        // bug, answered before anything is looked up.
+        var moving = string.IsNullOrEmpty(cmd.LoginKey) ? LoginKeys.Validate(cmd.Credential) : null;
 
         var ip = cmd.Ip;
 
@@ -40,12 +44,25 @@ public sealed class LoginCommandHandler(
         if (user is not null && await userManager.IsLockedOutAsync(user))
             throw DomainException.RateLimited("account temporarily locked due to too many failed attempts");
 
-        if (user is null || !await userManager.CheckPasswordAsync(user, cmd.Password))
+        var hasher = userManager.PasswordHasher;
+        var hashBefore = user?.AuthHash;
+        var opened = user is not null && (moving is null
+            ? LoginKeyAuth.Verify(user, cmd.LoginKey, hasher)
+            : LoginKeyAuth.TryMove(user, cmd.LegacyProof, moving, hasher));
+        if (user is null || !opened)
         {
             if (user is not null) await userManager.AccessFailedAsync(user);
             throw DomainException.Unauthorized("invalid credentials");
         }
-        await userManager.ResetAccessFailedCountAsync(user);
+        // Only a move or a re-hash changes the row, and only then is it saved. Saving it on EVERY
+        // sign-in made two sign-ins of one account in the same moment collide on the concurrency
+        // stamp: the loser's UpdateAsync failed quietly, its session insert then saved the stale user
+        // again and the whole sign-in answered 500 (production, 2026-11-07 — voice.mjs signs one QA
+        // account into two browsers at once; a person on two devices hits it too).
+        if (moving is not null || user.AuthHash != hashBefore) await userManager.UpdateAsync(user);
+        await userManager.ResetAccessFailedCountAsync(user); // a no-op at zero, as before login v2
+        if (moving is not null)
+            await audit.AddAsync(user.Id, "login_key_set", "user", user.Id, "moved to sign-in without the password", ct);
 
         if (IsEffectivelyBanned(user))
         {

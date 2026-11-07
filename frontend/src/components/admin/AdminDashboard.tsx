@@ -163,7 +163,8 @@ export function AdminDashboard() {
           {cards.map((card) => (
             <div className="admin-stat-card" key={card.key}>
               <span className="asc-icon"><Icon name={card.icon} size={16} /></span>
-              <div className="asc-value">{card.value}</div>
+              {/* A long value (a version like "1.31.96-rc2") steps down a size instead of being cut. */}
+              <div className={`asc-value${card.value.length > 7 ? " asc-value--long" : ""}`} title={card.value}>{card.value}</div>
               <div className="asc-label">{card.label}</div>
             </div>
           ))}

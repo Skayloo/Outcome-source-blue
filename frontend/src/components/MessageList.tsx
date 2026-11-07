@@ -538,8 +538,8 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           </div>
           <button title={t("chat.reply")} onClick={() => setReply(m)}><Icon name="reply" size={16} /></button>
           <button title={t("chat.forward")} onClick={() => setFwdFor(m)}><Icon name="arrow-right" size={16} /></button>
-          {/* A direct message is not reported: "Block" is the answer there, and it tells the moderators. */}
-          {me?.id !== m.user.id && !isDm && (
+          {/* In a DM too: App Review 1.2 counts "Block" as blocking, not as flagging content. */}
+          {me?.id !== m.user.id && (
             <button title={t("chat.report")} onClick={() => reportMessage(m)}><Icon name="flag" size={16} /></button>
           )}
           <button title={m.pinned ? t("chat.unpin") : t("chat.pin")} onClick={() => togglePin(m)}><Icon name={m.pinned ? "pin-off" : "pin"} size={16} /></button>

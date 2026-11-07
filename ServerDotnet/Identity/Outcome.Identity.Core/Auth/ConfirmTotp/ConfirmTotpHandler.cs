@@ -16,7 +16,7 @@ public sealed class ConfirmTotpHandler(
     public async Task Handle(ConfirmTotpCommand cmd, CancellationToken ct)
     {
         var user = await users.GetByIdAsync(cmd.UserId, ct) ?? throw DomainException.Unauthorized("not authenticated");
-        await EnableTotpHandler.RequirePasswordAsync(userManager, user, cmd.Password);
+        await EnableTotpHandler.RequirePasswordAsync(userManager, user, cmd.LoginKey);
 
         var secret = pending.Get(user.Id) ?? throw DomainException.BadRequest("no pending two-factor enrollment found");
         if (!totp.Verify(secret, (cmd.Code ?? string.Empty).Trim(), DateTime.UtcNow))

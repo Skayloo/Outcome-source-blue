@@ -1,4 +1,5 @@
 using MediatR;
+using Outcome.Application.Auth;
 using Microsoft.AspNetCore.Identity;
 using Outcome.Shared.Abstractions.Messaging;
 using Outcome.Shared.Abstractions.Persistence;
@@ -19,8 +20,9 @@ public sealed class ChangePasswordHandler(
         var user = await userManager.FindByIdAsync(cmd.UserId.ToString())
                    ?? throw DomainException.Unauthorized("user not found");
 
-        if (AuthRules.ValidatePassword(cmd.NewPassword) is { } err)
-            throw DomainException.BadRequest(err);
+        LoginKeys.RefuseRawPassword(cmd.CurrentPassword);
+        LoginKeys.RefuseRawPassword(cmd.NewPassword);
+        var credential = LoginKeys.Validate(cmd.Credential);
 
         if (!user.PasswordSet)
         {
@@ -31,20 +33,22 @@ public sealed class ChangePasswordHandler(
             // registers Identity's token providers, so GeneratePasswordResetTokenAsync throws
             // "No IUserTwoFactorTokenProvider named 'Default' is registered" — a 500 in the
             // face of anyone setting their first password.
-            await userManager.RemovePasswordAsync(user);
-            var set = await userManager.AddPasswordAsync(user, cmd.NewPassword);
-            if (!set.Succeeded)
-                throw DomainException.BadRequest("could not set the password");
+            LoginKeyAuth.Set(user, credential, userManager.PasswordHasher);
 
             user.PasswordSet = true;
-            await userManager.UpdateAsync(user);
+            if (!(await userManager.UpdateAsync(user)).Succeeded)
+                throw DomainException.BadRequest("could not set the password");
             await audit.AddAsync(cmd.UserId, "password_set", "user", cmd.UserId, "first password", ct);
             return;
         }
 
-        var result = await userManager.ChangePasswordAsync(user, cmd.CurrentPassword, cmd.NewPassword);
-        if (!result.Succeeded)
+        // An account that has not moved to login v2 has no login key to prove yet: the client moves
+        // it first (POST /auth/upgrade), so a false here is simply the wrong password.
+        if (!LoginKeyAuth.Verify(user, cmd.CurrentLoginKey, userManager.PasswordHasher))
             throw DomainException.BadRequest("current password is incorrect");
+        LoginKeyAuth.Set(user, credential, userManager.PasswordHasher);
+        if (!(await userManager.UpdateAsync(user)).Succeeded)
+            throw DomainException.BadRequest("could not change the password");
 
         // Changing a password is what someone does when they think somebody else has it, and a
         // password change that leaves the other party signed in does not do that job. Every other

@@ -25,7 +25,7 @@
   width: 28px; height: 28px; border-radius: var(--radius-md);
   background: var(--accent-gradient, var(--accent));
   display: flex; align-items: center; justify-content: center;
-  color: var(--header-primary); font-size: 11px; font-weight: 700;
+  color: var(--on-accent); font-size: 11px; font-weight: 700;
 }
 .unified-sidebar-header .server-name { color: var(--header-primary); font-weight: 700; font-size: 16px; }
 .unified-sidebar-header .server-online { color: var(--text-micro); font-size: 11px; }
@@ -57,15 +57,15 @@
   background: transparent; color: var(--text-normal); font-size: 13px; font-weight: 500;
   cursor: pointer; text-align: left;
 }
-.server-dropdown-item:hover { background: var(--accent, #5865f2); color: var(--header-primary); }
-.server-dropdown-item.accent { color: var(--accent, #5865f2); }
+.server-dropdown-item:hover { background: var(--accent, #3ec9a7); color: var(--on-accent); }
+.server-dropdown-item.accent { color: var(--accent, #3ec9a7); }
 .server-dropdown-item.accent:hover { color: var(--header-primary); }
 .server-dropdown-item.danger { color: var(--danger, #ed4245); }
 .server-dropdown-item.danger:hover { background: var(--danger, #ed4245); color: var(--header-primary); }
 .server-dropdown-sep { height: 1px; background: var(--border); margin: 4px 2px; }
 .sidebar-invite-btn {
   margin-left: auto; padding: 4px 10px; border-radius: var(--radius-sm);
-  background: var(--accent-primary, var(--accent)); color: var(--header-primary);
+  background: var(--accent-primary, var(--accent)); color: var(--on-accent);
   font-size: 11px; font-weight: 600; cursor: pointer;
   transition: background var(--transition-fast), opacity var(--transition-fast);
   flex-shrink: 0;
@@ -108,10 +108,10 @@
   position: relative;
 }
 .channel-item:hover { background: var(--bg-hover); color: var(--text-normal); }
-/* Active row spoke in grey while the system owns an accent. Say it in iris: tinted
+/* Active row spoke in grey while the system owns an accent. Say it in the accent: tinted
    surface, accent glyph, one weight step — no rail, the fill carries it. */
 .channel-item.active {
-  background: color-mix(in oklab, var(--accent) 18%, transparent);
+  background: color-mix(in oklab, var(--tint) 18%, transparent);
   color: var(--header-primary);
 }
 .channel-item.active .ch-icon { color: var(--accent); opacity: 1; }
@@ -123,14 +123,14 @@
 .channel-draggable.dragging { opacity: .3; }
 .channel-drop-indicator {
   box-shadow: 0 2px 0 var(--accent) inset, 0 -2px 0 var(--accent) inset;
-  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  background: color-mix(in oklab, var(--tint) 15%, transparent);
   border-radius: var(--radius-sm);
 }
 .channel-item .ch-icon { opacity: .6; flex-shrink: 0; width: 20px; text-align: center; display: flex; align-items: center; justify-content: center; }
 .channel-item.active .ch-icon { opacity: 1; }
 .channel-item .ch-name { font-size: 16px; font-weight: 500; flex: 1; }
 .channel-item .unread-badge {
-  background: var(--accent); color: var(--header-primary);
+  background: var(--accent); color: var(--on-accent);
   font-size: 10px; font-weight: 700;
   min-width: 18px; height: 18px; border-radius: 9px;
   display: flex; align-items: center; justify-content: center; padding: 0 4px;
@@ -281,7 +281,7 @@
 .vw-grant-mic {
   display: block; width: calc(100% - 8px); margin: 4px 4px 0;
   padding: 6px 12px; border-radius: var(--radius-sm); border: none;
-  background: var(--accent); color: var(--header-primary); font-size: 12px;
+  background: var(--accent); color: var(--on-accent); font-size: 12px;
   font-weight: 600; font-family: var(--font-body); cursor: pointer;
   transition: filter var(--transition-normal);
 }
@@ -387,7 +387,7 @@
   padding: 6px 12px; font-size: 13px; font-weight: 600;
   background: color-mix(in srgb, var(--red) 18%, var(--bg-secondary)); color: var(--header-primary);
 }
-.vstage-rec-banner.uploading { background: color-mix(in srgb, var(--accent) 16%, var(--bg-secondary)); }
+.vstage-rec-banner.uploading { background: color-mix(in srgb, var(--tint) 16%, var(--bg-secondary)); }
 .vstage-rec-dot {
   width: 9px; height: 9px; border-radius: 50%; background: var(--red);
   animation: vstage-rec-pulse 1.6s ease-in-out infinite;
@@ -518,7 +518,7 @@
 }
 .vstage-avatar {
   width: 80px; height: 80px; border-radius: 50%;
-  background: var(--accent); color: var(--header-primary);
+  background: var(--accent); color: var(--on-accent);
   display: flex; align-items: center; justify-content: center;
   font-size: 28px; font-weight: 700;
 }
@@ -771,7 +771,7 @@
 .drop-card {
   display: flex; flex-direction: column; align-items: center; gap: 10px;
   width: min(560px, 68vw); padding: 16px;
-  background: var(--accent); color: #fff;
+  background: var(--accent); color: var(--on-accent);
   border-radius: 14px; box-shadow: 0 24px 64px rgba(0, 0, 0, .45);
   /* The dashed edge sits INSIDE the card, the way a drop target is drawn everywhere. */
   outline: 2px dashed rgba(255, 255, 255, .75); outline-offset: -14px;
@@ -797,7 +797,7 @@
   padding: 8px 10px; border-radius: 6px; background: transparent;
   color: var(--text-normal); font-size: 14px; cursor: pointer;
 }
-.ctx-item:hover { background: var(--accent); color: var(--header-primary); }
+.ctx-item:hover { background: var(--accent); color: var(--on-accent); }
 .ctx-item.danger { color: var(--red); }
 .ctx-item.danger:hover { background: var(--red); color: var(--header-primary); }
 .ctx-icon { display: flex; align-items: center; opacity: .85; }
@@ -827,10 +827,10 @@
 .rail-icon { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; display: block; }
 .rail-server:hover, .rail-btn:hover { border-radius: 16px; }
 /* Active server/DM: the brand's lit moment — accent fill + a soft accent glow. */
-.rail-server.active { border-radius: 16px; background: var(--accent); color: var(--header-primary); box-shadow: var(--glow-accent-sm); }
+.rail-server.active { border-radius: 16px; background: var(--accent); color: var(--on-accent); box-shadow: var(--glow-accent-sm); }
 /* Utility rail buttons share the brand accent (not a stray green) for one identity. */
 .rail-btn { color: var(--interactive-normal, var(--text-muted)); }
-.rail-btn:hover { background: var(--accent); color: var(--header-primary); box-shadow: var(--glow-accent-sm); }
+.rail-btn:hover { background: var(--accent); color: var(--on-accent); box-shadow: var(--glow-accent-sm); }
 .rail-sep { width: 32px; height: 2px; background: var(--border); border-radius: 1px; flex-shrink: 0; }
 
 /* ── Explore (public server directory) ── */
@@ -901,7 +901,7 @@
 
 /* ── Home (DM) rail button + unread badge ── */
 .rail-home { position: relative; color: var(--text-normal); }
-.rail-home.active { background: var(--accent); color: var(--header-primary); box-shadow: var(--glow-accent-sm); }
+.rail-home.active { background: var(--accent); color: var(--on-accent); box-shadow: var(--glow-accent-sm); }
 .rail-badge {
   position: absolute; bottom: -2px; right: -2px; min-width: 18px; height: 18px;
   padding: 0 4px; border-radius: 9px; background: #e74c3c; color: var(--header-primary);
@@ -969,7 +969,7 @@
   border-top: 1px solid var(--border); padding-top: 8px;
 }
 .vw-stats-totals-label {
-  font-size: 11px; font-weight: 700; color: var(--accent, #5865f2);
+  font-size: 11px; font-weight: 700; color: var(--accent, #3ec9a7);
   margin-bottom: 4px;
 }
 .vw-stats-totals-row {
@@ -1064,6 +1064,12 @@
 /* Call button in a DM header — green phone accent, like a call action should read. */
 .chat-header .ch-tools button.dm-call-btn { color: var(--green, #3ba55d); }
 .chat-header .ch-tools button.dm-call-btn:hover { background: color-mix(in srgb, var(--green, #3ba55d) 16%, transparent); color: var(--green, #3ba55d); }
+/* Desktop shell: a downloaded update — Discord's green "restart to update" in the corner. */
+.chat-header .ch-tools button.update-ready-btn {
+  width: auto; padding: 0 10px; gap: 6px; margin-left: 4px;
+  background: var(--green, #3ba55d); color: #052e1f; font-size: 13px; font-weight: 600;
+}
+.chat-header .ch-tools button.update-ready-btn:hover { background: color-mix(in srgb, var(--green, #3ba55d) 82%, white); color: #052e1f; }
 .chat-header .search-input {
   width: 160px; height: 28px; border-radius: var(--radius-sm);
   background: var(--bg-tertiary); color: var(--text-muted); font-size: 12px;
@@ -1124,7 +1130,7 @@
 .channel-welcome-icon {
   width: 80px; height: 80px; border-radius: var(--radius-circle);
   background: radial-gradient(circle at 50% 38%,
-              color-mix(in oklab, var(--accent) 20%, var(--bg-tertiary)), var(--bg-tertiary));
+              color-mix(in oklab, var(--tint) 20%, var(--bg-tertiary)), var(--bg-tertiary));
   color: color-mix(in oklab, var(--accent) 82%, white);
   border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
   box-shadow: var(--glow-accent-sm);
@@ -1181,7 +1187,7 @@
   overflow-wrap: anywhere;
 }
 .message.dm-row.own .dm-bubble {
-  background: color-mix(in oklab, var(--accent) 28%, var(--bg-secondary));
+  background: color-mix(in oklab, var(--tint) 28%, var(--bg-secondary));
   border-radius: 16px; border-bottom-right-radius: 5px;
 }
 .dm-time {
@@ -1273,7 +1279,7 @@
 
 /* @mention highlights */
 .mention {
-  background: color-mix(in oklab, var(--accent) 26%, transparent);
+  background: color-mix(in oklab, var(--tint) 26%, transparent);
   color: var(--text-link);
   border-radius: 3px;
   padding: 0 2px;
@@ -1283,7 +1289,7 @@
 }
 .mention:hover {
   background: var(--accent);
-  color: var(--header-primary);
+  color: var(--on-accent);
 }
 .message.mentioned {
   background: rgba(240, 178, 50, 0.08);
@@ -1303,12 +1309,12 @@
   margin-bottom: 5px; padding: 4px 10px;
   border-left: 3px solid var(--accent);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-  background: color-mix(in oklab, var(--accent) 9%, transparent);
+  background: color-mix(in oklab, var(--tint) 9%, transparent);
   max-width: min(420px, 100%);
   cursor: pointer; overflow: hidden;
   transition: background var(--dur-fast) var(--ease-out);
 }
-.msg-reply-ref:hover { background: color-mix(in oklab, var(--accent) 16%, transparent); }
+.msg-reply-ref:hover { background: color-mix(in oklab, var(--tint) 16%, transparent); }
 /* Own-message delivery ticks (Telegram model): ✓ sent, ✓✓ read. */
 .msg-ticks { margin-left: 4px; font-size: 11px; color: var(--text-faint); letter-spacing: -2px; }
 .msg-ticks.read { color: var(--accent); }
@@ -1348,12 +1354,12 @@
 /* @mentions in message text; ".self" = someone mentioned ME. */
 .mention {
   color: var(--accent); font-weight: 600;
-  background: color-mix(in oklab, var(--accent) 14%, transparent);
+  background: color-mix(in oklab, var(--tint) 14%, transparent);
   border-radius: 4px; padding: 0 3px; cursor: default;
 }
-.mention.self { background: color-mix(in oklab, var(--accent) 32%, transparent); color: var(--header-primary); }
+.mention.self { background: color-mix(in oklab, var(--tint) 32%, transparent); color: var(--header-primary); }
 /* A message that mentions me: quiet accent wash + rail (Discord-style). */
-.message.mention-me { background: color-mix(in oklab, var(--accent) 7%, transparent); border-left-color: var(--accent); }
+.message.mention-me { background: color-mix(in oklab, var(--tint) 7%, transparent); border-left-color: var(--accent); }
 .message.dm-row.mention-me { background: transparent; }
 
 /* @mention autocomplete above the composer. */
@@ -1407,7 +1413,7 @@
 /* Clicking a quoted reply flashes its source message. */
 .message.flash { animation: msg-flash 1.7s ease-out; }
 @keyframes msg-flash {
-  from { background: color-mix(in oklab, var(--accent) 22%, transparent); }
+  from { background: color-mix(in oklab, var(--tint) 22%, transparent); }
   to { background: transparent; }
 }
 .msg-reply-ref .rr-author {
@@ -1505,12 +1511,12 @@
 .reaction-chip {
   display: flex; align-items: center; gap: 4px;
   padding: 2px 8px; border-radius: var(--radius-md);
-  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  background: color-mix(in oklab, var(--tint) 15%, transparent);
   border: 1px solid color-mix(in oklab, var(--accent) 30%, transparent);
   font-size: 14px; cursor: pointer;
   transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
-.reaction-chip:hover { background: color-mix(in oklab, var(--accent) 28%, transparent); }
+.reaction-chip:hover { background: color-mix(in oklab, var(--tint) 28%, transparent); }
 .reaction-chip.me { border-color: var(--accent); }
 .reaction-chip .rc-count { font-size: 12px; color: var(--text-normal); }
 .reaction-chip.add-reaction {
@@ -1631,7 +1637,7 @@
 }
 .msg-file-icon {
   width: 36px; height: 36px; border-radius: var(--radius-sm);
-  background: var(--accent); color: var(--header-primary);
+  background: var(--accent); color: var(--on-accent);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
@@ -1651,7 +1657,7 @@
 .update-banner {
   display: flex; align-items: center; gap: 12px;
   padding: 8px 16px; background: var(--accent);
-  color: var(--header-primary); font-size: 13px; font-weight: 500;
+  color: var(--on-accent); font-size: 13px; font-weight: 500;
   flex-shrink: 0; z-index: 100;
 }
 .update-banner-text { flex: 1; }
@@ -1711,7 +1717,7 @@
   margin-bottom: 8px; padding: 7px 10px;
   border-left: 3px solid var(--accent);
   border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  background: color-mix(in oklab, var(--accent) 10%, transparent);
+  background: color-mix(in oklab, var(--tint) 10%, transparent);
 }
 .reply-bar svg { color: var(--accent); flex-shrink: 0; }
 .reply-quote { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
@@ -1872,9 +1878,9 @@
   display: flex; align-items: center; justify-content: center;
 }
 .input-btn:hover { background: var(--bg-hover); color: var(--text-normal); }
-/* Send is the composer's primary action — carries the iris signature. */
+/* Send is the composer's primary action — carries the accent signature. */
 .input-send { color: var(--accent); }
-.input-send:hover { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--accent); }
+.input-send:hover { background: color-mix(in oklab, var(--tint) 16%, transparent); color: var(--accent); }
 .input-send:disabled { color: var(--text-micro); background: transparent; }
 .msg-textarea {
   flex: 1; background: transparent; color: var(--text-normal);
@@ -2263,7 +2269,7 @@
 /* Admin: user management extras (role select, permission grid, sub-channels) */
 .admin-actions-cell { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .admin-role-select { min-width: 130px; height: 32px; padding: 2px 8px; }
-.ac-btn.on { background: var(--accent); color: var(--header-primary); }
+.ac-btn.on { background: var(--accent); color: var(--on-accent); }
 .account-delete-btn { background: #e74c3c !important; color: #fff !important; border: none !important; }
 .account-delete-btn:hover { filter: brightness(1.1); }
 .admin-perms-row > td { background: var(--bg-secondary); padding: 14px 16px !important; }
@@ -2317,7 +2323,7 @@
   transition: background .12s, color .12s;
 }
 .admin-nav-item:hover { background: var(--bg-hover); color: var(--text-normal); }
-.admin-nav-item.active { background: var(--accent); color: var(--header-primary); }
+.admin-nav-item.active { background: var(--accent); color: var(--on-accent); }
 .admin-nav-item.active svg { color: var(--header-primary); }
 
 .admin-main { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
@@ -2390,7 +2396,7 @@
 }
 .ac-btn {
   padding: 8px 16px; border-radius: var(--radius-sm);
-  background: var(--accent); color: var(--header-primary);
+  background: var(--accent); color: var(--on-accent);
   font-size: 13px; font-weight: 600; transition: background .15s; margin-left: auto;
 }
 .ac-btn:hover { background: var(--accent-hover); }
@@ -2416,7 +2422,7 @@
   width: 80px; height: 80px; border-radius: 50%;
   background: var(--accent); display: flex; align-items: center;
   justify-content: center; font-weight: 700; font-size: 32px;
-  color: var(--header-primary); border: 4px solid var(--bg-secondary);
+  color: var(--on-accent); border: 4px solid var(--bg-secondary);
 }
 .account-status-dot {
   position: absolute; bottom: 4px; right: 4px;
@@ -2479,7 +2485,7 @@
   width: 40px; height: 40px; border-radius: 50%;
   background: var(--accent); display: flex; align-items: center;
   justify-content: center; font-weight: 700; font-size: 16px;
-  color: var(--header-primary); flex-shrink: 0;
+  color: var(--on-accent); flex-shrink: 0;
 }
 .settings-sidebar-name { font-size: 14px; font-weight: 600; color: var(--header-primary); }
 .settings-sidebar-edit { font-size: 12px; color: var(--text-muted); cursor: pointer; }
@@ -2499,7 +2505,7 @@
 
 /* Sidebar logout section at bottom */
 .settings-sidebar-logout { margin-top: auto; padding-top: 8px; }
-.theme-options { display: flex; gap: 12px; margin-top: 8px; }
+.theme-options { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
 .theme-opt {
   width: 80px; height: 56px; border-radius: var(--radius-md);
   cursor: pointer; border: 2px solid transparent;
@@ -2508,9 +2514,16 @@
 }
 .theme-opt:hover { border-color: var(--border-strong); }
 .theme-opt.active { border-color: var(--accent); }
-.theme-opt.dark { background: #313338; color: var(--header-primary); }
-.theme-opt.light { background: #f2f3f5; color: #313338; }
-.theme-opt.midnight { background: #0d0d0d; color: #b5bac1; }
+.theme-opt { text-align: center; line-height: 1.2; padding: 0 6px; }
+/* Each tile previews its own theme, whatever theme is active around it. */
+.theme-opt.mint      { background: radial-gradient(90px 60px at 30% 0%, #1c4a42, #111416 70%); color: #e4e7e8; box-shadow: inset 0 -3px 0 #3ec9a7; }
+.theme-opt.sky-night { background: linear-gradient(150deg, #13405a, #0c1e2e 60%, #3a1a33); color: #e9f3fa; }
+.theme-opt.sky       { background: linear-gradient(150deg, #a9dcf5, #f4fbff 58%, #f1c6de); color: #0b1c2d; }
+.theme-opt.graphite  { background: radial-gradient(90px 60px at 30% 0%, #3a2a5c, #1b1722 70%); color: #e8e4f0; box-shadow: inset 0 -3px 0 #8b5cf6; }
+.theme-opt.deep-ink  { background: #131318; color: #d6d6de; }
+.theme-opt.light     { background: #f1ece1; color: #2b2620; }
+.theme-opt.neon-glow { background: linear-gradient(150deg, #0d0e10, #0f3a48); color: #e8e4f0; }
+.theme-opt.midnight  { background: #0d0d0d; color: #b5bac1; }
 /* Accent color picker */
 .accent-swatches {
   display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
@@ -2560,7 +2573,7 @@
   background: transparent; width: 100%; text-align: left;
   transition: background 0.1s ease, color 0.1s ease;
 }
-.context-menu-item:hover { background: var(--accent); color: var(--header-primary); }
+.context-menu-item:hover { background: var(--accent); color: var(--on-accent); }
 .context-menu-item.danger { color: var(--red); }
 .context-menu-item.danger:hover { background: var(--red); color: var(--header-primary); }
 .context-menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
@@ -2831,7 +2844,7 @@
 .add-friend-input::placeholder { color: var(--text-micro); }
 .add-friend-submit {
   padding: 12px 20px; border-radius: var(--radius-sm);
-  background: var(--accent); color: var(--header-primary);
+  background: var(--accent); color: var(--on-accent);
   font-size: 14px; font-weight: 600; transition: background .15s;
   white-space: nowrap;
 }
@@ -3331,8 +3344,8 @@
 }
 
 .vw-controls .active-ctrl {
-  background: var(--brand-primary, #5865f2);
-  color: var(--header-primary);
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* ── Video tile overlay (mute button) ── */
@@ -3546,7 +3559,7 @@
   background: var(--bg-secondary); display: flex; align-items: center; justify-content: center;
   font-weight: 700; font-size: 14px; color: var(--text-muted); flex-shrink: 0;
 }
-.quick-switch-item.current .quick-switch-icon { background: var(--accent-gradient, var(--accent)); color: var(--header-primary); }
+.quick-switch-item.current .quick-switch-icon { background: var(--accent-gradient, var(--accent)); color: var(--on-accent); }
 .quick-switch-item.add-new .quick-switch-icon { background: transparent; font-size: 20px; color: inherit; }
 .quick-switch-info { flex: 1; min-width: 0; }
 .quick-switch-name { font-size: 13px; font-weight: 600; color: var(--text-normal); }
@@ -3747,7 +3760,7 @@
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em;
   padding: 3px 9px; border-radius: 20px; white-space: nowrap;
 }
-.bug-status-new { background: color-mix(in oklab, var(--accent) 18%, transparent); color: color-mix(in oklab, var(--accent) 75%, white); }
+.bug-status-new { background: color-mix(in oklab, var(--tint) 18%, transparent); color: color-mix(in oklab, var(--accent) 75%, white); }
 .bug-status-in_progress { background: rgba(240, 173, 60, .18); color: #f0ad3c; }
 .bug-status-fixed { background: rgba(45, 190, 120, .18); color: #35c082; }
 
@@ -3782,7 +3795,7 @@
   padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px;
 }
-.bug-filter-tab.active { background: var(--accent); color: var(--header-primary); border-color: var(--accent); }
+.bug-filter-tab.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .bug-filter-count {
   font-size: 11px; background: rgba(0, 0, 0, .18); border-radius: 10px; padding: 0 6px; min-width: 18px; text-align: center;
 }
@@ -3912,18 +3925,18 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
   transition: background var(--dur-fast) var(--ease-out);
 }
 .friends-entry .server-name { flex: 1; color: var(--header-primary); }
-.friends-entry:hover { background: color-mix(in oklab, var(--accent) 8%, transparent); }
-.friends-entry:active { background: color-mix(in oklab, var(--accent) 14%, transparent); }
+.friends-entry:hover { background: color-mix(in oklab, var(--tint) 8%, transparent); }
+.friends-entry:active { background: color-mix(in oklab, var(--tint) 14%, transparent); }
 
 .inbox-request-card {
   display: flex; align-items: center; gap: 10px; width: 100%;
   margin: 6px 0 10px; padding: 11px 12px; border-radius: 12px; cursor: pointer;
-  background: color-mix(in oklab, var(--accent) 12%, var(--bg-tertiary));
+  background: color-mix(in oklab, var(--tint) 12%, var(--bg-tertiary));
   border: 1px solid color-mix(in oklab, var(--accent) 32%, transparent);
   color: var(--text-normal); text-align: left;
   transition: background var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
 }
-.inbox-request-card:hover { background: color-mix(in oklab, var(--accent) 20%, var(--bg-tertiary)); }
+.inbox-request-card:hover { background: color-mix(in oklab, var(--tint) 20%, var(--bg-tertiary)); }
 .inbox-request-card:active { transform: scale(.99); }
 .ireq-icon { display: flex; color: var(--accent); }
 .ireq-text { flex: 1; font-weight: 600; font-size: 13px; }
@@ -3966,7 +3979,7 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
   font-size: 13px; color: var(--text-muted); margin-top: 2px; line-height: 1.35;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Unread rows lift: brighter name, an iris dot rail, bolder preview. */
+/* Unread rows lift: brighter name, an accent dot rail, bolder preview. */
 .inbox-item.unread .inbox-name { font-weight: 700; color: var(--header-primary); }
 .inbox-item.unread .inbox-preview { color: var(--text-normal); }
 .inbox-item.unread::before {
@@ -3988,7 +4001,7 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
 .inbox-empty-sub { font-size: 12.5px; max-width: 200px; line-height: 1.5; }
 .inbox-empty-btn {
   margin-top: 12px; padding: 8px 16px; border-radius: 9px; cursor: pointer;
-  background: var(--accent); color: var(--header-primary); font-size: 13px; font-weight: 600;
+  background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600;
   border: none; transition: filter var(--dur-fast) var(--ease-out);
 }
 .inbox-empty-btn:hover { filter: brightness(1.08); }
@@ -4054,7 +4067,7 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
   font-size: 14px; cursor: pointer; border: 1px solid transparent;
 }
 .cmd-item.active {
-  background: color-mix(in oklab, var(--accent) 15%, transparent);
+  background: color-mix(in oklab, var(--tint) 15%, transparent);
   color: var(--header-primary); border-color: color-mix(in oklab, var(--accent) 28%, transparent);
 }
 .cmd-item-icon { width: 22px; height: 22px; display: grid; place-items: center; flex-shrink: 0; color: var(--text-faint); }
@@ -4087,7 +4100,13 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
   transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 .srvset-nav-item:hover { background: var(--bg-hover); color: var(--text-normal); }
-.srvset-nav-item.active { background: color-mix(in oklab, var(--accent) 16%, transparent); color: var(--header-primary); }
+.srvset-nav-item.active { background: color-mix(in oklab, var(--tint) 16%, transparent); color: var(--header-primary); }
+/* New complaints / blocks on a queue tab, like the console's menu counts. */
+.srvset-nav-count {
+  margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px;
+  background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .srvset-close {
   margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 9px 10px; border-radius: 8px;
   background: transparent; color: var(--text-faint); font-size: 13px; cursor: pointer;
@@ -4159,7 +4178,7 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
 .voice-msg-play {
   flex-shrink: 0; width: 42px; height: 42px; border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--accent); color: #fff; cursor: pointer;
+  background: var(--accent); color: var(--on-accent); cursor: pointer;
 }
 .voice-msg-play:hover { filter: brightness(1.08); }
 .voice-msg-wave {
@@ -4187,7 +4206,7 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
   border: 0;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -4240,7 +4259,7 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
   min-width: 92px; height: 38px; padding: 0 18px;
   display: grid; place-items: center;
   border: none; border-radius: 10px;
-  background: var(--accent); color: #fff !important; font-size: 15px; font-weight: 600;
+  background: var(--accent); color: var(--on-accent) !important; font-size: 15px; font-weight: 600;
   transition: background 140ms ease-out, transform 140ms ease-out;
 }
 .pe-done:hover:not(:disabled) { background: var(--accent-hover); }
@@ -4360,7 +4379,7 @@ body.nav-resizing { cursor: col-resize; user-select: none; }
 .ps-send {
   height: 42px; padding: 0 18px; flex: none;
   border: none; border-radius: 10px; cursor: pointer;
-  background: var(--accent); color: #fff; font: inherit; font-size: 15px; font-weight: 600;
+  background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 600;
   font-variant-numeric: tabular-nums;
   transition: background 140ms ease-out, transform 140ms ease-out;
 }

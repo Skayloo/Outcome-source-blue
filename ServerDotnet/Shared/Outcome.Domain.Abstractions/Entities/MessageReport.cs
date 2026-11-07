@@ -16,6 +16,10 @@ public sealed class MessageReport
     /// are labels a moderator flips between; this one records that something happened, and a
     /// queue where handled items can drift back to "open" is a queue nobody trusts.</summary>
     public const string StatusClosed = "closed";
+    /// <summary>The reason of the entry a BLOCK files (App Review 1.2: a block tells the moderators),
+    /// as opposed to a complaint someone wrote. The queue shows the two apart — a block asks nothing
+    /// of a moderator — so a typed reason can never equal it (the report endpoint drops one that does).</summary>
+    public const string BlockReason = "Blocked the author";
 
     public long Id { get; set; }
     public long ReporterId { get; set; }

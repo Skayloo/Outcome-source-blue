@@ -9,6 +9,8 @@ import { voiceStore } from "@stores/voice.store";
 import { SearchOverlay } from "@components/SearchOverlay";
 import { UserProfileModal } from "@components/UserProfileModal";
 import { PinnedPanel } from "@components/PinnedPanel";
+import { UpdateButton } from "@components/UpdateButton";
+import { panesStore } from "@stores/panes.store";
 import { startCall } from "@lib/call";
 import { Icon } from "@lib/icons";
 import { t } from "@lib/i18n";
@@ -16,6 +18,7 @@ import { t } from "@lib/i18n";
 export function ChatHeader({ channelId, onClose }: { channelId?: number; onClose?: () => void } = {}) {
   useStoreState(channelsStore);
   useStoreState(dmStore);
+  const splitPane = useStoreState(panesStore).secondary;
   const target = getActiveTarget(channelId);
   const isDm = target?.type === "dm";
   const [query, setQuery] = useState("");
@@ -85,6 +88,8 @@ export function ChatHeader({ channelId, onClose }: { channelId?: number; onClose
           {onClose && (
             <button title="Закрыть панель" onClick={onClose}><Icon name="x" size={18} /></button>
           )}
+          {/* In the window's top-right corner — the rightmost header when the view is split. */}
+          {(onClose || splitPane === null) && <UpdateButton />}
         </div>
       </div>
       {searchOpen && <SearchOverlay initialQuery={query} onClose={() => setSearchOpen(false)} />}

@@ -1,0 +1,96 @@
+/* Sky — the daytime twin of Night Sky (theme-sky-night.css): a sky-blue room
+   that fades to a pink haze in the far corner, near-white glass panels, navy ink
+   and the same raspberry-pink signature for the primary action.
+   Applied as body.theme-sky over the tokens.css (dark) defaults. */
+
+body.theme-sky {
+  /* Backgrounds — sky and white (content = lightest) */
+  --bg-tertiary:   #cbe6f5;  /* the room behind the panels */
+  --bg-secondary:  #eef8fd;  /* sidebars, panels */
+  --bg-primary:    #f8fcff;  /* message/content area */
+  --bg-input:      #ffffff;
+  --bg-hover:      rgba(25, 85, 130, 0.06);
+  --bg-active:     rgba(25, 85, 130, 0.11);
+  --bg-floating:   #f9fdff;
+  --bg-overlay:    rgba(14, 38, 60, 0.30);
+
+  --bg-modifier-hover:    rgba(25, 85, 130, 0.05);
+  --bg-modifier-active:   rgba(25, 85, 130, 0.08);
+  --bg-modifier-selected: rgba(47, 159, 214, 0.14);
+
+  /* Accent — raspberry pink, a shade deeper than at night so white text on it still reads */
+  --accent:        #b8357a;
+  --accent-hover:  #c84a8c;
+  --accent-active: #9a2b66;
+  --accent-primary:   var(--accent);
+  --accent-secondary: #2f9fd6;
+  --accent-gradient:  linear-gradient(135deg, var(--accent-hover), var(--accent-active));
+  --tint: var(--accent-secondary);  /* surfaces tint sky, not pink — see theme-sky-night.css */
+  --on-accent: #fff;
+
+  /* Text — navy ink on white */
+  --text-normal:   #13283b;
+  --text-muted:    #4c6378;
+  --text-faint:    #6e869a;
+  --text-micro:    #93a9ba;
+  --text-link:     #1f7fb8;
+
+  --header-primary:   #0b1c2d;
+  --header-secondary: #34495d;
+
+  --interactive-normal: #4c6378;
+  --interactive-hover:  #13283b;
+  --interactive-active: #0b1c2d;
+  --interactive-muted:  #b5c9d8;
+  --channel-icon: #6e869a;
+
+  --text-positive: #1f8a52;
+  --text-warning:  #a0641a;
+  --text-danger:   #cf4636;
+  --green:  #1f8a52;
+  --yellow: #a0641a;
+  --red:    #cf4636;
+
+  --border:        #d4e7f3;
+  --border-strong: #bcd8ea;
+  --border-glow:   transparent;
+
+  --role-owner:  #db2777;
+  --role-admin:  #a0641a;
+  --role-mod:    #1f8a52;
+  --role-member: #4c6378;
+
+  --scrollbar-thin-thumb:  #bcd8ea;
+  --scrollbar-auto-thumb:  #bcd8ea;
+  --scrollbar-auto-track:  #e2f1fa;
+
+  /* Soft sky-tinted shadows; no glow on a light surface (crisp ring only for focus). */
+  --elevation-low:  0 1px 2px rgba(30, 85, 130, 0.10);
+  --elevation-med:  0 8px 24px -8px rgba(30, 85, 130, 0.18), 0 2px 6px rgba(30, 85, 130, 0.08);
+  --elevation-high: 0 18px 44px -12px rgba(30, 85, 130, 0.24), 0 6px 16px rgba(30, 85, 130, 0.10);
+  --glow-accent:    0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent);
+  --glow-accent-sm: 0 0 0 2px color-mix(in oklab, var(--accent) 18%, transparent);
+
+  /* The room: sky from the top left, a pink-lavender haze in the bottom right, white
+     light at the top right — the panels blur it into the "lit glass" look. */
+  --ambient-1: rgba(120, 196, 238, 0.60);
+  --ambient-2: rgba(236, 168, 210, 0.50);
+  --ambient-3: rgba(255, 255, 255, 0.60);
+}
+
+/* Text that sits ON the accent fill (or another solid colour) must stay light even on a
+   light theme — the global title colour is navy ink, which would vanish into the pink. */
+body.theme-sky .btn-primary,
+body.theme-sky .rail-server.active,
+body.theme-sky .rail-home.active,
+body.theme-sky .rail-btn:hover,
+body.theme-sky .server-dropdown-item:hover,
+body.theme-sky .server-dropdown-item.accent:hover,
+body.theme-sky .oc-avatar,
+body.theme-sky .avatar,
+body.theme-sky .member-avatar,
+body.theme-sky .rail-badge,
+body.theme-sky .bug-filter-tab.active,
+body.theme-sky .explore-join {
+  color: #fff;
+}

@@ -10,7 +10,7 @@ public sealed record BlockedUserDto(long UserId, string Username, string? Avatar
 public sealed record MessageReportDto(
     long Id, long ReporterId, string ReporterName, long MessageId,
     long AuthorId, string AuthorName, string Content, string Reason,
-    string Status, DateTime CreatedAt);
+    string Status, DateTime CreatedAt, long? ServerId);
 
 /// <summary>User-to-user blocks. "Either way" checks are the enforcement primitive: a pair
 /// with a block in ANY direction cannot DM, call, or friend-request each other.</summary>
@@ -28,12 +28,16 @@ public interface IBlockRepository
 public interface IMessageReportRepository
 {
     Task<long> CreateAsync(MessageReport report, CancellationToken ct = default);
-    Task<IReadOnlyList<MessageReportDto>> ListAllAsync(int limit = int.MaxValue, int offset = 0, CancellationToken ct = default);
+    /// <param name="blocks">True: only the entries blocks filed; false: only complaints; null: both.</param>
+    Task<IReadOnlyList<MessageReportDto>> ListAllAsync(int limit = int.MaxValue, int offset = 0, bool? blocks = null, CancellationToken ct = default);
     /// <summary>Complaints about messages in ONE server — what its own moderators may see.
     /// Direct messages carry no server and never appear here.</summary>
-    Task<IReadOnlyList<MessageReportDto>> ListForServerAsync(long serverId, int limit = int.MaxValue, int offset = 0, CancellationToken ct = default);
-    Task<int> CountForServerAsync(long serverId, CancellationToken ct = default);
-    Task<int> CountAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<MessageReportDto>> ListForServerAsync(long serverId, int limit = int.MaxValue, int offset = 0, bool? blocks = null, CancellationToken ct = default);
+    Task<int> CountForServerAsync(long serverId, bool? blocks = null, CancellationToken ct = default);
+    Task<int> CountAsync(bool? blocks = null, CancellationToken ct = default);
+    /// <summary>Open complaints and open block notices — the "new" counts beside the queues. One
+    /// server's when <paramref name="serverId"/> is set, else the whole space's.</summary>
+    Task<(int Reports, int Blocks)> CountOpenAsync(long? serverId = null, CancellationToken ct = default);
     Task<bool> SetStatusAsync(long id, string status, CancellationToken ct = default);
     /// <summary>The report itself — moderation needs the message it points at.</summary>
     Task<MessageReport?> GetByIdAsync(long id, CancellationToken ct = default);

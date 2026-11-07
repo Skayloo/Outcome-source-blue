@@ -4,6 +4,8 @@
    not cold blue-black), a single electric-iris signature for actions/selection/
    state, hairline borders + layered warm shadows instead of RGB glow. The brand
    cyan lives on only as the logo's second gradient stop + the sparing link hue.
+   The base every theme class is drawn over (Neon, Midnight and Deep Ink set only part of
+   the palette). Selected as "graphite"; the DEFAULT theme is Neon (applyPreferences.ts).
    Single source of truth — overridable by the optional theme classes.
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -85,6 +87,15 @@
   --scrollbar-thin-thumb:  #2a2438;
   --scrollbar-auto-thumb:  #2a2438;
   --scrollbar-auto-track:  transparent;
+
+  /* Text that sits ON an accent fill (buttons, the active rail icon, badges); Mint sets dark. */
+  --on-accent: #fff;
+  /* What tints a surface (a selected row, your own bubble, a mention, a hover). */
+  --tint: var(--accent);
+  /* The room's light behind the glass (glass.css paints .app and .admin-app with these). */
+  --ambient-1: color-mix(in oklab, var(--accent) 42%, transparent);
+  --ambient-2: color-mix(in oklab, var(--accent-secondary) 30%, transparent);
+  --ambient-3: color-mix(in oklab, var(--accent-secondary) 16%, transparent);
 
   /* ── Motion ────────────────────────────────────────────────────────────────
      Custom easing curves — the built-in CSS easings are too weak to feel

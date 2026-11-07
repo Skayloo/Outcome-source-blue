@@ -1215,6 +1215,18 @@ namespace Outcome.Db.Abstractions.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("access_failed_count");
 
+                    b.Property<string>("AuthHash")
+                        .HasColumnType("text")
+                        .HasColumnName("auth_hash");
+
+                    b.Property<int?>("AuthIterations")
+                        .HasColumnType("integer")
+                        .HasColumnName("auth_iterations");
+
+                    b.Property<string>("AuthSalt")
+                        .HasColumnType("text")
+                        .HasColumnName("auth_salt");
+
                     b.Property<string>("Avatar")
                         .HasColumnType("text")
                         .HasColumnName("avatar");

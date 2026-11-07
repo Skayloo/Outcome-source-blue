@@ -20,10 +20,11 @@ import { AdminServersPanel } from "@components/admin/AdminServersPanel";
 import { loadSpace, isRootSpace } from "@lib/space";
 import { AdminBugsPanel } from "@components/admin/AdminBugsPanel";
 import { AdminReportsPanel } from "@components/admin/AdminReportsPanel";
+import { useOpenReportCounts } from "@components/admin/reportCounts";
 import { Toast } from "@components/Toast";
 
 type Section =
-  | "dashboard" | "logs" | "audit" | "users" | "servers" | "roles" | "invites" | "server" | "bugs" | "reports";
+  | "dashboard" | "logs" | "audit" | "users" | "servers" | "roles" | "invites" | "server" | "bugs" | "reports" | "blocks";
 
 /** Sections that belong to whoever RUNS the instance: process-wide logs, infrastructure
  *  health, instance settings and the bug queue. The backend refuses them to anyone else too —
@@ -47,6 +48,7 @@ const NAV: NavGroup[] = [
     { id: "roles", icon: "shield", label: () => t("admin.roles") },
     { id: "invites", icon: "user-plus", label: () => t("admin.invites") },
     { id: "reports", icon: "flag", label: () => t("admin.reports") },
+    { id: "blocks", icon: "shield-off", label: () => t("admin.blocks") },
     { id: "bugs", icon: "bug", label: () => t("admin.bugs") },
   ] },
   { title: () => t("admin.grpSettings"), items: [
@@ -65,6 +67,7 @@ const TITLES: Record<Section, () => string> = {
   server: () => t("admin.serverSettings"),
   bugs: () => t("admin.bugs"),
   reports: () => t("admin.reports"),
+  blocks: () => t("admin.blocks"),
 };
 
 const SUBTITLES: Record<Section, () => string> = {
@@ -76,6 +79,7 @@ const SUBTITLES: Record<Section, () => string> = {
   roles: () => t("admin.rolesSub"),
   invites: () => t("admin.invitesSub"),
   reports: () => t("admin.reportsSub"),
+  blocks: () => t("admin.blocksSub"),
   bugs: () => t("admin.bugsSub"),
   server: () => t("admin.serverSettingsSub"),
 };
@@ -100,6 +104,8 @@ export function AdminPage() {
 
   const auth = useStoreState(authStore);
   const [section, setSection] = useState<Section>(sectionFromPath);
+  // How many complaints and blocks nobody has looked at yet, beside their two pages.
+  const openReports = useOpenReportCounts("instance");
 
   const go = (s: Section): void => {
     setSection(s);
@@ -131,6 +137,8 @@ export function AdminPage() {
                 >
                   <Icon name={it.icon} size={17} />
                   <span>{it.label()}</span>
+                  {it.id === "reports" && openReports.reports > 0 && <span className="admin-nav-count">{openReports.reports}</span>}
+                  {it.id === "blocks" && openReports.blocks > 0 && <span className="admin-nav-count">{openReports.blocks}</span>}
                 </button>
               ))}
             </div>
@@ -165,7 +173,8 @@ export function AdminPage() {
             {section === "roles" && <RolesPanel />}
             {section === "invites" && <AdminInvitesPanel />}
             {section === "bugs" && <AdminBugsPanel />}
-            {section === "reports" && <AdminReportsPanel />}
+            {section === "reports" && <AdminReportsPanel kind="report" />}
+            {section === "blocks" && <AdminReportsPanel kind="block" />}
             {section === "server" && <ServerSettingsPanel />}
           </div>
         </main>

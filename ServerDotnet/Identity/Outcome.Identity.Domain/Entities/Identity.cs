@@ -21,6 +21,17 @@ public sealed class User : IdentityUser<long>
     /// because a notification you cannot read is barely a notification. Lives on the account
     /// rather than the device: someone who wants previews off wants them off everywhere.</summary>
     public bool PushPreview { get; set; } = true;
+
+    /// <summary>Sign-in without the password (LoginKeys): the salt and PBKDF2 iteration count the
+    /// client made this account's login key with, and the Argon2id hash of that key — the password
+    /// itself never reaches the server. All three null ⇒ the account predates login v2 and has only
+    /// <c>PasswordHash</c>, a hash of the password; its first sign-in from a current client moves it
+    /// by proving that hash on the device (LoginKeys.DescribeLegacy). <c>PasswordHash</c> is left in
+    /// place by that move, so an older server put back still signs the account in.</summary>
+    public string? AuthSalt { get; set; }
+    public int? AuthIterations { get; set; }
+    public string? AuthHash { get; set; }
+
     public string Status { get; set; } = "offline";
     public DateTime CreatedAt { get; set; }
     public DateTime? LastSeen { get; set; }

@@ -21,7 +21,9 @@ public static class AdminEndpoints
     public sealed record CreateChannelBody(string Name, string Type, string? Category, string? Topic, int? Position);
     public sealed record UpdateChannelBody(string? Name, string? Topic, int? SlowMode, int? Position, bool? Archived);
     public sealed record AdminUserPatchBody(long? RoleId, bool? Banned, string? BanReason);
-    public sealed record AdminSetPasswordBody(string? Password);
+    // The administrator's browser turns the typed password into a credential (LoginKeys) — the
+    // server never sees that password either. `Password` only marks an out-of-date client.
+    public sealed record AdminSetPasswordBody(string? Password, Outcome.Shared.Abstractions.Security.LoginCredential? Credential = null);
     public sealed record GrantPermBody(string Permission);
 
     /// <summary>Instance-admin gate: only the global Administrator bit passes (used for the
@@ -175,16 +177,14 @@ public static class AdminEndpoints
             if (user is null || user.Deleted) throw DomainException.NotFound("user not found");
             if (user.RoleId == Outcome.Domain.Permissions.DefaultRole.Owner)
                 throw DomainException.Forbidden("only the space owner changes the owner's password");
-            var password = body.Password ?? "";
-            if (Outcome.Application.Common.AuthRules.ValidatePassword(password) is { } err) throw DomainException.BadRequest(err);
+            Outcome.Shared.Abstractions.Security.LoginKeys.RefuseRawPassword(body.Password);
+            var credential = Outcome.Shared.Abstractions.Security.LoginKeys.Validate(body.Credential);
 
-            await userManager.RemovePasswordAsync(user);
-            var set = await userManager.AddPasswordAsync(user, password);
-            if (!set.Succeeded) throw DomainException.BadRequest("could not set the password");
+            Outcome.Application.Auth.LoginKeyAuth.Set(user, credential, userManager.PasswordHasher);
             user.PasswordSet = true;
             user.AccessFailedCount = 0;
             user.LockoutEnd = null;
-            await userManager.UpdateAsync(user);
+            if (!(await userManager.UpdateAsync(user)).Succeeded) throw DomainException.BadRequest("could not set the password");
 
             await sessions.DeleteAllForUserAsync(id);
             revocations.Revoked(space.Space.Id, id);

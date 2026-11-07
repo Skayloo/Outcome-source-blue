@@ -66,17 +66,17 @@
 .pane-divider:hover .pane-divider-grip,
 .pane-divider:focus-visible .pane-divider-grip {
   width: 3px;
-  background: color-mix(in srgb, var(--accent, #7c5cff) 55%, transparent);
+  background: color-mix(in srgb, var(--accent, #3ec9a7) 55%, transparent);
 }
 
 .pane-divider:active .pane-divider-grip {
   width: 3px;
-  background: var(--accent, #7c5cff);
+  background: var(--accent, #3ec9a7);
   transition: none;             /* dragging must not lag the pointer */
 }
 
 .pane-divider:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent, #7c5cff) 60%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--accent, #3ec9a7) 60%, transparent);
   outline-offset: -2px;
 }
 

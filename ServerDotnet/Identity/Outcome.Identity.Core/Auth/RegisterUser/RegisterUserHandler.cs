@@ -32,18 +32,19 @@ public sealed class RegisterUserHandler(
         if (AuthRules.ParseBoolean(await settings.GetAsync("require_2fa", ct), false))
             throw DomainException.Forbidden("registration is unavailable while two-factor authentication is required");
 
+        LoginKeys.RefuseRawPassword(cmd.Password);
         var email = (cmd.Email ?? string.Empty).Trim();
         var username = TextSanitizer.StripHtml(cmd.Username);
         var inviteCode = (cmd.InviteCode ?? string.Empty).Trim();
-        if (email.Length == 0 || username.Length == 0 || string.IsNullOrEmpty(cmd.Password))
+        if (email.Length == 0 || username.Length == 0 || cmd.Credential is null)
             throw DomainException.InvalidInput("email, username, and password are required");
 
         if (AuthRules.ValidateEmail(email) is { } emailErr)
             throw DomainException.InvalidInput(emailErr);
         if (AuthRules.ValidateUsername(username) is { } unameErr)
             throw DomainException.InvalidInput(unameErr);
-        if (AuthRules.ValidatePassword(cmd.Password) is { } pwErr)
-            throw DomainException.InvalidInput(pwErr);
+        // The password's own rules are the client's to check now: only its login key arrives.
+        var credential = LoginKeys.Validate(cmd.Credential);
 
         // Invite policy is a runtime switch: normally an invite is OPTIONAL (with one the account
         // joins that server, without one it's standalone), but the admin can flip the instance to
@@ -77,7 +78,8 @@ public sealed class RegisterUserHandler(
             ConsentAt = DateTime.UtcNow,
             ConsentVersion = string.IsNullOrWhiteSpace(cmd.ConsentVersion) ? PdnConsent.Version : cmd.ConsentVersion,
         };
-        var created = await userManager.CreateAsync(newUser, cmd.Password);
+        LoginKeyAuth.Set(newUser, credential, userManager.PasswordHasher);
+        var created = await userManager.CreateAsync(newUser);
         if (!created.Succeeded)
             throw GenericAuthError();
 

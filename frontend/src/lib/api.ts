@@ -6,6 +6,10 @@ const platformFetch = window.fetch.bind(window);
 export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 import { createLogger } from "./logger";
+import {
+  deriveLoginKey, newCredential, passwordProblem, proofFor,
+  LegacyUnsupportedError, type LoginCredential, type PreloginAnswer,
+} from "./loginKey";
 import { runtimeApiBase } from "./runtimeConfig";
 import { getActiveServerId } from "@stores/servers.store";
 import type {
@@ -41,6 +45,8 @@ import type {
   CreateDmResponse,
   BlockedUserDto,
   MessageReportDto,
+  OpenReportCounts,
+  ReportKind,
   ReportStatus,
   GuestLinkRow,
   GuestAccountResponse,
@@ -198,6 +204,84 @@ export function createApiClient(
     return doFetch<T>("Admin API", adminBaseUrl(), method, path, body, signal);
   }
 
+  // ── Sign-in without the password (lib/loginKey.ts) ───────────────────────────────────────────
+  // Every request that used to carry a password now carries a login key or a credential made
+  // from it in this page. The callers still hand these methods the password itself.
+
+  /** Servers that predate login v2 (no /auth/prelogin), by API base. Only the desktop shell,
+   *  which signs into any instance, ever meets one; a page always talks to its own server. */
+  const oldLoginServers = new Map<string, boolean>();
+
+  function isOurService(base: string): boolean {
+    try {
+      const host = new URL(base, window.location.href).hostname.toLowerCase();
+      return host === "outcome.ru" || host.endsWith(".outcome.ru");
+    } catch { return false; }
+  }
+
+  // When a server without /auth/prelogin may still be sent the password (the old way):
+  //  • never once this device has seen that server sign in the new way — a server that "forgets"
+  //    login v2 afterwards is one pretending, to be handed the password;
+  //  • for our own service only until this date — apps and shells released before production is
+  //    upgraded must still sign in there, and by then it has long been upgraded.
+  const OUR_RAW_UNTIL = Date.UTC(2027, 0, 1);
+  const seenKey = (base: string) => `outcome:login-v2:${base}`;
+  function sawLoginKeys(base: string): boolean {
+    try { return localStorage.getItem(seenKey(base)) === "1"; } catch { return false; }
+  }
+  function rememberLoginKeys(base: string): void {
+    oldLoginServers.set(base, false);
+    try { localStorage.setItem(seenKey(base), "1"); } catch { /* private window: this run only */ }
+  }
+  function mayUseOldWay(base: string): boolean {
+    return !sawLoginKeys(base) && !(isOurService(base) && Date.now() >= OUR_RAW_UNTIL);
+  }
+  function refuseOldWay(): never {
+    throw new ApiClientError(400, "LOGIN_V2_MISSING",
+      "this server no longer supports sign-in without sending the password; your password was not sent");
+  }
+
+  /** True for a server with no /auth/prelogin at all that may still be sent the password. */
+  async function predatesLoginKeys(signal?: AbortSignal): Promise<boolean> {
+    const base = baseUrl();
+    const known = oldLoginServers.get(base);
+    if (known !== undefined) return known;
+    let old = false;
+    try {
+      await request<PreloginAnswer>("POST", "/auth/prelogin", { email: "" }, signal);
+    } catch (e) {
+      old = e instanceof ApiClientError && (e.status === 404 || e.status === 405);
+    }
+    if (!old) { rememberLoginKeys(base); return false; }
+    if (!mayUseOldWay(base)) refuseOldWay();
+    oldLoginServers.set(base, true);
+    return true;
+  }
+
+  /** A credential for a password being set, after the rules the server can no longer check. */
+  async function credentialFor(password: string): Promise<LoginCredential> {
+    const problem = passwordProblem(password);
+    if (problem) throw new ApiClientError(400, "INVALID_INPUT", problem);
+    return newCredential(password);
+  }
+
+  function resetRequired(e: unknown): never {
+    if (e instanceof LegacyUnsupportedError)
+      throw new ApiClientError(400, "PASSWORD_RESET_REQUIRED",
+        "this account's password has to be reset (Forgot password) before it can sign in here");
+    throw e;
+  }
+
+  /** The signed-in account's login key for `password` — moving the account to login v2 first
+   *  when it has not moved yet (a session older than login v2). */
+  async function ownLoginKey(password: string, signal?: AbortSignal): Promise<string> {
+    const pre = await request<PreloginAnswer>("GET", "/auth/login-params", undefined, signal);
+    const proof = await proofFor(password, pre).catch(resetRequired);
+    if ("auth_key" in proof) return proof.auth_key;
+    await request<void>("POST", "/auth/upgrade", proof, signal);
+    return proof.credential.key;
+  }
+
   async function parseError(res: Response): Promise<ApiError> {
     try {
       const body = await res.json();
@@ -230,31 +314,65 @@ export function createApiClient(
       return request<{ needs_setup: boolean; invite_required?: boolean }>("GET", "/setup/status", undefined, signal);
     },
 
-    setup(
+    async setup(
       email: string,
       username: string,
       password: string,
       signal?: AbortSignal,
     ): Promise<{ token: string; user_id: number; username: string; invite_code: string }> {
-      return request("POST", "/setup", { email, username, password }, signal);
+      if (await predatesLoginKeys(signal)) return request("POST", "/setup", { email, username, password }, signal);
+      return request("POST", "/setup", { email, username, credential: await credentialFor(password) }, signal);
     },
 
     // ── Auth (login is by email) ──────────────────────────
 
-    login(
+    async login(
       email: string,
       password: string,
       signal?: AbortSignal,
     ): Promise<AuthResponse> {
-      return request<AuthResponse>(
-        "POST",
-        "/auth/login",
-        { email, password },
-        signal,
-      );
+      const base = baseUrl();
+      if (oldLoginServers.get(base))
+        return request<AuthResponse>("POST", "/auth/login", { email, password }, signal);
+      const prelogin = async (): Promise<PreloginAnswer | null> => {
+        try {
+          return await request<PreloginAnswer>("POST", "/auth/prelogin", { email }, signal);
+        } catch (e) {
+          // No /auth/prelogin: a server from before login v2 (see mayUseOldWay).
+          if (e instanceof ApiClientError && (e.status === 404 || e.status === 405)) {
+            if (!mayUseOldWay(base)) refuseOldWay();
+            oldLoginServers.set(base, true);
+            return null;
+          }
+          throw e;
+        }
+      };
+      const firstPre = await prelogin();
+      if (!firstPre) return request<AuthResponse>("POST", "/auth/login", { email, password }, signal);
+      rememberLoginKeys(base);
+      let pending: PreloginAnswer | null = firstPre;
+      const attempt = async (): Promise<{ res?: AuthResponse; err?: unknown; legacy: boolean }> => {
+        const pre = pending ?? await request<PreloginAnswer>("POST", "/auth/prelogin", { email }, signal);
+        pending = null;
+        const proof = await proofFor(password, pre).catch(resetRequired);
+        try {
+          return { res: await request<AuthResponse>("POST", "/auth/login", { email, ...proof }, signal), legacy: !!pre.legacy };
+        } catch (err) {
+          return { err, legacy: !!pre.legacy };
+        }
+      };
+      const first = await attempt();
+      if (first.res) return first.res;
+      // Moved on another device between the two requests: ask once more, then give up.
+      if (first.legacy && first.err instanceof ApiClientError && first.err.status === 401) {
+        const second = await attempt();
+        if (second.res) return second.res;
+        throw second.err;
+      }
+      throw first.err;
     },
 
-    register(
+    async register(
       email: string,
       username: string,
       password: string,
@@ -263,10 +381,11 @@ export function createApiClient(
       consentVersion: string,
       signal?: AbortSignal,
     ): Promise<RegisterResponse> {
+      const secret = (await predatesLoginKeys(signal)) ? { password } : { credential: await credentialFor(password) };
       return request<RegisterResponse>(
         "POST",
         "/auth/register",
-        { email, username, password, invite_code: inviteCode, consent_version: consentVersion },
+        { email, username, ...secret, invite_code: inviteCode, consent_version: consentVersion },
         signal,
       );
     },
@@ -318,11 +437,12 @@ export function createApiClient(
       return res.json() as Promise<AuthResponse>;
     },
 
-    deleteAccount(password: string, signal?: AbortSignal): Promise<void> {
+    async deleteAccount(password: string, signal?: AbortSignal): Promise<void> {
+      const secret = (await predatesLoginKeys(signal)) ? { password } : { auth_key: await ownLoginKey(password, signal) };
       return request<void>(
         "DELETE",
         "/auth/account",
-        { password },
+        secret,
         signal,
       );
     },
@@ -345,29 +465,38 @@ export function createApiClient(
       return request<MemberResponse>("PATCH", "/users/me", { push_preview: on }, signal);
     },
 
-    changePassword(
+    /** `currentPassword` empty: an account's FIRST password (it signed up through a provider). */
+    async changePassword(
       currentPassword: string,
       newPassword: string,
       signal?: AbortSignal,
     ): Promise<void> {
+      if (await predatesLoginKeys(signal))
+        return request<void>("PUT", "/users/me/password",
+          { current_password: currentPassword, new_password: newPassword }, signal);
+      const credential = await credentialFor(newPassword);
+      const current = currentPassword ? { current_auth_key: await ownLoginKey(currentPassword, signal) } : {};
       return request<void>(
         "PUT",
         "/users/me/password",
-        { current_password: currentPassword, new_password: newPassword },
+        { ...current, credential },
         signal,
       );
     },
 
-    enableTotp(password: string, signal?: AbortSignal): Promise<{ qr_uri: string; backup_codes: string[] }> {
-      return request("POST", "/users/me/totp/enable", { password }, signal);
+    async enableTotp(password: string, signal?: AbortSignal): Promise<{ qr_uri: string; backup_codes: string[] }> {
+      const secret = (await predatesLoginKeys(signal)) ? { password } : { auth_key: await ownLoginKey(password, signal) };
+      return request("POST", "/users/me/totp/enable", secret, signal);
     },
 
-    confirmTotp(password: string, code: string, signal?: AbortSignal): Promise<void> {
-      return request<void>("POST", "/users/me/totp/confirm", { password, code }, signal);
+    async confirmTotp(password: string, code: string, signal?: AbortSignal): Promise<void> {
+      const secret = (await predatesLoginKeys(signal)) ? { password } : { auth_key: await ownLoginKey(password, signal) };
+      return request<void>("POST", "/users/me/totp/confirm", { ...secret, code }, signal);
     },
 
-    disableTotp(password: string, signal?: AbortSignal): Promise<void> {
-      return request<void>("DELETE", "/users/me/totp", { password }, signal);
+    async disableTotp(password: string, signal?: AbortSignal): Promise<void> {
+      const secret = (await predatesLoginKeys(signal)) ? { password } : { auth_key: await ownLoginKey(password, signal) };
+      return request<void>("DELETE", "/users/me/totp", secret, signal);
     },
 
     getSessions(signal?: AbortSignal): Promise<SessionResponse[]> {
@@ -756,9 +885,14 @@ export function createApiClient(
     },
 
 
-    /** Admin: paged moderation inbox. */
-    adminListReportsPaged(limit: number, offset: number, signal?: AbortSignal): Promise<{ items: MessageReportDto[]; total: number }> {
-      return pagedGet<MessageReportDto>("API", baseUrl(), "/admin/reports", limit, offset, signal);
+    /** Admin: paged moderation inbox — complaints, or the entries blocks filed (two pages). */
+    adminListReportsPaged(kind: ReportKind, limit: number, offset: number, signal?: AbortSignal): Promise<{ items: MessageReportDto[]; total: number }> {
+      return pagedGet<MessageReportDto>("API", baseUrl(), `/admin/reports?kind=${kind}`, limit, offset, signal);
+    },
+
+    /** Admin: how many complaints and block notices nobody has looked at yet (the menu's counts). */
+    adminReportCounts(signal?: AbortSignal): Promise<OpenReportCounts> {
+      return request<OpenReportCounts>("GET", "/admin/reports/counts", undefined, signal);
     },
 
     adminSetReportStatus(id: number, status: ReportStatus, signal?: AbortSignal): Promise<void> {
@@ -776,8 +910,13 @@ export function createApiClient(
 
     /** Reports about messages in the ACTIVE server — for its own moderators, not the instance
      *  owner. Direct messages carry no server and never appear here. */
-    listServerReportsPaged(limit: number, offset: number, signal?: AbortSignal): Promise<{ items: MessageReportDto[]; total: number }> {
-      return pagedGet<MessageReportDto>("API", baseUrl(), "/servers/reports", limit, offset, signal);
+    listServerReportsPaged(kind: ReportKind, limit: number, offset: number, signal?: AbortSignal): Promise<{ items: MessageReportDto[]; total: number }> {
+      return pagedGet<MessageReportDto>("API", baseUrl(), `/servers/reports?kind=${kind}`, limit, offset, signal);
+    },
+
+    /** The ACTIVE server's open complaints and block notices. */
+    serverReportCounts(signal?: AbortSignal): Promise<OpenReportCounts> {
+      return request<OpenReportCounts>("GET", "/servers/reports/counts", undefined, signal);
     },
 
     /** Every voice channel of the active server with its guest link (null when it has none). */
@@ -979,8 +1118,9 @@ export function createApiClient(
     // ── Admin: Members ──────────────────────────────────────
 
     /** The administrator sets a user's password; all their sessions end. */
-    adminSetUserPassword(userId: number, password: string, signal?: AbortSignal): Promise<void> {
-      return adminRequest("PUT", `/users/${userId}/password`, { password }, signal);
+    async adminSetUserPassword(userId: number, password: string, signal?: AbortSignal): Promise<void> {
+      const secret = (await predatesLoginKeys(signal)) ? { password } : { credential: await credentialFor(password) };
+      return adminRequest("PUT", `/users/${userId}/password`, secret, signal);
     },
     adminKickMember(
       userId: number,

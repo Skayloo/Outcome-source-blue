@@ -12,6 +12,10 @@ export interface DesktopBridge {
   setPushToTalk(accelerator: string): Promise<boolean>;
   setBadge(count: number): Promise<boolean>;
   onPushToTalk(handler: () => void): () => void;
+  /** The update button (UpdateButton) — since desktop 1.1.4. */
+  updateState?(): Promise<{ ready: boolean; version: string }>;
+  onUpdateReady?(handler: (version: string) => void): () => void;
+  installUpdate?(): Promise<boolean>;
 }
 
 declare global {

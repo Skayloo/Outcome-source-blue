@@ -16,7 +16,7 @@ public sealed class DisableTotpHandler(
     public async Task Handle(DisableTotpCommand cmd, CancellationToken ct)
     {
         var user = await users.GetByIdAsync(cmd.UserId, ct) ?? throw DomainException.Unauthorized("not authenticated");
-        await EnableTotpHandler.RequirePasswordAsync(userManager, user, cmd.Password);
+        await EnableTotpHandler.RequirePasswordAsync(userManager, user, cmd.LoginKey);
 
         if (AuthRules.ParseBoolean(await settings.GetAsync("require_2fa", ct), false))
             throw DomainException.Forbidden("two-factor authentication is required for this server");

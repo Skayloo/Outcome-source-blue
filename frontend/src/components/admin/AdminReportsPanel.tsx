@@ -1,5 +1,6 @@
 /**
- * AdminReportsPanel — the moderation inbox: messages users reported as objectionable.
+ * AdminReportsPanel — the moderation inbox: messages users reported as objectionable, or (on its
+ * own page, `kind="block"`) the entries their blocks filed, which ask nothing of a moderator.
  * `content` is the server's report-time SNAPSHOT, so it still shows what was reported even
  * if the author edited or deleted the message afterwards. Filterable by status; each report
  * moves through open → resolved / dismissed.
@@ -13,12 +14,20 @@ import { t } from "@lib/i18n";
 import { Banner } from "@components/settings/controls";
 import { Avatar, Badge, Btn, Empty, IconBtn, RowMenu, Spacer, Toolbar, type Tone } from "@components/admin/kit";
 import { Pager } from "@components/BugReportModal";
-import type { MessageReportDto, ReportStatus } from "@lib/types";
+import { reportsChanged } from "@components/admin/reportCounts";
+import type { MessageReportDto, ReportKind, ReportStatus } from "@lib/types";
 
 function errMsg(e: unknown, f: string): string { return e instanceof Error ? e.message : f; }
 
 const STATUSES: ReportStatus[] = ["open", "resolved", "dismissed"];
 const PAGE_SIZE = 20;
+
+/** A block's entry, not a complaint: answering the person who blocked "nothing wrong here" is
+ *  what moderators ended up doing with these. Servers before `kind` are read by the reason
+ *  their blocks wrote (MessageReport.BlockReason). */
+function isBlockNotice(r: MessageReportDto): boolean {
+  return (r.kind ?? (r.reason === "Blocked the author" ? "block" : "report")) === "block";
+}
 
 function statusLabel(s: ReportStatus): string {
   return s === "open" ? t("admin.reportOpen")
@@ -32,7 +41,9 @@ function statusLabel(s: ReportStatus): string {
  *   whoever runs it. `server` is only the ones about the ACTIVE server's own channels — what
  *   its moderators may see, and never a direct message, which belongs to no server.
  */
-export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" | "server" } = {}) {
+export function AdminReportsPanel(
+  { scope = "instance", kind = "report" }: { scope?: "instance" | "server"; kind?: ReportKind } = {},
+) {
   const meId = authStore.getState().user?.id ?? 0;
   const [reports, setReports] = useState<MessageReportDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,11 +55,11 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
     setLoading(true);
     setError(null);
     const list = scope === "server" ? api.listServerReportsPaged : api.adminListReportsPaged;
-    void list(PAGE_SIZE, (page - 1) * PAGE_SIZE, signal)
+    void list(kind, PAGE_SIZE, (page - 1) * PAGE_SIZE, signal)
       .then((r) => { setReports(r.items); setTotal(r.total); })
       .catch((e: unknown) => { if (!signal?.aborted) setError(errMsg(e, t("admin.actionFailed"))); })
       .finally(() => { if (!signal?.aborted) setLoading(false); });
-  }, [page, scope]);
+  }, [page, scope, kind]);
 
   useEffect(() => {
     const c = new AbortController();
@@ -64,6 +75,7 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
         .then(() => {
           setReports((rs) => rs.map((r) => (r.id === id ? { ...r, status: "closed" as ReportStatus } : r)));
           setTransientSuccess(t("admin.reportClosed"));
+          reportsChanged();
         })
         .catch((e: unknown) => setTransientError(e instanceof Error ? e.message : String(e)));
     });
@@ -85,6 +97,7 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
           .then(() => {
             setReports((rs) => rs.map((r) => (r.id === id ? { ...r, status: "resolved" as ReportStatus } : r)));
             setTransientSuccess(t("admin.reportResolvedToast"));
+            reportsChanged();
           })
           .catch((e: unknown) => setTransientError(e instanceof Error ? e.message : String(e)));
       });
@@ -108,6 +121,7 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
         .then(() => {
           setReports((rs) => rs.map((r) => (r.id === id ? { ...r, status: "resolved" as ReportStatus } : r)));
           setTransientSuccess(t("admin.reportReplied"));
+          reportsChanged();
         })
         .catch((e: unknown) => setTransientError(e instanceof Error ? e.message : String(e)));
     });
@@ -116,7 +130,7 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
   const setStatus = (id: number, status: ReportStatus): void => {
     const prev = reports;
     setReports((rs) => rs.map((r) => (r.id === id ? { ...r, status } : r)));
-    void api.adminSetReportStatus(id, status).catch((e: unknown) => {
+    void api.adminSetReportStatus(id, status).then(reportsChanged, (e: unknown) => {
       setReports(prev);
       setError(errMsg(e, t("admin.actionFailed")));
     });
@@ -130,7 +144,7 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
   return (
     <div className="settings-pane active">
       <Toolbar>
-        <span className="adm-count">{t("admin.reportsTotal", { count: total })}</span>
+        <span className="adm-count">{t(kind === "block" ? "admin.blocksTotal" : "admin.reportsTotal", { count: total })}</span>
         <Spacer />
         <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={loading} onClick={() => void load()} />
       </Toolbar>
@@ -138,7 +152,9 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
       {error && <Banner kind="error">{error}</Banner>}
 
       {reports.length === 0 && !loading ? (
-        <Empty icon="flag" title={t("admin.reportsEmpty")} text={t("admin.reportsEmptyText")} />
+        kind === "block"
+          ? <Empty icon="shield-off" title={t("admin.blocksEmpty")} text={t("admin.blocksEmptyText")} />
+          : <Empty icon="flag" title={t("admin.reportsEmpty")} text={t("admin.reportsEmptyText")} />
       ) : (
         <div className="adm-stack">
           {reports.map((r) => (
@@ -148,17 +164,22 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
                 <div className="adm-item-who">
                   <div><b>{r.author_name}</b> <span className="adm-cell-sub">#{r.message_id}</span></div>
                   <div className="adm-cell-sub">
-                    {t("admin.reportedBy")} {r.reporter_name} · {new Date(r.created_at).toLocaleString()}
+                    {isBlockNotice(r) ? t("admin.blockedBy") : t("admin.reportedBy")} {r.reporter_name} · {new Date(r.created_at).toLocaleString()}
                   </div>
                 </div>
                 <Badge tone={tone(r.status)} dot>{statusLabel(r.status)}</Badge>
               </header>
+              {isBlockNotice(r) ? (
+                <div className="adm-cell-sub">{t(r.dm ? "admin.blockDmNote" : "admin.blockNote")}</div>
+              ) : r.dm && (
+                <div className="adm-cell-sub">{t("admin.reportDmNote")}</div>
+              )}
 
               {/* The snapshot — what the reporter actually saw. */}
               <blockquote className="adm-quote">
                 {r.content.length > 0 ? r.content : <i>{t("admin.reportNoContent")}</i>}
               </blockquote>
-              {r.reason.length > 0 && (
+              {r.reason.length > 0 && !isBlockNotice(r) && (
                 <div className="adm-cell-sub">{t("admin.reportReason")}: {r.reason}</div>
               )}
 
@@ -166,13 +187,26 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
                   once acted on, a report is done: the controls go with it. */}
               {r.status !== "closed" && (
                 <footer className="adm-item-actions">
-                  <Btn kind="secondary" size="sm" icon="reply" onClick={() => dismissWithReply(r.id, r.reporter_id === meId)}>
-                    {t("admin.reportReply")}
-                  </Btn>
-                  <Btn kind="ghost" size="sm" icon="eye-off" onClick={() => act(r.id, "hide",
-                    t("admin.reportHideTitle"), t("admin.reportHideBody"), t("admin.reportHide"))}>
-                    {t("admin.reportHide")}
-                  </Btn>
+                  {/* A block asks no answer — the person who blocked has done what they wanted —
+                      and a direct message between two people is not the moderators' to hide:
+                      there "seen" is all there is to do. */}
+                  {isBlockNotice(r) ? (
+                    r.status === "open" && (
+                      <Btn kind="secondary" size="sm" icon="check" onClick={() => setStatus(r.id, "resolved")}>
+                        {t("admin.blockSeen")}
+                      </Btn>
+                    )
+                  ) : (
+                    <Btn kind="secondary" size="sm" icon="reply" onClick={() => dismissWithReply(r.id, r.reporter_id === meId)}>
+                      {t("admin.reportReply")}
+                    </Btn>
+                  )}
+                  {!(isBlockNotice(r) && r.dm) && (
+                    <Btn kind="ghost" size="sm" icon="eye-off" onClick={() => act(r.id, "hide",
+                      t("admin.reportHideTitle"), t("admin.reportHideBody"), t("admin.reportHide"))}>
+                      {t("admin.reportHide")}
+                    </Btn>
+                  )}
                   <Spacer />
                   <select
                     className="form-input adm-select-sm"
@@ -182,10 +216,12 @@ export function AdminReportsPanel({ scope = "instance" }: { scope?: "instance" |
                   >
                     {STATUSES.map((st) => <option key={st} value={st}>{statusLabel(st)}</option>)}
                   </select>
-                  <RowMenu items={[
-                    { label: t("admin.reportDeleteMessage"), icon: "trash-2", danger: true, onClick: () => act(r.id, "delete",
-                      t("admin.reportDeleteTitle"), t("admin.reportDeleteBody"), t("admin.reportDeleteMessage")) },
-                  ]} />
+                  {!(isBlockNotice(r) && r.dm) && (
+                    <RowMenu items={[
+                      { label: t("admin.reportDeleteMessage"), icon: "trash-2", danger: true, onClick: () => act(r.id, "delete",
+                        t("admin.reportDeleteTitle"), t("admin.reportDeleteBody"), t("admin.reportDeleteMessage")) },
+                    ]} />
+                  )}
                 </footer>
               )}
             </article>

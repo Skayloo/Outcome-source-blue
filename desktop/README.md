@@ -102,14 +102,22 @@ npm run dist:mac
 `deploy/e2e/desktop-mac-update.mjs` — two signed builds whose feed is a local server, installed
 into `~/Applications`, the older one updating itself to the newer (no notarization needed: the
 files never get a quarantine flag). Build both from a copy of the `build` config with
-`publish: [{provider: "generic", url: "http://127.0.0.1:8765/"}]`, `mac.notarize: false` and a
-zip-only target, then:
+`publish: [{provider: "generic", url: "http://127.0.0.1:8765/"}]`, `mac.notarize: false`, a
+zip-only target — and **their own identity**: `appId: "ru.outcome.desktop.updtest"`,
+`productName: "Outcome Update Test"`, no `protocols`, and `extraMetadata` with
+`name: "outcome-updtest"`, `productName: "Outcome Update Test"` and the version. With the real
+name a test build shares `~/Library/Application Support/Outcome` with an Outcome installed on the
+Mac: on 2026-10-29 it opened the owner's own session, and the test's cleanup deleted that folder.
+The test now refuses any other bundle id. Then:
 
 ```bash
-npx electron-builder --mac --universal --publish never --config <cfg-a>.json -c.extraMetadata.version=1.0.98
-npx electron-builder --mac --universal --publish never --config <cfg-b>.json -c.extraMetadata.version=1.0.99
-OLD_APP=<a>/mac-universal/Outcome.app FEED=<b> node deploy/e2e/desktop-mac-update.mjs
+npx electron-builder --mac --arm64 --publish never --config <cfg-a>.json   # version 1.0.98
+npx electron-builder --mac --arm64 --publish never --config <cfg-b>.json   # version 1.0.99
+OLD_APP="<a>/mac-arm64/Outcome Update Test.app" FEED=<b> node deploy/e2e/desktop-mac-update.mjs
 ```
+
+`VIA=button` installs through the page's update button (1.1.4) instead of quitting — with a QA
+account piped in it signs in and clicks the real button; see the test's header.
 
 It failed on the early "ready" above (the bundle stayed 1.0.98) and passes since.
 

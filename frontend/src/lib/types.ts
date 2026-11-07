@@ -902,7 +902,17 @@ export interface MessageReportDto {
   readonly reason: string;
   readonly status: ReportStatus;
   readonly created_at: string;
+  /** "block": filed by a block (it tells the moderators — App Review 1.2), a notice that asks
+   *  nothing of anyone; "report": a complaint someone wrote. Older servers send neither field. */
+  readonly kind?: ReportKind;
+  /** The message was a direct message (a server's own queue never holds one). */
+  readonly dm?: boolean;
 }
+
+/** Which of the two moderation pages: complaints people wrote, or the entries their blocks filed. */
+export type ReportKind = "report" | "block";
+/** How many of each nobody has looked at yet (status "open") — the counts beside the two pages. */
+export interface OpenReportCounts { readonly reports: number; readonly blocks: number }
 
 /** A voice channel and its guest link in the "Guest access" window (code null = no link yet). */
 export interface GuestLinkRow {

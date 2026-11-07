@@ -41,6 +41,8 @@ let pttAccelerator = null;
 let pttRegistered = null;
 /** Set once an update has been downloaded and is waiting for a restart. */
 let updateReady = false;
+/** The version it would restart into — what the web UI's update button names. */
+let updateVersion = '';
 
 // ── Single instance ──────────────────────────────────────────────────────────
 // A messenger that opens a second copy of itself has two tray icons, two sockets and two
@@ -96,7 +98,7 @@ function createWindow() {
     minWidth: 940,
     minHeight: 600,
     show: false,
-    backgroundColor: '#0b0910', // matches the app's ground; kills the white flash on open
+    backgroundColor: '#0d0e10', // matches the app's ground (Neon, the default); kills the white flash on open
     icon: ICON,
     autoHideMenuBar: true,
     webPreferences: {
@@ -256,7 +258,7 @@ function openSourcePicker(callback) {
     minWidth: 560,
     minHeight: 440,
     title: 'Выберите, чем поделиться',
-    backgroundColor: '#141118',
+    backgroundColor: '#0d0e10',
     autoHideMenuBar: true,
     icon: ICON,
     webPreferences: {
@@ -374,8 +376,12 @@ function wireAutoUpdate() {
 
   const ready = (version) => {
     updateReady = true;
+    updateVersion = version || '';
     refreshTrayMenu();
     refreshMacMenu();
+    // The tray and the Mac menu are where nobody looks: a messenger is rarely quit, so an update
+    // waiting there could sit for weeks. The page shows a button in its corner, as Discord does.
+    win?.webContents.send('outcome:update-ready', updateVersion);
     console.log(`[update] ${version} ready — installs on quit`);
   };
   // On macOS electron-updater says "downloaded" the moment IT has the zip; Squirrel then still
@@ -439,8 +445,18 @@ function refreshTrayMenu() {
 function restartToUpdateItem() {
   return {
     label: say('Перезапустить и обновить', 'Restart to update'),
-    click: () => { quitting = true; autoUpdater.quitAndInstall(); },
+    click: () => restartToUpdate(),
   };
+}
+
+/**
+ * Silent, then run again: the button says "restart", so on Windows it must not open the
+ * installer's wizard (what a non-silent run of our assisted NSIS installer does) — and a silent
+ * run starts nothing afterwards unless told to. macOS (Squirrel) and the AppImage relaunch anyway.
+ */
+function restartToUpdate() {
+  quitting = true;
+  autoUpdater.quitAndInstall(true, true);
 }
 
 // ── The macOS menu bar ───────────────────────────────────────────────────────
@@ -580,6 +596,15 @@ app.whenReady().then(() => {
     } else {
       app.setBadgeCount(Number(count) || 0);
     }
+    return true;
+  });
+
+  // The page asks once when it mounts (an update can finish downloading before the page is up,
+  // or before a reload) and then listens for 'outcome:update-ready'.
+  ipcMain.handle('outcome:update-state', () => ({ ready: updateReady, version: updateVersion }));
+  ipcMain.handle('outcome:install-update', () => {
+    if (!updateReady) return false;
+    restartToUpdate();
     return true;
   });
 

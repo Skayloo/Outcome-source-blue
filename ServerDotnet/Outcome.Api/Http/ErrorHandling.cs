@@ -28,6 +28,15 @@ public sealed class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorH
             var msg = ex.StatusCode == StatusCodes.Status413PayloadTooLarge ? "request body too large" : "bad request";
             await WriteAsync(ctx, ex.StatusCode, "BAD_REQUEST", msg);
         }
+        catch (OperationCanceledException) when (ctx.RequestAborted.IsCancellationRequested)
+        {
+            // The client went away (a page navigated on, a tab closed, a fast test browser) and the
+            // request was cancelled on its behalf — mid-query, often while a database connection
+            // was opening. Nothing failed and nobody is waiting for the answer, so it is not an
+            // error: these flooded the admin's log as "Unhandled exception … TaskCanceledException"
+            // (2026-11-06). 499 is nginx's own word for it.
+            if (!ctx.Response.HasStarted) ctx.Response.StatusCode = 499;
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Unhandled exception processing {Method} {Path}", ctx.Request.Method, ctx.Request.Path);

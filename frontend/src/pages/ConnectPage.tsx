@@ -73,6 +73,9 @@ export function ConnectPage() {
   async function submit(ev: FormEvent) {
     ev.preventDefault();
     setError(null);
+    // The button is greyed out without the consent, but the form is still a form: its own submit
+    // must not make an account either (the phone app's keyboard did exactly that, 2026-10-30).
+    if (mode === "register" && askConsent && !consent) return;
     if (mode === "register" && inviteRequired && invite.trim().length === 0) {
       setError(t("auth.inviteRequired"));
       return;

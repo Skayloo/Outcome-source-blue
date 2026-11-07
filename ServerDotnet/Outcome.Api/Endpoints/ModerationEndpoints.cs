@@ -63,7 +63,7 @@ public static class ModerationEndpoints
                         ChannelId = msg.ChannelId,
                         ServerId = channel.ServerId,
                         Content = msg.Content,
-                        Reason = "Blocked the author",
+                        Reason = MessageReport.BlockReason,
                         CreatedAt = DateTime.UtcNow,
                     });
                 }
@@ -110,6 +110,9 @@ public static class ModerationEndpoints
             if (!canSee) throw DomainException.NotFound("message not found");
 
             var reason = (body?.Reason ?? string.Empty).Trim();
+            // A complaint typed to read like a block would be shown as one — "nothing to do" — and
+            // slip past the moderators.
+            if (reason == MessageReport.BlockReason) reason = "";
             if (reason.Length > MaxReason) reason = reason[..MaxReason];
 
             await reports.CreateAsync(new MessageReport
@@ -127,13 +130,24 @@ public static class ModerationEndpoints
         });
 
         // ── Admin moderation inbox ───────────────────────────────────────────────
-        app.MapGet("/api/v1/admin/reports", async (int? limit, int? offset, HttpContext ctx,
+        // `kind`: "report" (complaints) or "block" (what blocks filed) — the console keeps them on two
+        // pages, since only one of them asks anything of a moderator. Absent: both, as before.
+        app.MapGet("/api/v1/admin/reports", async (int? limit, int? offset, string? kind, HttpContext ctx,
             ICurrentUser current, IMessageReportRepository reports) =>
         {
             RequireAdmin(current);
-            var page = await reports.ListAllAsync(limit ?? int.MaxValue, offset ?? 0);
-            ctx.Response.Headers["X-Total-Count"] = (await reports.CountAsync()).ToString();
+            var blocks = BlocksOf(kind);
+            var page = await reports.ListAllAsync(limit ?? int.MaxValue, offset ?? 0, blocks);
+            ctx.Response.Headers["X-Total-Count"] = (await reports.CountAsync(blocks)).ToString();
             return page.Select(ToDto);
+        });
+
+        // The "new" counts beside the two pages: entries still open.
+        app.MapGet("/api/v1/admin/reports/counts", async (ICurrentUser current, IMessageReportRepository reports) =>
+        {
+            RequireAdmin(current);
+            var (open, blocks) = await reports.CountOpenAsync();
+            return Results.Ok(new { reports = open, blocks });
         });
 
         // ── A server's own moderation queue ──────────────────────────────────────
@@ -141,13 +155,21 @@ public static class ModerationEndpoints
         // report about a message in somebody's server is that server's problem first. Anyone
         // holding ManageMessages there sees it and can act on it, scoped to their own server —
         // a direct message carries no server and never appears in one of these.
-        app.MapGet("/api/v1/servers/reports", async (int? limit, int? offset, HttpContext ctx,
+        app.MapGet("/api/v1/servers/reports", async (int? limit, int? offset, string? kind, HttpContext ctx,
             ICurrentUser current, ICurrentServer srv, IMessageReportRepository reports) =>
         {
             RequireModerator(current);
-            var page = await reports.ListForServerAsync(srv.ServerId, limit ?? int.MaxValue, offset ?? 0);
-            ctx.Response.Headers["X-Total-Count"] = (await reports.CountForServerAsync(srv.ServerId)).ToString();
+            var blocks = BlocksOf(kind);
+            var page = await reports.ListForServerAsync(srv.ServerId, limit ?? int.MaxValue, offset ?? 0, blocks);
+            ctx.Response.Headers["X-Total-Count"] = (await reports.CountForServerAsync(srv.ServerId, blocks)).ToString();
             return Results.Ok(page.Select(ToDto));
+        });
+
+        app.MapGet("/api/v1/servers/reports/counts", async (ICurrentUser current, ICurrentServer srv, IMessageReportRepository reports) =>
+        {
+            RequireModerator(current);
+            var (open, blocks) = await reports.CountOpenAsync(srv.ServerId);
+            return Results.Ok(new { reports = open, blocks });
         });
 
         // ── Acting on a report ───────────────────────────────────────────────────
@@ -295,6 +317,13 @@ public static class ModerationEndpoints
         });
     }
 
+    private static bool? BlocksOf(string? kind) => kind switch
+    {
+        "block" => true,
+        "report" => false,
+        _ => null,
+    };
+
     /// <summary>Shape of a report on the wire — one definition, so the instance queue and a
     /// server's own queue cannot drift into showing different things.</summary>
     private static object ToDto(MessageReportDto r) => new
@@ -304,6 +333,9 @@ public static class ModerationEndpoints
         message_id = r.MessageId,
         author_id = r.AuthorId, author_name = r.AuthorName,
         content = r.Content, reason = r.Reason,
+        // A block's entry is a notice, not a complaint, and the queue shows it apart; `dm` because a
+        // direct message between two people is not the moderators' to hide.
+        kind = r.Reason == MessageReport.BlockReason ? "block" : "report", dm = r.ServerId is null,
         status = r.Status, created_at = r.CreatedAt,
     };
 

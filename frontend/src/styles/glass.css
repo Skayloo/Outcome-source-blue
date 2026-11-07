@@ -55,6 +55,22 @@ body {
   --glass-shadow: 0 10px 30px -12px rgba(4, 2, 10, 0.55), 0 2px 8px rgba(4, 2, 10, 0.32);
 }
 
+/* The themes whose light is their accent: the room glows in the accent's own hue (and their
+   selected rows are tinted with it), so a personal accent re-tints both, and their accents are
+   dark enough for white text on them. Graphite gets the same from :root (tokens.css); Mint and
+   the two sky themes set fixed colours and their own --tint/--on-accent in their files.
+   On BODY for the same reason as the tints above. */
+body.theme-light,
+body.theme-deep-ink,
+body.theme-neon-glow,
+body.theme-midnight {
+  --ambient-1: color-mix(in oklab, var(--accent) 42%, transparent);
+  --ambient-2: color-mix(in oklab, var(--accent-secondary) 30%, transparent);
+  --ambient-3: color-mix(in oklab, var(--accent-secondary) 16%, transparent);
+  --tint: var(--accent);
+  --on-accent: #fff;
+}
+
 /* Paper themes are lit from a different direction: a white edge on a light surface is
    invisible, so the light catches as a faint dark contour instead. */
 body.theme-light {
@@ -69,6 +85,19 @@ body.theme-light {
   --glass-chip:     color-mix(in oklab, var(--bg-input) 78%, transparent);
 }
 
+/* Sky: near-white glass over a sky-blue room — like paper, a contour of the room's own blue
+   where light would catch, and enough body to read as a separate pane. */
+body.theme-sky {
+  --glass-edge:     rgba(30, 85, 130, 0.12);
+  --glass-edge-top: rgba(255, 255, 255, 0.85);
+  --glass-shadow:   0 12px 32px -14px rgba(30, 85, 130, 0.30), 0 2px 8px rgba(30, 85, 130, 0.08);
+  --glass-panel:    color-mix(in oklab, var(--bg-secondary) 74%, transparent);
+  --glass-content:  color-mix(in oklab, var(--bg-primary) 86%, transparent);
+  --glass-float:    color-mix(in oklab, var(--bg-floating) 86%, transparent);
+  --glass-chip:     color-mix(in oklab, var(--bg-input) 80%, transparent);
+}
+
+
 /* ── The room ─────────────────────────────────────────────────────────────────
    Two large, very soft washes of the brand's own two hues. They are what the
    panels blur, and what makes the corners of the app feel lit rather than flat.
@@ -79,12 +108,9 @@ body.theme-light {
   padding: var(--glass-gap);
   gap: var(--glass-gap);
   background:
-    radial-gradient(1250px 820px at 4% -14%,
-      color-mix(in oklab, var(--accent) 42%, transparent), transparent 58%),
-    radial-gradient(1000px 720px at 106% 114%,
-      color-mix(in oklab, var(--accent-secondary) 30%, transparent), transparent 60%),
-    radial-gradient(760px 560px at 72% -18%,
-      color-mix(in oklab, var(--accent-secondary) 16%, transparent), transparent 62%),
+    radial-gradient(1250px 820px at 4% -14%, var(--ambient-1), transparent 58%),
+    radial-gradient(1000px 720px at 106% 114%, var(--ambient-2), transparent 60%),
+    radial-gradient(760px 560px at 72% -18%, var(--ambient-3), transparent 62%),
     var(--bg-tertiary);
 }
 
@@ -337,6 +363,10 @@ body.theme-light {
   body.theme-light {
     --glass-edge:     rgba(70, 50, 25, 0.34);
     --glass-edge-top: rgba(70, 50, 25, 0.22);
+  }
+  body.theme-sky {
+    --glass-edge:     rgba(30, 85, 130, 0.36);
+    --glass-edge-top: rgba(30, 85, 130, 0.22);
   }
 }
 

@@ -3,17 +3,45 @@
  * Centralises everything main.tsx used to inline (theme + accent) plus the new
  * appearance/accessibility/log settings, so a reload reflects what the user set.
  */
-import { loadPref } from "@components/settings/helpers";
+import { loadPref, savePref } from "@components/settings/helpers";
 import { setLogLevel, type LogLevel } from "@lib/logger";
 
-/** Apply a named theme to <body>. "graphite" = the default identity (no class → tokens.css). */
+/** The default theme — Neon, for everyone (the owner, 2026-11-07: "тему по умолчанию всем
+ *  принудительно сделай неон"). */
+export const DEFAULT_THEME = "neon-glow";
+
+/** Every theme drawn by a class on <body> (theme-<name>). "graphite" (Warm Graphite + Iris) is
+ *  tokens.css itself and has no class. */
+const CLASS_THEMES = ["neon-glow", "mint", "sky-night", "sky", "deep-ink", "light", "midnight"] as const;
+const ALL_THEMES: readonly string[] = [...CLASS_THEMES, "graphite"];
+
+/** A saved theme name as it reads today: anything unknown or missing is the default. */
+export function normalizeTheme(name: string | null | undefined): string {
+  return name && ALL_THEMES.includes(name) ? name : DEFAULT_THEME;
+}
+
+/** Apply a named theme to <body>. */
 export function applyTheme(name: string): void {
-  document.body.classList.remove("theme-neon-glow", "theme-midnight", "theme-light", "theme-deep-ink");
-  if (name === "neon-glow") document.body.classList.add("theme-neon-glow");
-  else if (name === "midnight") document.body.classList.add("theme-midnight");
-  else if (name === "light") document.body.classList.add("theme-light");
-  else if (name === "deep-ink") document.body.classList.add("theme-deep-ink");
-  // "graphite" (Warm Graphite + Iris) => no extra class, the tokens.css default
+  const theme = normalizeTheme(name);
+  document.body.classList.remove(...CLASS_THEMES.map((c) => `theme-${c}`));
+  if (theme !== "graphite") document.body.classList.add(`theme-${theme}`);
+}
+
+/** The switch to Neon was forced on everyone ONCE, with the release that made it the default:
+ *  any theme or accent chosen before is dropped at the first start after the update, and what
+ *  someone picks afterwards stays. A new forced switch needs a new value here. (Settings →
+ *  Advanced → reset keeps this key, or a reset would force it again.) */
+export const FORCED_THEME_KEY = "themeForced";
+const FORCED_THEME_ROUND = "neon-2026-11-07";
+function forceDefaultThemeOnce(): void {
+  if (loadPref<string>(FORCED_THEME_KEY, "") === FORCED_THEME_ROUND) return;
+  savePref("theme", DEFAULT_THEME);
+  savePref("accentColor", "");
+  savePref(FORCED_THEME_KEY, FORCED_THEME_ROUND);
+}
+
+export function savedAccent(): string {
+  return loadPref<string>("accentColor", "");
 }
 
 function setClass(name: string, on: boolean): void {
@@ -39,13 +67,14 @@ export function applyFontSize(): void {
 export function applyAllPreferences(): void {
   const de = document.documentElement;
 
-  applyTheme(loadPref("theme", "graphite"));
+  forceDefaultThemeOnce();
+  applyTheme(loadPref("theme", DEFAULT_THEME));
 
   // Accent must be set on BOTH <html> and <body>: the theme classes define --accent on
   // `body.theme-*`, which (being closer to the consumers) overrides an <html>-only value.
   // Setting it inline on <body> too wins over the theme rule — matching AppearanceTab's
   // applyAccent — so a saved accent survives reload instead of reverting to the theme default.
-  const accent = loadPref<string>("accentColor", "");
+  const accent = savedAccent();
   if (accent) {
     de.style.setProperty("--accent", "#" + accent);
     document.body.style.setProperty("--accent", "#" + accent);
