@@ -40,6 +40,13 @@ export function AdminUsersPanel() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  // "Create user": where sign-up is closed, the administrator makes the accounts.
+  const [creating, setCreating] = useState(false);
+  const [cEmail, setCEmail] = useState("");
+  const [cName, setCName] = useState("");
+  const [cPw, setCPw] = useState("");
+  const [cServer, setCServer] = useState<number | null>(null);
+  const [servers, setServers] = useState<readonly { id: number; name: string }[]>([]);
 
   const loadUsers = useCallback(async (signal?: AbortSignal): Promise<void> => {
     setLoading(true);
@@ -102,11 +109,41 @@ export function AdminUsersPanel() {
   };
 
   // Twelve characters from an alphabet without look-alikes (0/O, 1/l/I): read out over a phone.
-  const generatePassword = (): void => {
+  // The last one is always a digit — the sign-up rule every client checks (8+ and a digit).
+  const randomPassword = (): string => {
     const abc = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     const bytes = crypto.getRandomValues(new Uint8Array(12));
-    setNewPw(Array.from(bytes, (b) => abc[b % abc.length]).join(""));
+    return Array.from(bytes, (b, i) => (i === 11 ? "23456789"[b % 8] : abc[b % abc.length])).join("");
   };
+  const generatePassword = (): void => setNewPw(randomPassword());
+
+  const toggleCreate = (): void => {
+    setPwFor(null);
+    setPermsFor(null);
+    setPwDone(null);
+    if (creating) { setCreating(false); return; }
+    setCEmail(""); setCName(""); setCPw(randomPassword()); setCServer(null);
+    setCreating(true);
+    void api.adminListAllServers().then((list) => {
+      setServers(list.map((x) => ({ id: x.id, name: x.name })));
+      setCServer((cur) => cur ?? list[0]?.id ?? null);
+    }).catch(() => setServers([]));
+  };
+
+  const createUser = (): void => {
+    setBusy(true);
+    setError(null);
+    const [email, name, password] = [cEmail.trim(), cName.trim(), cPw];
+    void api.adminCreateUser(email, name, password, cServer)
+      .then((u) => {
+        setPwDone(t("admin.createUserDone", { name: u.username, email, password }));
+        setCreating(false);
+        return loadUsers();
+      })
+      .catch((e: unknown) => setError(errMsg(e, t("admin.actionFailed"))))
+      .finally(() => setBusy(false));
+  };
+  const createReady = cEmail.trim().includes("@") && cName.trim().length >= 2 && cPw.length >= 8 && /\d/.test(cPw);
 
   const savePassword = (u: AdminUserResponse): void => {
     setBusy(true);
@@ -150,8 +187,34 @@ export function AdminUsersPanel() {
         <SearchField value={query} onChange={setQuery} placeholder={t("admin.searchUsers")} />
         <span className="adm-count">{t("admin.usersTotal", { count: total })}</span>
         <Spacer />
+        <Btn kind={creating ? "secondary" : "primary"} size="sm" icon="user-plus" disabled={busy} onClick={toggleCreate}>{t("admin.createUser")}</Btn>
         <IconBtn icon="refresh-cw" label={t("admin.refresh")} disabled={busy || loading} onClick={() => void loadUsers()} />
       </Toolbar>
+      {creating && (
+        <form className="adm-subpanel adm-create-user" onSubmit={(e) => { e.preventDefault(); if (createReady) createUser(); }}>
+          <div className="adm-subpanel-title">{t("admin.createUserTitle")}</div>
+          <p className="adm-cell-sub">{t("admin.createUserHint")}</p>
+          <div className="adm-create-grid">
+            <input className="form-input" type="email" value={cEmail} disabled={busy} autoFocus autoComplete="off"
+                   placeholder={t("admin.createUserEmail")} aria-label={t("admin.createUserEmail")} onChange={(e) => setCEmail(e.target.value)} />
+            <input className="form-input" type="text" value={cName} disabled={busy} autoComplete="off" maxLength={32}
+                   placeholder={t("admin.createUserName")} aria-label={t("admin.createUserName")} onChange={(e) => setCName(e.target.value)} />
+            <input className="form-input mono" type="text" value={cPw} disabled={busy} autoComplete="new-password" spellCheck={false}
+                   placeholder={t("admin.createUserPassword")} aria-label={t("admin.createUserPassword")} onChange={(e) => setCPw(e.target.value)} />
+            {servers.length > 1 && (
+              <select className="form-input" value={cServer ?? ""} disabled={busy} aria-label={t("admin.createUserServer")}
+                      onChange={(e) => setCServer(Number(e.target.value))}>
+                {servers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            )}
+          </div>
+          <div className="adm-inline-form">
+            <Btn kind="ghost" disabled={busy} onClick={() => setCPw(randomPassword())}>{t("admin.setPasswordGenerate")}</Btn>
+            <Btn type="submit" kind="primary" disabled={busy || !createReady}>{t("admin.createUserSave")}</Btn>
+            <Btn kind="ghost" disabled={busy} onClick={() => setCreating(false)}>{t("admin.cancel")}</Btn>
+          </div>
+        </form>
+      )}
       {/* Two role systems exist and this console edits only one of them; saying so costs a
           line and saves the hour spent wondering why an "admin" cannot moderate a server. */}
       <p className="admin-note">{t("admin.roleSpaceHint")}</p>

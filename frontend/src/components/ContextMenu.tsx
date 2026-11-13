@@ -4,7 +4,8 @@ import { createPortal } from "react-dom";
 export interface MenuEntry {
   /** A clickable row. */
   label?: string;
-  onClick?: () => void;
+  /** Gets the click, so an item can read its modifiers (Shift+Delete skips the question). */
+  onClick?: (e: React.MouseEvent) => void;
   danger?: boolean;
   icon?: ReactNode;
   /** A custom row (e.g. a volume slider) rendered as-is; not auto-closed on click. */
@@ -59,7 +60,7 @@ export function ContextMenu({ x, y, items, onClose }: { x: number; y: number; it
           <button
             key={i}
             className={"ctx-item" + (it.danger ? " danger" : "")}
-            onClick={() => { it.onClick?.(); onClose(); }}
+            onClick={(e) => { it.onClick?.(e); onClose(); }}
           >
             {it.icon && <span className="ctx-icon">{it.icon}</span>}
             <span>{it.label}</span>

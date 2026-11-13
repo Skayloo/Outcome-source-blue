@@ -6,7 +6,7 @@ import { dmStore } from "@stores/dm.store";
 import { membersStore } from "@stores/members.store";
 import { Avatar } from "@components/Avatar";
 import { composerStore, clearComposer } from "@stores/composer.store";
-import { setTransientError } from "@stores/ui.store";
+import { setTransientError, setTransientSuccess } from "@stores/ui.store";
 import { getActiveTarget } from "@lib/activeTarget";
 import { api, ws, wsSend } from "@lib/services";
 import { stopVoice } from "@lib/voicePlayer";
@@ -16,6 +16,7 @@ import { EmojiPicker } from "@components/EmojiPicker";
 import { PhotoEditor, isEditablePhoto, type EditDoc, type EditResult } from "@components/PhotoEditor";
 import { PhotoSend } from "@components/PhotoSend";
 import { t } from "@lib/i18n";
+import { MAX_MESSAGE_CHARS, longMessageFile } from "@lib/textFiles";
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // matches the server's cap in UploadEndpoints
 
@@ -66,6 +67,8 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
   const keySeq = useRef(0);
+  /** A line too long for one message, staged in the tray as message.txt: which tile, for what text. */
+  const longRef = useRef<{ key: number; text: string } | null>(null);
   const dragDepth = useRef(0);
   // Voice recording (hooks must sit BEFORE the early return below).
   const [recording, setRecording] = useState(false);
@@ -172,7 +175,7 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
 
   /** Upload one file into the tray — appended, or in replaceKey's place when a staged photo was
    *  edited again. The superseded upload is simply not waited for: its result finds no tile. */
-  function stage(f: File, asFile: boolean, source: File | null, doc: EditDoc | null, replaceKey: number | null): void {
+  function stage(f: File, asFile: boolean, source: File | null, doc: EditDoc | null, replaceKey: number | null): number {
     const key = keySeq.current++;
     // No thumbnail for HEIC: outside Safari the browser cannot draw it (the server makes it a JPEG).
     const preview = f.type.startsWith("image/") && !/^image\/hei[cf]/i.test(f.type) ? URL.createObjectURL(f) : null;
@@ -197,6 +200,7 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
           return p.filter((x) => x.key !== key);
         });
       });
+    return key;
   }
 
   uploadRef.current = uploadFiles;
@@ -212,6 +216,8 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
   function submit() {
     const content = text.trim();
     if (composer.editing) {
+      // An edit stays a line: it cannot become a file the way a new message over the cap does.
+      if (content.length > MAX_MESSAGE_CHARS) { setTransientError(t("chat.editTooLong")); return; }
       if (content) {
         wsSend("chat_edit", { message_id: composer.editing.id, content });
       }
@@ -220,8 +226,27 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
       return;
     }
     if (pending.some((p) => p.serverId === null)) return; // wait for in-flight uploads
+    // Longer than the server takes in one line: it goes as message.txt, the way Discord sends it
+    // (the owner, 2026-11-09), and the chat shows it read in place (TextFileCard). The text stays
+    // in the composer until the file has gone with the message.
+    let body = content;
+    if (content.length > MAX_MESSAGE_CHARS) {
+      const staged = longRef.current;
+      const entry = staged ? pending.find((p) => p.key === staged.key) : undefined;
+      if (staged && staged.text === content) {
+        // Its upload failed (the tray dropped it and said so): the text is still here, Enter tries again.
+        if (!entry) { longRef.current = null; return; }
+        body = "";
+      } else {
+        if (entry) dropWhere((p) => p.key === entry.key); // the text changed since it was staged
+        longRef.current = { key: stage(longMessageFile(content), true, null, null, null), text: content };
+        setTransientSuccess(t("chat.longAsFile"));
+        setSendQueued(true);
+        return;
+      }
+    }
     const ready = pending.filter((p) => p.serverId !== null);
-    if (!content && ready.length === 0) return;
+    if (!body && ready.length === 0) return;
     // Never silently destroy a message typed while the socket is down (reconnect backoff):
     // keep the text + attachments in the composer and tell the user.
     if (ws.getState() !== "connected") {
@@ -229,10 +254,11 @@ export function MessageInput({ channelId }: { channelId?: number } = {}) {
       return;
     }
     const payload: Record<string, unknown> = {
-      channel_id: ch!.id, content, attachments: ready.map((p) => p.serverId),
+      channel_id: ch!.id, content: body, attachments: ready.map((p) => p.serverId),
     };
     if (composer.replyTo) payload.reply_to = composer.replyTo.id;
     wsSend("chat_send", payload);
+    longRef.current = null;
     setText("");
     setPending((p) => { p.forEach(releasePreview); return []; });
     clearComposer();

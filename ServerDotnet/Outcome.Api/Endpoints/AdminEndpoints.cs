@@ -24,6 +24,8 @@ public static class AdminEndpoints
     // The administrator's browser turns the typed password into a credential (LoginKeys) — the
     // server never sees that password either. `Password` only marks an out-of-date client.
     public sealed record AdminSetPasswordBody(string? Password, Outcome.Shared.Abstractions.Security.LoginCredential? Credential = null);
+    public sealed record AdminCreateUserBody(string? Email, string? Username, string? Password,
+        Outcome.Shared.Abstractions.Security.LoginCredential? Credential = null, long? ServerId = null);
     public sealed record GrantPermBody(string Permission);
 
     /// <summary>Instance-admin gate: only the global Administrator bit passes (used for the
@@ -191,6 +193,44 @@ public static class AdminEndpoints
             await registry.CloseUserAsync(id);
             await audit.AddAsync(current.UserId, "password_set_by_admin", "user", id, "all sessions ended");
             return Results.NoContent();
+        });
+
+        // The administrator makes an account — the only way in where sign-up is closed (a company's
+        // own install, the owner 2026-11-10: "регистрацию отключить — заводить аккаунты я буду
+        // вручную"). As with setting a password, the browser sends a login key, never the password.
+        // A plain Member whose address the administrator vouches for (confirmed), put into the chosen
+        // server — or the space's first — so the first sign-in is not an empty page. Everything else
+        // a new account needs is set up on that first sign-in, as for anyone who signed up.
+        group.MapPost("/users", async (AdminCreateUserBody body, ICurrentUser current,
+            Microsoft.AspNetCore.Identity.UserManager<Outcome.Domain.Entities.User> userManager,
+            IUserRepository users, IServerRepository servers, IAuditRepository audit) =>
+        {
+            RequireAdmin(current);
+            Outcome.Shared.Abstractions.Security.LoginKeys.RefuseRawPassword(body.Password);
+            var email = (body.Email ?? "").Trim();
+            var name = (body.Username ?? "").Trim();
+            if (Outcome.Application.Common.AuthRules.ValidateEmail(email) is { } emailErr) throw DomainException.InvalidInput(emailErr);
+            if (Outcome.Application.Common.AuthRules.ValidateUsername(name) is { } nameErr) throw DomainException.InvalidInput(nameErr);
+            var credential = Outcome.Shared.Abstractions.Security.LoginKeys.Validate(body.Credential);
+            if (await users.ExistsByEmailAsync(email)) throw DomainException.Conflict("this email is already taken");
+            if (await users.ExistsByUsernameAsync(name)) throw DomainException.Conflict("this username is already taken");
+            var serverId = body.ServerId;
+            if (serverId is { } chosen && !await servers.IsLiveAsync(chosen)) throw DomainException.NotFound("server not found");
+            serverId ??= (await servers.ListAllAsync(1)).FirstOrDefault()?.Id;
+
+            var user = new Outcome.Domain.Entities.User
+            {
+                UserName = name, Email = email, RoleId = Outcome.Domain.Permissions.DefaultRole.Member,
+                Status = "offline", EmailConfirmed = true,
+            };
+            Outcome.Application.Auth.LoginKeyAuth.Set(user, credential, userManager.PasswordHasher);
+            var created = await userManager.CreateAsync(user);
+            if (!created.Succeeded)
+                throw DomainException.BadRequest(string.Join("; ", created.Errors.Select(e => e.Description)));
+            if (serverId is { } sid) await servers.AddMemberAsync(sid, user.Id, null);
+            await audit.AddAsync(current.UserId, "user_created_by_admin", "user", user.Id,
+                serverId is { } s ? $"member of server {s}" : "in no server");
+            return Results.Ok(new { id = user.Id, username = user.UserName, server_id = serverId });
         });
 
         // Kick = revoke all sessions + force-close the socket + broadcast member_leave.

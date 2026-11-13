@@ -21,7 +21,13 @@ interface Target {
 /** Telegram-style forward dialog: search on top, the chat list (DMs, then this server's
  *  channels tagged with the server name), an optional comment that is sent as YOUR message
  *  right before the forwarded one. */
-export function ForwardModal({ message, onClose }: { message: Message; onClose: () => void }) {
+export function ForwardModal({ messages, onClose, onSent }: {
+  /** One message, or a selection — sent in this order, after the comment. */
+  messages: readonly Message[];
+  onClose: () => void;
+  /** After everything went (the selection ends then); not on Cancel. */
+  onSent?: () => void;
+}) {
   const [q, setQ] = useState("");
   const [comment, setComment] = useState("");
   const [idx, setIdx] = useState(0);
@@ -74,21 +80,25 @@ export function ForwardModal({ message, onClose }: { message: Message; onClose: 
   }
 
   async function sendTo(x: Target): Promise<void> {
-    const files = { attachments: message.attachments.map((a) => a.id) };
-    // Telegram order: your comment first, the forwarded message right after.
+    // Telegram order: your comment first, the forwarded messages right after, oldest first.
     const note = comment.trim();
     if (note.length > 0) {
       wsSend("chat_send", { channel_id: x.id, content: note });
     }
-    const content = message.content;
+    for (const message of messages) forwardOne(x, message);
+    setTransientSuccess(t("chat.forwardedTo", { name: x.dm ? x.name : `#${x.name}` }));
+    onSent?.();
+    onClose();
+  }
+
+  function forwardOne(x: Target, message: Message): void {
+    const files = { attachments: message.attachments.map((a) => a.id) };
     wsSend("chat_send", {
       channel_id: x.id,
-      content,
+      content: message.content,
       forwarded_from: message.forwardedFrom ?? message.user.username,
       ...files,
     });
-    setTransientSuccess(t("chat.forwardedTo", { name: x.dm ? x.name : `#${x.name}` }));
-    onClose();
   }
 
   function onNavKey(e: React.KeyboardEvent): boolean {

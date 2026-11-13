@@ -1122,6 +1122,14 @@ export function createApiClient(
       const secret = (await predatesLoginKeys(signal)) ? { password } : { credential: await credentialFor(password) };
       return adminRequest("PUT", `/users/${userId}/password`, secret, signal);
     },
+    /** The administrator makes an account (where sign-up is closed); the password stays here — the
+     *  server gets a login key. Without a server it lands in the space's first one. */
+    async adminCreateUser(email: string, username: string, password: string, serverId: number | null,
+                          signal?: AbortSignal): Promise<{ id: number; username: string; server_id: number | null }> {
+      return adminRequest("POST", "/users", {
+        email, username, credential: await credentialFor(password), server_id: serverId,
+      }, signal);
+    },
     adminKickMember(
       userId: number,
       signal?: AbortSignal,

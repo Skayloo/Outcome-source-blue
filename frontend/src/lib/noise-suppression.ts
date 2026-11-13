@@ -320,13 +320,20 @@ export async function handBackToBrowser(track: MediaStreamTrack, why: string): P
 
 export function createRNNoiseProcessor(): TrackProcessor<Track.Kind.Audio, AudioProcessorOptions> {
   let pipeline: ProcessingPipeline | null = null;
+  // The context init() was given. LiveKit (2.20) calls restart() with the new track but WITHOUT
+  // the audioContext — and re-running init() on that read `undefined.state`: every track restart
+  // (a voice setting changed mid-call, a device switch, an unmute of a track WebKit had ended) left
+  // the microphone dead until the next call ("evaluating 'n.state'", desktop 1.2.5, 2026-11-13).
+  let context: AudioContext | undefined;
 
   return {
     name: "rnnoise",
 
     async init(opts: AudioProcessorOptions): Promise<void> {
       log.debug("RNNoise processor init", { audioWorkletSupported: supportsAudioWorklet() });
-      const ctx = opts.audioContext;
+      const ctx = opts.audioContext ?? context;
+      if (ctx === undefined) throw new Error("RNNoise needs the room's AudioContext, and none was given");
+      context = ctx;
 
       if (supportsAudioWorklet()) {
         try {

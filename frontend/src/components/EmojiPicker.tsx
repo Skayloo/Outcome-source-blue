@@ -35,9 +35,11 @@ const PANEL_BG = "var(--bg-tertiary)";
 interface EmojiPickerProps {
   readonly onPick: (emoji: string) => void;
   readonly onClose: () => void;
+  /** The anchor's edge the panel lines up with (default right: it opens leftward). */
+  readonly align?: "left" | "right";
 }
 
-export function EmojiPicker({ onPick, onClose }: EmojiPickerProps) {
+export function EmojiPicker({ onPick, onClose, align = "right" }: EmojiPickerProps) {
   const [custom, setCustom] = useState<readonly EmojiResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -101,7 +103,9 @@ export function EmojiPicker({ onPick, onClose }: EmojiPickerProps) {
         style={{
           position: "absolute",
           ...(openDown ? { top: "calc(100% + 8px)" } : { bottom: "calc(100% + 8px)" }),
-          right: 0,
+          // Which edge of the anchor the panel hangs from: a message on the left opens it rightward,
+          // or it runs off the chat's left edge (the bar sits on that side of the bubble).
+          ...(align === "left" ? { left: 0 } : { right: 0 }),
           zIndex: 1000,
           width: 320,
           maxHeight: 280,

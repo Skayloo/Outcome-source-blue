@@ -1179,6 +1179,49 @@
 .message.dm-row:hover { background: transparent; }
 .message.dm-row .dm-ava { flex-shrink: 0; }
 .dm-ava-spacer { width: 30px; flex-shrink: 0; }
+/* Selecting messages, Telegram's way (the owner, 2026-11-09): a round check before each line, the
+   picked ones tinted, a click anywhere on a line picks or drops it. */
+.message.selecting { cursor: pointer; }
+.message.selecting .msg-actions-bar { display: none !important; }
+.msg-check {
+  flex-shrink: 0; align-self: center; width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--text-muted); color: var(--on-accent);
+  display: flex; align-items: center; justify-content: center;
+  transition: background .12s, border-color .12s;
+}
+.message.dm-row.own .msg-check { margin-right: auto; }
+.message.selected .msg-check { background: var(--accent); border-color: var(--accent); }
+.message.dm-row.selected, .message.dm-row.selected:hover { background: color-mix(in oklab, var(--tint) 16%, transparent); }
+/* In the composer's place while selecting; the composer keeps what was typed, out of sight. */
+.select-bar {
+  display: flex; align-items: center; gap: 10px;
+  margin: 8px clamp(16px, calc((100% - var(--feed-column, 760px)) / 2), 260px) 24px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--bg-secondary); box-shadow: 0 4px 16px rgba(0,0,0,.25);
+}
+.select-bar-count { flex: 1; font-weight: 600; color: var(--text-normal); white-space: nowrap; }
+.select-bar-close {
+  width: 32px; height: 32px; border-radius: 50%; border: none; flex-shrink: 0;
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.select-bar-close:hover { background: var(--bg-modifier-hover); color: var(--text-normal); }
+.select-bar-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px;
+  border-radius: var(--radius-md); border: 1px solid var(--border); background: var(--bg-tertiary);
+  color: var(--text-normal); cursor: pointer; font: inherit; font-weight: 500; white-space: nowrap;
+}
+.select-bar-btn:hover:not(:disabled) { background: var(--bg-modifier-hover); }
+.select-bar-btn.danger { color: var(--text-danger); }
+.select-bar-btn:disabled { opacity: .45; cursor: not-allowed; }
+.chat-area:has(> .select-bar) > .message-input-wrap,
+.vstage-chat:has(> .select-bar) > .message-input-wrap { display: none; }
+/* The bubble and its hover bar: the bar is placed against the bubble (see .msg-actions-bar below). */
+.dm-bubble-box { position: relative; display: flex; min-width: 0; max-width: min(68%, 520px); }
+.dm-bubble-box > .dm-bubble { max-width: 100%; min-width: 0; }
+/* A text file read in place (message.txt — a pasted log) gets more of the width than a line. */
+.dm-bubble-box:has(.msg-textfile) { max-width: min(88%, 760px); }
+.dm-bubble-box:has(.msg-textfile) > .dm-bubble { flex: 1; }
 .dm-bubble {
   max-width: min(68%, 520px);
   background: var(--bg-secondary);
@@ -1653,6 +1696,62 @@
 }
 .msg-file-download:hover { background: var(--bg-hover); color: var(--text-normal); }
 
+/* A text file read in place (TextFileCard), as Discord shows one — what a line over 4000
+   characters is sent as (message.txt). Folded: the first lines fading out, a click opens it. */
+.msg-textfile {
+  margin-top: 4px; max-width: 680px; border: 1px solid var(--border);
+  border-radius: var(--radius-md); overflow: hidden; background: var(--bg-secondary);
+  /* Monospace with Cyrillic in it: the generic one (Courier on a Mac) has none, and Russian fell
+     back to a serif face in the middle of a log line. */
+  --textfile-font: "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+}
+/* A message that is only the file: the card is its own frame, no bubble around it. */
+.dm-bubble:has(> .msg-textfile):not(:has(> .msg-text)) { padding: 0; background: transparent; }
+.dm-bubble:has(> .msg-textfile):not(:has(> .msg-text)) > .msg-textfile:first-of-type { margin-top: 0; }
+.dm-bubble:has(> .msg-textfile):not(:has(> .msg-text)) > .dm-author { padding: 0 4px 4px; }
+.msg-textfile-body {
+  margin: 0; padding: 10px 14px; max-height: 8.7em; overflow: hidden; cursor: pointer;
+  font-family: var(--textfile-font); font-size: 12.5px; line-height: 1.45; tab-size: 4;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-normal);
+  background: var(--bg-tertiary);
+  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent);
+  mask-image: linear-gradient(to bottom, #000 45%, transparent);
+}
+.msg-textfile.open .msg-textfile-body {
+  max-height: 480px; overflow: auto; cursor: text;
+  -webkit-mask-image: none; mask-image: none;
+}
+.msg-textfile-cut { color: var(--text-muted); font-style: italic; }
+.msg-textfile-bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; }
+.msg-textfile-toggle {
+  width: 38px; height: 38px; border-radius: var(--radius-sm); border: none; flex-shrink: 0;
+  background: var(--bg-modifier-hover); color: var(--text-normal); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: background .15s;
+}
+.msg-textfile-toggle:hover { background: var(--bg-modifier-active); }
+.msg-textfile-info { flex: 1; min-width: 0; margin-left: 4px; }
+.msg-textfile-name {
+  font-size: 13px; font-weight: 500; color: var(--text-normal);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.msg-textfile-bar .msg-file-download, .textfile-full-head .msg-file-download { margin-left: 0; }
+.textfile-full {
+  width: min(1100px, 94vw); height: min(88vh, 960px); display: flex; flex-direction: column;
+  background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; box-shadow: 0 8px 48px rgba(0,0,0,.5);
+}
+.textfile-full-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); color: var(--text-muted);
+}
+.textfile-full-body {
+  flex: 1; margin: 0; overflow: auto; padding: 14px 18px;
+  font-family: "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  font-size: 13px; line-height: 1.5; tab-size: 4;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-normal);
+  background: var(--bg-tertiary);
+}
+
 /* ── Update Banner ── */
 .update-banner {
   display: flex; align-items: center; gap: 12px;
@@ -1691,7 +1790,24 @@
   transition: opacity 0.1s ease;
   box-shadow: 0 2px 8px rgba(0,0,0,.3); z-index: 5;
 }
+/* On a bubble: over its top edge, from the corner nearest the chat's middle — the left one of a
+   message on the left, the right one of your own — so the cursor reaches it straight up from the
+   message instead of across the whole chat (the owner, 2026-11-09). It overlaps the bubble a
+   little, so there is no gap to fall through on the way. */
+.message.dm-row .msg-actions-bar { top: auto; bottom: calc(100% - 6px); right: auto; left: 0; }
+.message.dm-row.own .msg-actions-bar { left: auto; right: 0; }
 .message:hover .msg-actions-bar { opacity: 1; pointer-events: auto; animation: actionBarPop 0.1s ease; }
+/* With a mouse the bar is gone: every action is on a right click (the owner, 2026-11-09: "шапочка
+   сверху уже не нужна"). A touch screen has no right click, so there the bar stays — a tap shows it.
+   "Реакция" from the menu still opens the picker where the bar's smile button sits, the bar unseen. */
+@media (hover: hover) and (pointer: fine) {
+  .msg-actions-bar { display: none; }
+  .message.picker-open .msg-actions-bar {
+    display: flex; background: transparent; border: 0; box-shadow: none; padding: 0;
+  }
+  .message.picker-open .msg-actions-bar > :not(.msg-react-anchor) { display: none; }
+  .message.picker-open .msg-react-anchor > button { visibility: hidden; }
+}
 /* Keep the action bar (and its open emoji picker) alive while the picker is open, so moving the
    cursor off the message row toward the popover doesn't hover-hide it out from under you. */
 .message.picker-open .msg-actions-bar { opacity: 1; pointer-events: auto; z-index: 1001; animation: none; }

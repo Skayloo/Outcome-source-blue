@@ -19,6 +19,8 @@ import { setTransientSuccess, setTransientError } from "@stores/ui.store";
 import { api, wsSend } from "@lib/services";
 import { HeicPhoto } from "@components/HeicPhoto";
 import { looksHeif } from "@lib/heic";
+import { TextFileCard } from "@components/TextFileCard";
+import { isTextFile, heldFileBytes } from "@lib/textFiles";
 import { ForwardModal } from "@components/ForwardModal";
 import { ReadersModal, loadReaders, readersLabel, type Readers } from "@components/ReadersModal";
 import { ContextMenu } from "@components/ContextMenu";
@@ -58,6 +60,38 @@ async function deleteMessageAsking(m: Message, skipQuestion: boolean): Promise<v
     if (!ok) return;
   }
   wsSend("chat_delete", { message_id: m.id });
+}
+
+/** The selection's "Delete": one question for all of them (Shift skips it, as on one message). */
+async function deleteManyAsking(ms: readonly Message[], skipQuestion: boolean): Promise<boolean> {
+  if (!skipQuestion) {
+    const ok = await confirm({
+      title: t("chat.deleteManyTitle", { n: ms.length }),
+      message: ms.some((m) => m.attachments.length > 0) ? t("chat.deleteConfirmFiles") : t("chat.deleteConfirm"),
+      confirmLabel: t("chat.delete"),
+      danger: true,
+    });
+    if (!ok) return false;
+  }
+  for (const m of ms) wsSend("chat_delete", { message_id: m.id });
+  return true;
+}
+
+/** Save a photo as its original file: the bytes this page holds for a sealed one (its blob: url
+ *  cannot be fetched), else downloaded — through a Blob, so the desktop shell, whose page is not on
+ *  the server's origin, saves it instead of navigating to it. */
+async function savePhoto(url: string, id: string | null, name: string): Promise<void> {
+  try {
+    const blob = (id ? heldFileBytes(id) : undefined) ?? await (await fetch(url)).blob();
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 10_000);
+  } catch {
+    setTransientError(t("chat.photoSaveFailed"));
+  }
 }
 
 export function MessageList({ channelId: forced }: { channelId?: number } = {}) {
@@ -208,11 +242,24 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   // While the view glides to a jumped-to message, scrolling past the top must not page in more
   // history: restoring the position for that page would stop the glide halfway.
   const jumpHoldRef = useRef(0);
-  // Forward: Telegram-style centered dialog with search over every chat.
-  const [fwdFor, setFwdFor] = useState<Message | null>(null);
+  // Forward: Telegram-style centered dialog with search over every chat — one message, or a selection.
+  const [fwdFor, setFwdFor] = useState<readonly Message[] | null>(null);
+  // Telegram's selection (the owner, 2026-11-09): "Выбрать" in a message's menu, then a click on a
+  // line picks or drops it; a bar in the composer's place forwards or deletes them all. Null when
+  // not selecting; it ends with the last line dropped, Escape, or another chat.
+  const [selected, setSelected] = useState<ReadonlySet<number> | null>(null);
+  useEffect(() => { setSelected(null); }, [channelId]);
+  useEffect(() => {
+    if (selected === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector(".modal-overlay.visible, .ctx-menu")) setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
   // Own channel messages: who read them, on a right click and from the actions bar.
   const [readersFor, setReadersFor] = useState<number | null>(null);
-  const [ownMenu, setOwnMenu] = useState<{ x: number; y: number; m: Message; readers: Readers | null | "failed" } | null>(null);
+  const [msgMenu, setMsgMenu] = useState<{ x: number; y: number; m: Message; readers: Readers | null | "failed"; img: HTMLImageElement | null } | null>(null);
   // Clicking whoever wrote a line opens them — the same door the mobile app has.
   const [profile, setProfile] = useState<{ id: number; username: string; avatar: string | null } | null>(null);
   /** Scroll to a message that is on the page and flash it; false when it is not there. */
@@ -339,12 +386,22 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
   const ticks = (m: Message): React.ReactNode => isDm && (
     <span className={"msg-ticks" + (m.id <= readUpTo ? " read" : "")}>{m.id <= readUpTo ? "✓✓" : "✓"}</span>
   );
-  const openOwnMenu = (e: React.MouseEvent, m: Message): void => {
+  /** Every action on a message from a right click (the owner, 2026-11-09: reaching the hover bar
+   *  meant crossing the chat to its far edge, and the bar vanished on the way). A photo gets the
+   *  same menu plus Open and Save — with the browser's own, a photo could not be reacted to or
+   *  reported. A link, a player or selected text keep the browser's menu: copying them is what it
+   *  is for. */
+  const openMenu = (e: React.MouseEvent, m: Message): void => {
+    const target = e.target as HTMLElement;
+    if (target.closest("a[href], video, audio") || (window.getSelection()?.toString() ?? "") !== "") return;
     e.preventDefault();
-    setOwnMenu({ x: e.clientX, y: e.clientY, m, readers: null });
+    const ownChannelLine = me?.id === m.user.id && !isDm;
+    // Open and Save are for a sent photo — not an avatar, an emoji or a link's preview.
+    setMsgMenu({ x: e.clientX, y: e.clientY, m, readers: null, img: target.closest<HTMLImageElement>(".msg-photo img, .msg-album img") });
+    if (!ownChannelLine) return;
     loadReaders(m.id).then(
-      (r) => setOwnMenu((cur) => (cur?.m.id === m.id ? { ...cur, readers: r } : cur)),
-      () => setOwnMenu((cur) => (cur?.m.id === m.id ? { ...cur, readers: "failed" } : cur)),
+      (r) => setMsgMenu((cur) => (cur?.m.id === m.id ? { ...cur, readers: r } : cur)),
+      () => setMsgMenu((cur) => (cur?.m.id === m.id ? { ...cur, readers: "failed" } : cur)),
     );
   };
   const mentionsMe = (content: string): boolean =>
@@ -380,6 +437,12 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       setMessagePinned(channelId, m.id, !m.pinned);
     } catch { /* ignore */ }
   }
+
+  const toggleSelected = (id: number) => setSelected((cur) => {
+    const next = new Set(cur ?? []);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next.size === 0 ? null : next;
+  });
 
   const rows: ReactNode[] = [];
   let prev: Message | null = null;
@@ -502,6 +565,9 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           </div>
         ) : looksHeif(att.mime, att.filename) ? (
           <HeicPhoto key={att.id} att={att} />
+        ) : isTextFile(att.filename, att.mime, att.size) ? (
+          // Read in place, as Discord shows a text file — what a line over 4000 characters is sent as.
+          <TextFileCard key={att.id} att={att} />
         ) : (
           <div className="msg-file" key={att.id}>
             <div className="msg-file-inner">
@@ -527,17 +593,18 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
 
     const actions = (
       <div className="msg-actions-bar">
-          <div style={{ position: "relative", display: "inline-flex" }}>
+          <div className="msg-react-anchor" style={{ position: "relative", display: "inline-flex" }}>
             <button title={t("chat.react")} onClick={() => setPickerFor(pickerFor === m.id ? null : m.id)}><Icon name="smile" size={16} /></button>
             {pickerFor === m.id && (
               <EmojiPicker
+                align={me?.id === m.user.id ? "right" : "left"}
                 onPick={(emoji) => { react(m, emoji, false); setPickerFor(null); }}
                 onClose={() => setPickerFor(null)}
               />
             )}
           </div>
           <button title={t("chat.reply")} onClick={() => setReply(m)}><Icon name="reply" size={16} /></button>
-          <button title={t("chat.forward")} onClick={() => setFwdFor(m)}><Icon name="arrow-right" size={16} /></button>
+          <button title={t("chat.forward")} onClick={() => setFwdFor([m])}><Icon name="arrow-right" size={16} /></button>
           {/* In a DM too: App Review 1.2 counts "Block" as blocking, not as flagging content. */}
           {me?.id !== m.user.id && (
             <button title={t("chat.report")} onClick={() => reportMessage(m)}><Icon name="flag" size={16} /></button>
@@ -563,14 +630,20 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
       // bubbles; the phone has always been bubbles for both, and two different chats in one
       // product is just two things to keep in sync. A channel adds the author's name inside
       // the bubble, which a DM does not need — there are only two people in it.
-      <div id={`msg-${m.id}`} className={"message dm-row" + (own ? " own" : " theirs") + (grouped ? " grouped" : "") + (pickerFor === m.id ? " picker-open" : "") + (flashId === m.id ? " flash" : "") + (!own && mentionsMe(m.content) ? " mention-me" : "")} key={m.id}
-        onContextMenu={own && !isDm ? (e) => openOwnMenu(e, m) : undefined}>
+      <div id={`msg-${m.id}`} className={"message dm-row" + (own ? " own" : " theirs") + (grouped ? " grouped" : "") + (pickerFor === m.id ? " picker-open" : "") + (flashId === m.id ? " flash" : "") + (!own && mentionsMe(m.content) ? " mention-me" : "") + (selected ? " selecting" : "") + (selected?.has(m.id) ? " selected" : "")} key={m.id}
+        onContextMenu={(e) => openMenu(e, m)}
+        // While selecting, a click anywhere on a line picks it — not the photo, link or quote under it.
+        onClickCapture={selected ? (e) => { e.preventDefault(); e.stopPropagation(); toggleSelected(m.id); } : undefined}>
+        {selected && <span className="msg-check" aria-hidden="true">{selected.has(m.id) && <Icon name="check" size={14} />}</span>}
         {!own && (grouped
           ? <span className="dm-ava-spacer" />
           : m.guestName
             ? <Avatar username={m.guestName} avatar={null} size={30} color="#6b7280" className="dm-ava" />
             : <Avatar username={m.user.username} avatar={m.user.avatar} size={30} color={colorFor(m.user.id)} className="dm-ava" />)}
         {own && <span className="dm-time" title={new Date(m.timestamp).toLocaleString()}>{ticks(m)}{formatTime(m.timestamp)}</span>}
+        {/* The hover bar rides on the bubble itself, over its outer top corner — it used to sit at
+            the chat's far edge, a long way from a message on the left. */}
+        <div className="dm-bubble-box">
         <div className={"dm-bubble" + (
           !m.content.trim() && m.attachments.length > 0 && m.attachments.every((a) => isImage(a.mime))
             ? " photo-only" : "")}>
@@ -584,14 +657,20 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           {replyRef}
           {body}
         </div>
-        {!own && <span className="dm-time" title={new Date(m.timestamp).toLocaleString()}>{formatTime(m.timestamp)}</span>}
         {actions}
+        </div>
+        {!own && <span className="dm-time" title={new Date(m.timestamp).toLocaleString()}>{formatTime(m.timestamp)}</span>}
       </div>,
     );
     prev = m;
   }
 
+  // The selection in chat order, and whether this account may delete every line of it.
+  const picked = selected ? messages.filter((m) => selected.has(m.id) && !m.deleted) : [];
+  const canDeletePicked = picked.length > 0 && picked.every((m) => me?.id === m.user.id || isDm);
+
   return (
+    <>
     <div
       className="messages-container"
       ref={containerRef}
@@ -647,22 +726,46 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
           <Icon name="chevron-down" size={20} />
         </button>
       )}
-      {fwdFor && <ForwardModal message={fwdFor} onClose={() => setFwdFor(null)} />}
+      {fwdFor && <ForwardModal messages={fwdFor} onSent={() => setSelected(null)} onClose={() => setFwdFor(null)} />}
       {readersFor !== null && <ReadersModal messageId={readersFor} onClose={() => setReadersFor(null)} />}
-      {ownMenu && (
-        <ContextMenu
-          x={ownMenu.x} y={ownMenu.y} onClose={() => setOwnMenu(null)}
-          items={[
-            { label: readersLabel(ownMenu.readers), icon: <Icon name="eye" size={15} />, onClick: () => setReadersFor(ownMenu.m.id) },
-            { separator: true },
-            ...(ownMenu.m.content.trim()
-              ? [{ label: t("chat.copyText"), icon: <Icon name="copy" size={15} />, onClick: () => { void navigator.clipboard.writeText(ownMenu.m.content); } }]
-              : []),
-            { label: t("chat.reply"), icon: <Icon name="reply" size={15} />, onClick: () => setReply(ownMenu.m) },
-            { label: t("chat.edit"), icon: <Icon name="pencil" size={15} />, onClick: () => setEditing(ownMenu.m) },
-          ]}
-        />
-      )}
+      {msgMenu && (() => {
+        const mm = msgMenu.m;
+        const mine = me?.id === mm.user.id;
+        return (
+          <ContextMenu
+            x={msgMenu.x} y={msgMenu.y} onClose={() => setMsgMenu(null)}
+            items={[
+              ...(mine && !isDm
+                ? [{ label: readersLabel(msgMenu.readers), icon: <Icon name="eye" size={15} />, onClick: () => setReadersFor(mm.id) }, { separator: true }]
+                : []),
+              ...(msgMenu.img ? (() => {
+                const img = msgMenu.img;
+                // An opened photo is in attachments (a sealed one moves there once opened).
+                const att = mm.attachments.find((a) => a.filename === img.alt) ?? null;
+                return [
+                  { label: t("chat.openPhoto"), icon: <Icon name="maximize" size={15} />, onClick: () => img.click() },
+                  { label: t("chat.savePhoto"), icon: <Icon name="download" size={15} />,
+                    onClick: () => { void savePhoto(att ? assetUrl(att.url) : img.src, att?.id ?? null, att?.filename ?? (img.alt || "photo")); } },
+                  { separator: true },
+                ];
+              })() : []),
+              { label: t("chat.reply"), icon: <Icon name="reply" size={15} />, onClick: () => setReply(mm) },
+              { label: t("chat.react"), icon: <Icon name="smile" size={15} />, onClick: () => setPickerFor(mm.id) },
+              ...(mm.content.trim()
+                ? [{ label: t("chat.copyText"), icon: <Icon name="copy" size={15} />, onClick: () => { void navigator.clipboard.writeText(mm.content); } }]
+                : []),
+              { label: t("chat.forward"), icon: <Icon name="arrow-right" size={15} />, onClick: () => setFwdFor([mm]) },
+              { label: mm.pinned ? t("chat.unpin") : t("chat.pin"), icon: <Icon name={mm.pinned ? "pin-off" : "pin"} size={15} />, onClick: () => { void togglePin(mm); } },
+              ...(mine ? [{ label: t("chat.edit"), icon: <Icon name="pencil" size={15} />, onClick: () => setEditing(mm) }] : []),
+              { label: t("chat.select"), icon: <Icon name="check" size={15} />, onClick: () => setSelected(new Set([mm.id])) },
+              ...(!mine ? [{ separator: true }, { label: t("chat.report"), icon: <Icon name="flag" size={15} />, onClick: () => { void reportMessage(mm); } }] : []),
+              ...(mine || isDm
+                ? [{ separator: true }, { label: t("chat.delete"), danger: true, icon: <Icon name="trash-2" size={15} />, onClick: (e: React.MouseEvent) => { void deleteMessageAsking(mm, e.shiftKey); } }]
+                : []),
+            ]}
+          />
+        );
+      })()}
       {profile && (
         <UserProfileModal
           userId={profile.id}
@@ -672,5 +775,21 @@ export function MessageList({ channelId: forced }: { channelId?: number } = {}) 
         />
       )}
     </div>
+    {/* In the composer's place while selecting (.chat-area:has(> .select-bar) hides the composer;
+        what was typed stays). */}
+    {selected && (
+      <div className="select-bar" role="toolbar" aria-label={t("chat.selectedCount", { n: picked.length })}>
+        <button className="select-bar-close" onClick={() => setSelected(null)} title={t("common.cancel")}><Icon name="x" size={18} /></button>
+        <span className="select-bar-count">{t("chat.selectedCount", { n: picked.length })}</span>
+        <button className="select-bar-btn" disabled={picked.length === 0} onClick={() => setFwdFor(picked)}>
+          <Icon name="arrow-right" size={16} /> {t("chat.forward")}
+        </button>
+        <button className="select-bar-btn danger" disabled={!canDeletePicked} title={canDeletePicked ? t("chat.deleteHint") : t("chat.selectOnlyOwn")}
+          onClick={(e) => { void deleteManyAsking(picked, e.shiftKey).then((done) => { if (done) setSelected(null); }); }}>
+          <Icon name="trash-2" size={16} /> {t("chat.delete")}
+        </button>
+      </div>
+    )}
+    </>
   );
 }

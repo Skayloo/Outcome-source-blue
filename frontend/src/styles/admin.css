@@ -198,6 +198,10 @@
 /* Admin → Users: the row that sets someone's password (AdminUsersPanel). */
 .admin-app .adm-setpw .adm-inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
 .admin-app .adm-setpw .form-input { max-width: 260px; }
+/* Create user: four fields in a row on a wide screen, stacked on a phone. */
+.admin-app .adm-create-user { margin: 0 0 14px; }
+.admin-app .adm-create-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin: 10px 0; }
+.admin-app .adm-create-grid .form-input { width: 100%; height: 34px; }
 .admin-app .settings-pane { max-width: none; }
 
 /* Dashboard */
